@@ -1,2 +1,3 @@
 /.direnv
 .envrc
+/docs/src/*.pdf
