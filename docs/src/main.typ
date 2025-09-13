@@ -133,6 +133,10 @@ aux clients.​
 + Portefeuilles & Positions​
 
 == Glossaire
+/ Ordre: Instruction d’acheter ou de vendre un instrument financier, avec détails (symbole, quantité, prix, type, durée).
+
+
+
 == Diagramme de contexte
 #import "@preview/diagraph:0.3.5": raw-render
 #raw-render(
@@ -167,3 +171,35 @@ aux clients.​
    }
   ```,
 )
+
+== esquisse du modèle de domaine?
+= Architecture & décisions
+== Choix de style
+
+Nous utiliserons le style gonal (ports et adaptateurs) pour isoler le domaine métier des détails techniques.
+
+Cela nous permettra :
+- d'isoler le code métier des dépendances externes et de faciliter les tests unitaires,
+- faciliter la migration future vers des micro-services ou du event-driven,
+
+Le langage Rust se prête particulièrement bien à ce type d'architecture avec son système de traits et d'implémentations.
+
+```pintora
+mindmap
+title: Diagramme Architecture Hexagonale
+@param layoutDirection TB
++ Domaine métier
+++ Ports sortants
++++ Market Data Port
+++++ Socket Adapter
++++ Logging Port
+++++ Logging Adapter
++++ DB Port
+++++ DB Adapter
++++ Notification Port
+++++ Email Adapter
+-- Ports entrants
+--- Port Input
+---- CLI Adapter
+```
+
