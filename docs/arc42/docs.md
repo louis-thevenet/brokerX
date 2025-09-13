@@ -206,11 +206,7 @@ Le système permet aux utilisateurs de :
 
 ## 8. Concepts transversaux
 
-- Patron CQRS (Command Query Responsibility Segregation)
-- Persistance polyglotte (MySQL + Redis)
-- Concepts DDD (Domain-Driven Design)
-- ORM (Object-Relational Mapping) avec SQLAlchemy
-- Synchronisation de données temps réel
+?
 
 ## 9. Décisions d'architecture
 
