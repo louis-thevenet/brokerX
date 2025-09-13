@@ -1,0 +1,61 @@
+activityDiagram
+title: Expérience Utilisateur BrokerX en ligne de commande
+start
+:Utilisateur lance BrokerX en CLI;
+:Afficher message de bienvenue;
+
+if (session existante ?) then
+  :Session déjà ouverte;
+else
+  :Proposer Connexion ou Inscription ou Quitter;
+
+  switch (choix initial)
+  case (Inscription)
+    :Créer un nouveau compte;
+    :Demander validation identité;
+    :Afficher confirmation inscription;
+    :Passer à la connexion;
+  case (Connexion)
+    :Lancer procédure de connexion;
+  case (Quitter)
+    :Afficher au revoir;
+    stop
+  endswitch
+
+  partition Authentification {
+    :Demander identifiant et mot de passe;
+    if (utilisateur authentifié ?) then
+      :Session ouverte;
+    else
+      :Afficher erreur accès refusé;
+      stop
+    endif
+  }
+endif
+
+partition Portefeuille {
+  :Afficher solde et positions actuelles;
+  :Proposer actions disponibles;
+
+  switch (choix utilisateur)
+  case (Approvisionnement)
+    :Demander montant à déposer;
+    :Confirmer dépôt crédité;
+  case (Consultation marché)
+    :Afficher cotations en temps réel;
+    :Mettre à jour carnet d ordres;
+  case (Passer un ordre)
+    :Demander type ordre et paramètres;
+    :Confirmer ordre accepté ou rejeté;
+  case (Historique)
+    :Afficher dernières transactions et rapports;
+  endswitch
+
+  while (utilisateur souhaite continuer ?) is (oui)
+    :Retourner au menu principal;
+  endwhile (non)
+
+  :L'application termine;
+}
+end
+
