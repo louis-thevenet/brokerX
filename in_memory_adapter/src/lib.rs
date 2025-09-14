@@ -20,7 +20,23 @@ where
         self.storage.insert(id, item);
     }
 
+    pub fn update(&mut self, id: Id, item: T) {
+        self.storage.insert(id, item);
+    }
+
     pub fn get(&self, id: &Id) -> Option<&T> {
         self.storage.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: &Id) -> Option<&mut T> {
+        self.storage.get_mut(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.storage.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.storage.is_empty()
     }
 }
