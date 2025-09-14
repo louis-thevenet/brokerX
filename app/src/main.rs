@@ -1,5 +1,7 @@
 use domain::core::BrokerX;
 
 fn main() {
-    let broker_x = BrokerX::new();
+    let mut broker_x = BrokerX::new();
+    broker_x.debug_populate();
+    println!("{broker_x:#?}");
 }
