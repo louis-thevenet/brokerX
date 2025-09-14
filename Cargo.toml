@@ -1,4 +1,3 @@
 [workspace]
-members = [ "app","domain"
-]
+members = [ "app","domain", "in_memory_adapter" ]
 resolver = "3"

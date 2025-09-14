@@ -1,3 +1,5 @@
+use domain::core::BrokerX;
+
 fn main() {
-    println!("Hello, world!");
+    let broker_x = BrokerX::new();
 }
