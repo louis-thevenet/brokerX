@@ -25,9 +25,9 @@ impl BrokerX {
     }
     pub fn debug_populate(&mut self) {
         let _id = self.account_repo.create_account(
-            String::from("Test Test"),
+            String::from("Test"),
+            String::from("Test"),
             String::from("test@test.com"),
-            String::from("test"),
             String::from("test"),
             1000.0,
         );
