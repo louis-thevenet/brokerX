@@ -1,29 +1,41 @@
 pub mod auth;
 pub mod handlers;
+pub mod jwt;
 pub mod templates;
 
 use std::sync::{Arc, Mutex};
 use axum::{
+    middleware,
     Router,
     routing::{get, post},
 };
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use domain::core::BrokerX;
 
-use handlers::{home, login_page, login_submit, logout, register_page, register_submit};
+use handlers::{dashboard, home, login_page, login_submit, logout, register_page, register_submit};
 
 // App state type
 pub type AppState = Arc<Mutex<BrokerX>>;
 
 pub fn create_app(state: AppState) -> Router {
+    // Public routes (no authentication required)
+    let public_routes = Router::new()
+        .route("/", get(home))
+        .route("/login", get(login_page).post(login_submit))
+        .route("/register", get(register_page).post(register_submit));
+
+    // Protected routes (authentication required)
+    let protected_routes = Router::new()
+        .route("/dashboard", get(dashboard))
+        .route("/logout", post(logout))
+        .route_layer(middleware::from_fn_with_state(state.clone(), jwt::auth_middleware));
+
     Router::new()
         // Static file serving
         .nest_service("/static", ServeDir::new("static"))
-        // Authentication routes
-        .route("/", get(home))
-        .route("/login", get(login_page).post(login_submit))
-        .route("/register", get(register_page).post(register_submit))
-        .route("/logout", post(logout))
+        // Merge routes
+        .merge(public_routes)
+        .merge(protected_routes)
         // Add tracing middleware
         .layer(TraceLayer::new_for_http())
         // Add state
