@@ -28,7 +28,7 @@ L'application « BrokerX » est un système monolithique avec interface en ligne
 - **Clients** : utilisateurs via interface web/mobile.
 
 - **Opérations Back-Office** : gestion des règlements, supervision.
-  **Risque** \*\*: surveillance pré- et post-trade.
+  **Risque** : surveillance pré- et post-trade.
 
 - **Fournisseurs de données de marché** : cotations en temps réel.
 
@@ -168,8 +168,9 @@ Le système permet aux utilisateurs de :
 
 - Environnement d'execution
 
-  - **Interface** : Application monolithique Rust en ligne de commande.
+  - **Interface** : Application monolithique Rust avec interface Web.
   - **Déploiement** : Docker, Cargo
+  <!-- TODO docker ? -->
 
 - **Dépendances externes**
   - **Base de données relationnelle** (ex. PostgreSQL, SQLite pour le proto) pour stocker :
@@ -178,7 +179,7 @@ Le système permet aux utilisateurs de :
     - Portefeuilles
   - **Fournisseur de données de marché**.
 - **Interfaces utilisateurs**
-  - Interface en ligne de commande (CLI).
+  - Interface web
 
 ## 4. Stratégie de solution
 
@@ -210,7 +211,7 @@ Le système permet aux utilisateurs de :
 
 ## 9. Décisions d'architecture
 
-Veuillez consulter le fichier `/docs/adr/adr001.md`.
+<!-- TODO: les lister -->
 
 ## 10. Exigences qualité
 

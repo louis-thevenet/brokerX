@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}Place Order - BrokerX{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <div class="nav">
+            <div class="logo">BrokerX</div>
+            <div class="nav-links">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/accounts">Accounts</a>
+                <a href="/orders">Orders</a>
+                <a href="/place_order" style="color: #5a67d8;">Trade</a>
+                <form action="/logout" method="post" style="margin: 0;">
+                    <button type="submit" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">
+                        Logout
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div style="margin-bottom: 30px;">
+            <h1 style="margin-bottom: 10px;">Place Order</h1>
+            <p style="color: #718096;">Enter your trade details below.</p>
+        </div>
+
+        {% if let Some(error) = error %}
+        <div class="error">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="grid grid-2" style="gap: 30px;">
+            <!-- Order Form -->
+            <div class="card">
+                <h2 style="margin-bottom: 20px; color: #4a5568;">Order Details</h2>
+                
+                <form action="/place_order" method="post">
+                    <div class="form-group">
+                        <label for="symbol">Symbol</label>
+                        <input type="text" id="symbol" name="symbol" required 
+                               placeholder="e.g., AAPL, GOOGL, MSFT" style="text-transform: uppercase;">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="order_type">Order Type</label>
+                        <select id="order_type" name="order_type" required>
+                            <option value="">Select order type</option>
+                            <option value="buy">Buy</option>
+                            <option value="sell">Sell</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="quantity">Quantity</label>
+                        <input type="number" id="quantity" name="quantity" required min="1"
+                               placeholder="Number of shares">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="price">Price per Share</label>
+                        <input type="number" id="price" name="price" required min="0.01" step="0.01"
+                               placeholder="0.00">
+                    </div>
+
+                    <div style="margin-bottom: 20px; padding: 15px; background: #f7fafc; border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="color: #4a5568;">Estimated Total:</span>
+                            <span style="font-weight: bold; color: #5a67d8;" id="estimated-total">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span style="color: #4a5568;">Commission:</span>
+                            <span style="color: #718096;">$0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+                            <span style="color: #4a5568; font-weight: 600;">Total Cost:</span>
+                            <span style="font-weight: bold; color: #4a5568;" id="total-cost">$0.00</span>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn" style="width: 100%;">Place Order</button>
+                </form>
+            </div>
+
+            <!-- Market Info & Account Balance -->
+            <div>
+                <!-- Account Balance -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #4a5568;">Account Balance</h3>
+                    <div style="margin-bottom: 15px;">
+                        <p style="color: #718096; font-size: 14px; margin-bottom: 5px;">Available Cash</p>
+                        <p style="font-size: 24px; font-weight: bold; color: #38a169;">$8,497.50</p>
+                    </div>
+                    <div>
+                        <p style="color: #718096; font-size: 14px; margin-bottom: 5px;">Buying Power</p>
+                        <p style="font-size: 20px; font-weight: bold; color: #5a67d8;">$25,492.50</p>
+                    </div>
+                </div>
+
+                <!-- Market Data (Placeholder) -->
+                <div class="card">
+                    <h3 style="margin-bottom: 15px; color: #4a5568;">Market Data</h3>
+                    <div style="margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 500;">AAPL</span>
+                            <span style="color: #38a169;">$150.25 (+1.2%)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 500;">GOOGL</span>
+                            <span style="color: #38a169;">$2,800.75 (+0.8%)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 500;">MSFT</span>
+                            <span style="color: #e53e3e;">$420.10 (-0.5%)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <span style="font-weight: 500;">TSLA</span>
+                            <span style="color: #38a169;">$245.60 (+2.1%)</span>
+                        </div>
+                    </div>
+                    <p style="color: #718096; font-size: 12px;">
+                        * Prices are delayed by 15 minutes
+                    </p>
+                </div>
+
+                <!-- Trading Tips -->
+                <div class="card" style="margin-top: 20px;">
+                    <h3 style="margin-bottom: 15px; color: #4a5568;">Trading Tips</h3>
+                    <ul style="color: #718096; font-size: 14px; margin-left: 20px;">
+                        <li style="margin-bottom: 8px;">Review current market conditions</li>
+                        <li style="margin-bottom: 8px;">Set appropriate stop-loss levels</li>
+                        <li style="margin-bottom: 8px;">Consider your risk tolerance</li>
+                        <li style="margin-bottom: 8px;">Diversify your portfolio</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Calculate estimated total
+    function updateEstimatedTotal() {
+        const quantity = document.getElementById('quantity').value || 0;
+        const price = document.getElementById('price').value || 0;
+        const total = quantity * price;
+        
+        document.getElementById('estimated-total').textContent = '$' + total.toFixed(2);
+        document.getElementById('total-cost').textContent = '$' + total.toFixed(2);
+    }
+
+    document.getElementById('quantity').addEventListener('input', updateEstimatedTotal);
+    document.getElementById('price').addEventListener('input', updateEstimatedTotal);
+</script>
+{% endblock %}

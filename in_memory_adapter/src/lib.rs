@@ -32,11 +32,18 @@ where
         self.storage.get_mut(id)
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.storage.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.storage.is_empty()
+    }
+
+    /// Iterate over all (id, item) pairs in the repository
+    pub fn iter(&self) -> impl Iterator<Item = (&Id, &T)> {
+        self.storage.iter()
     }
 }

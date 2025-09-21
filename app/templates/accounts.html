@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Accounts - BrokerX{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <div class="nav">
+            <div class="logo">BrokerX</div>
+            <div class="nav-links">
+                <a href="/dashboard">Dashboard</a>
+                <a href="/accounts" style="color: #5a67d8;">Accounts</a>
+                <a href="/orders">Orders</a>
+                <a href="/place_order">Trade</a>
+                <form action="/logout" method="post" style="margin: 0;">
+                    <button type="submit" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">
+                        Logout
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div style="margin-bottom: 30px;">
+            <h1 style="margin-bottom: 10px;">Your Accounts</h1>
+            <p style="color: #718096;">Manage your trading accounts and view balances.</p>
+        </div>
+
+        <div class="grid grid-2">
+            {% for account in accounts %}
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin-bottom: 5px; color: #4a5568;">{{ account.name }}</h3>
+                        <p style="color: #718096; font-size: 14px; font-family: monospace;">{{ account.id }}</p>
+                    </div>
+                    <span style="background: #e2e8f0; color: #4a5568; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;">
+                        {{ account.account_type }}
+                    </span>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <p style="color: #718096; font-size: 14px; margin-bottom: 5px;">Current Balance</p>
+                    <p style="font-size: 24px; font-weight: bold; color: #38a169;">${{ account.balance }}</p>
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn" style="font-size: 14px; padding: 8px 16px;">View Details</button>
+                    <button class="btn btn-secondary" style="font-size: 14px; padding: 8px 16px;">Transfer</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if accounts.is_empty() %}
+        <div class="card" style="text-align: center; padding: 40px;">
+            <h3 style="margin-bottom: 15px; color: #4a5568;">No Accounts Found</h3>
+            <p style="color: #718096; margin-bottom: 20px;">You don't have any trading accounts yet.</p>
+            <button class="btn">Open New Account</button>
+        </div>
+        {% endif %}
+
+        <!-- Account Summary -->
+        <div style="margin-top: 30px;">
+            <h2 style="margin-bottom: 20px; color: #4a5568;">Account Summary</h2>
+            <div class="card">
+                <div class="grid grid-3">
+                    <div style="text-align: center;">
+                        <h3 style="margin-bottom: 10px; color: #4a5568;">Total Assets</h3>
+                    <p style="font-size: 24px; font-weight: bold; color: #5a67d8;">$35,000.00</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <h3 style="margin-bottom: 10px; color: #4a5568;">Available Cash</h3>
+                        <p style="font-size: 24px; font-weight: bold; color: #38a169;">$8,500.00</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <h3 style="margin-bottom: 10px; color: #4a5568;">Invested</h3>
+                        <p style="font-size: 24px; font-weight: bold; color: #ed8936;">$26,500.00</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div style="margin-top: 30px;">
+            <h2 style="margin-bottom: 20px; color: #4a5568;">Recent Transactions</h2>
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Account</th>
+                            <th>Amount</th>
+                            <th>Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>2025-09-21</td>
+                            <td>Buy 10 AAPL</td>
+                            <td>Trading Account</td>
+                            <td style="color: #e53e3e;">-$1,502.50</td>
+                            <td>$8,497.50</td>
+                        </tr>
+                        <tr>
+                            <td>2025-09-20</td>
+                            <td>Dividend MSFT</td>
+                            <td>Trading Account</td>
+                            <td style="color: #38a169;">+$85.00</td>
+                            <td>$10,000.00</td>
+                        </tr>
+                        <tr>
+                            <td>2025-09-19</td>
+                            <td>Sell 5 GOOGL</td>
+                            <td>Margin Account</td>
+                            <td style="color: #38a169;">+$14,003.75</td>
+                            <td>$25,000.00</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

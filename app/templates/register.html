@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Register - BrokerX{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="max-width: 400px; margin: 50px auto;">
+        <div class="main-content">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 class="logo" style="font-size: 32px; margin-bottom: 10px;">BrokerX</h1>
+                <p style="color: #718096;">Create your trading account today.</p>
+            </div>
+
+            {% if let Some(error) = error %}
+            <div class="error">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form action="/register" method="post">
+                <div class="form-group">
+                    <label for="firstname">Firstname</label>
+                    <input type="text" id="firstname" name="firstname" required 
+                           placeholder="">
+                </div>
+
+              <div class="form-group">
+                    <label for="surname">Surname</label>
+                    <input type="text" id="surname" name="surname" required 
+                           placeholder="">
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" name="email" required 
+                           placeholder="your.email@example.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required 
+                           placeholder="At least 6 characters">
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" id="confirm_password" name="confirm_password" required 
+                           placeholder="Re-enter your password">
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <button type="submit" class="btn" style="width: 100%;">Create Account</button>
+                </div>
+            </form>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <p style="color: #718096;">
+                    Already have an account? 
+                    <a href="/login" style="color: #5a67d8; text-decoration: none; font-weight: 500;">Sign in here</a>
+                </p>
+            </div>
+
+            <div style="margin-top: 30px; padding: 20px; background: #f7fafc; border-radius: 8px;">
+                <h3 style="margin-bottom: 10px; color: #4a5568;">Account Benefits</h3>
+                <ul style="color: #718096; font-size: 14px; margin-left: 20px;">
+                    <li>Real-time market data</li>
+                    <li>Advanced trading tools</li>
+                    <li>Portfolio management</li>
+                    <li>24/7 customer support</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

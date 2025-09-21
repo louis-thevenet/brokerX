@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use rand::random;
 
 use crate::{
-    account::{Account, AccountRepo, AccountRepoExt},
+    account::{AccountRepo, AccountRepoExt},
     order::{Order, OrderId, OrderRepo, OrderStatus},
 };
 
@@ -24,10 +24,12 @@ impl BrokerX {
         }
     }
     pub fn debug_populate(&mut self) {
-        let id = self.account_repo.create_account(
+        let _id = self.account_repo.create_account(
             String::from("Test Test"),
             String::from("test@test.com"),
-            0.0,
+            String::from("test"),
+            String::from("test"),
+            1000.0,
         );
     }
 
