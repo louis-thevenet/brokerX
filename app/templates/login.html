@@ -84,6 +84,14 @@
             margin-bottom: 20px;
             border-left: 4px solid #c53030;
         }
+        .success {
+            background: #c6f6d5;
+            color: #276749;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #48bb78;
+        }
     </style>
 </head>
 <body>
@@ -93,6 +101,12 @@
                 <h1 class="logo">BrokerX</h1>
                 <p style="color: #718096;">Welcome back! Please sign in to your account.</p>
             </div>
+
+            {% if let Some(success) = success %}
+            <div class="success">
+                {{ success }}
+            </div>
+            {% endif %}
 
             {% if let Some(error) = error %}
             <div class="error">

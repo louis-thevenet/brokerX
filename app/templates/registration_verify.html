@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Your Email - BrokerX{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">Email Verification Required</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info" role="alert">
+                    <i class="fas fa-envelope"></i>
+                    We've sent a 6-digit verification code to your email address. Please enter it below to activate your account and complete registration.
+                </div>
+
+                {% if let Some(error_msg) = error %}
+                    <div class="alert alert-danger" role="alert">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        {{ error_msg }}
+                    </div>
+                {% endif %}
+
+                <form method="POST" action="/verify-registration">
+                    <input type="hidden" name="challenge_id" value="{{ challenge_id }}">
+                    <input type="hidden" name="user_id" value="{{ user_id }}">
+                    
+                    <div class="mb-3">
+                        <label for="code" class="form-label">Verification Code</label>
+                        <input type="text" 
+                               class="form-control text-center" 
+                               id="code" 
+                               name="code" 
+                               required 
+                               maxlength="6"
+                               pattern="[0-9]{6}"
+                               placeholder="000000"
+                               style="font-size: 1.5rem; letter-spacing: 0.5rem;">
+                        <div class="form-text">Enter the 6-digit code sent to your email</div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-check-circle"></i>
+                            Verify Email & Complete Registration
+                        </button>
+                    </div>
+                </form>
+
+                <div class="mt-3 text-center">
+                    <small class="text-muted">
+                        Didn't receive the code? Check your spam folder or 
+                        <a href="/register" class="text-decoration-none">try registering again</a>.
+                    </small>
+                </div>
+
+                <div class="mt-2 text-center">
+                    <small class="text-muted">
+                        The verification code expires in 5 minutes for security.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

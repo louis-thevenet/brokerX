@@ -13,6 +13,7 @@ pub struct User {
     pub firstname: String,
     pub surname: String,
     pub balance: f64,
+    pub is_verified: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -64,6 +65,7 @@ impl User {
             firstname,
             surname,
             balance: initial_balance,
+            is_verified: false,
             created_at: chrono::Utc::now(),
         })
     }
@@ -96,6 +98,16 @@ impl User {
     /// Get the current balance
     pub fn get_balance(&self) -> f64 {
         self.balance
+    }
+
+    /// Mark the user as verified
+    pub fn verify_email(&mut self) {
+        self.is_verified = true;
+    }
+
+    /// Check if the user's email is verified
+    pub fn is_email_verified(&self) -> bool {
+        self.is_verified
     }
 }
 
@@ -157,6 +169,12 @@ pub trait UserRepoExt {
 
     /// Gets the balance of a user's account
     fn get_user_balance(&self, user_id: &UserId) -> Option<f64>;
+
+    /// Marks a user as verified by email
+    fn verify_user_email(&mut self, user_id: &UserId) -> Result<(), &'static str>;
+
+    /// Checks if a user is verified
+    fn is_user_verified(&self, user_id: &UserId) -> Option<bool>;
 }
 
 #[async_trait]
@@ -199,6 +217,9 @@ impl UserRepoExt for UserRepo {
             .iter()
             .find(|(_, user)| user.username == username || user.email == username)
         {
+            if !user.is_verified {
+                return Err(AuthError::UserNotFound); // Treat unverified users as not found for security
+            }
             if user.verify_password(password) {
                 Ok(*user_id)
             } else {
@@ -288,5 +309,18 @@ impl UserRepoExt for UserRepo {
 
     fn get_user_balance(&self, user_id: &UserId) -> Option<f64> {
         self.get(user_id).map(|user| user.balance)
+    }
+
+    fn verify_user_email(&mut self, user_id: &UserId) -> Result<(), &'static str> {
+        if let Some(user) = self.get_mut(user_id) {
+            user.verify_email();
+            Ok(())
+        } else {
+            Err("User not found")
+        }
+    }
+
+    fn is_user_verified(&self, user_id: &UserId) -> Option<bool> {
+        self.get(user_id).map(|user| user.is_email_verified())
     }
 }

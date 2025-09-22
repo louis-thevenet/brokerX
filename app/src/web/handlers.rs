@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::web::{
     jwt,
-    templates::{DashboardTemplate, LoginTemplate, MfaVerifyTemplate, RegisterTemplate},
+    templates::{DashboardTemplate, LoginTemplate, MfaVerifyTemplate, RegisterTemplate, RegistrationVerifyTemplate},
     AppState,
 };
 use domain::user::UserRepoExt;
@@ -37,8 +37,26 @@ pub struct MfaVerifyForm {
 }
 
 #[derive(Deserialize)]
+pub struct RegistrationVerifyForm {
+    pub challenge_id: String,
+    pub user_id: String,
+    pub code: String,
+}
+
+#[derive(Deserialize)]
 pub struct MfaQuery {
     pub challenge_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct RegistrationVerifyQuery {
+    pub challenge_id: String,
+    pub user_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct LoginQuery {
+    pub registered: Option<String>,
 }
 
 // Handler functions
@@ -46,8 +64,17 @@ pub async fn home() -> Redirect {
     Redirect::permanent("/dashboard")
 }
 
-pub async fn login_page() -> Result<Html<String>, StatusCode> {
-    let template = LoginTemplate { error: None };
+pub async fn login_page(Query(params): Query<LoginQuery>) -> Result<Html<String>, StatusCode> {
+    let success = if params.registered.is_some() {
+        Some("Registration successful! Your email has been verified. You can now log in.".to_string())
+    } else {
+        None
+    };
+    
+    let template = LoginTemplate { 
+        error: None,
+        success,
+    };
     match template.render() {
         Ok(html) => Ok(Html(html)),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -67,6 +94,7 @@ pub async fn login_submit(
         );
         let template = LoginTemplate {
             error: Some("Email and password are required".to_string()),
+            success: None,
         };
         return match template.render() {
             Ok(html) => Html(html).into_response(),
@@ -87,6 +115,7 @@ pub async fn login_submit(
         warn!("Failed authentication attempt for email: {}", form.email);
         let template = LoginTemplate {
             error: Some("Invalid email or password".to_string()),
+            success: None,
         };
         return match template.render() {
             Ok(html) => Html(html).into_response(),
@@ -123,6 +152,7 @@ pub async fn login_submit(
             );
             let template = LoginTemplate {
                 error: Some(format!("Failed to send verification code: {e}")),
+                success: None,
             };
             match template.render() {
                 Ok(html) => Html(html).into_response(),
@@ -204,7 +234,7 @@ pub async fn register_submit(
     }
 
     // Create user in the domain layer
-    let _user_id = {
+    let user_id = {
         let mut broker = app_state.lock().unwrap();
         match broker.user_repo.create_user(
             form.email.clone(), // username = email for now
@@ -230,10 +260,42 @@ pub async fn register_submit(
         }
     };
 
-    debug!("Registration successful for user: {}", form.email);
+    // Initiate MFA for email verification
+    let challenge_id_result = {
+        let broker = app_state.lock().unwrap();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(broker.mfa_service.initiate_mfa(&form.email))
+        })
+    };
 
-    // Redirect to login page with success
-    Redirect::to("/login").into_response()
+    match challenge_id_result {
+        Ok(challenge_id) => {
+            info!(
+                "Registration MFA challenge initiated for email: {}, challenge_id: {}",
+                form.email, challenge_id
+            );
+            // Redirect to registration MFA verification page
+            Redirect::to(&format!("/verify-registration?challenge_id={challenge_id}&user_id={user_id}")).into_response()
+        }
+        Err(e) => {
+            error!(
+                "Failed to initiate registration MFA for email: {}, error: {}",
+                form.email, e
+            );
+            // Delete the created user since verification failed
+            {
+                let mut broker = app_state.lock().unwrap();
+                let _ = broker.user_repo.remove(&user_id);
+            }
+            let template = RegisterTemplate {
+                error: Some(format!("Failed to send verification email: {e}")),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+    }
 }
 
 pub async fn logout() -> Response {
@@ -415,6 +477,112 @@ pub async fn mfa_verify_submit(
         Err(e) => {
             let template = MfaVerifyTemplate {
                 challenge_id: form.challenge_id,
+                error: Some(format!("Verification failed: {e}")),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+    }
+}
+
+pub async fn registration_verify_page(Query(params): Query<RegistrationVerifyQuery>) -> Result<Html<String>, StatusCode> {
+    let template = RegistrationVerifyTemplate {
+        challenge_id: params.challenge_id,
+        user_id: params.user_id,
+        error: None,
+    };
+    match template.render() {
+        Ok(html) => Ok(Html(html)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+pub async fn registration_verify_submit(
+    State(app_state): State<AppState>,
+    Form(form): Form<RegistrationVerifyForm>,
+) -> Response {
+    if form.code.is_empty() || form.code.len() != 6 {
+        let template = RegistrationVerifyTemplate {
+            challenge_id: form.challenge_id,
+            user_id: form.user_id,
+            error: Some("Please enter a valid 6-digit code".to_string()),
+        };
+        return match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
+
+    // Parse user ID
+    let user_id = match Uuid::parse_str(&form.user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            let template = RegistrationVerifyTemplate {
+                challenge_id: form.challenge_id,
+                user_id: form.user_id,
+                error: Some("Invalid user ID".to_string()),
+            };
+            return match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
+    };
+
+    // Verify the MFA code
+    let verification_result = {
+        let broker = app_state.lock().unwrap();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                broker
+                    .mfa_service
+                    .verify_mfa(&form.challenge_id, &form.code),
+            )
+        })
+    };
+
+    match verification_result {
+        Ok(true) => {
+            // MFA verified successfully, mark user as verified
+            let verification_success = {
+                let mut broker = app_state.lock().unwrap();
+                broker.user_repo.verify_user_email(&user_id).is_ok()
+            };
+
+            if verification_success {
+                info!("Email verification successful for user ID: {}", user_id);
+                // Redirect to login page with success message
+                // For now, we'll redirect to login page with a query parameter
+                Redirect::to("/login?registered=true").into_response()
+            } else {
+                let template = RegistrationVerifyTemplate {
+                    challenge_id: form.challenge_id,
+                    user_id: form.user_id,
+                    error: Some("Failed to verify user account".to_string()),
+                };
+                match template.render() {
+                    Ok(html) => Html(html).into_response(),
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
+            }
+        }
+        Ok(false) => {
+            let template = RegistrationVerifyTemplate {
+                challenge_id: form.challenge_id,
+                user_id: form.user_id,
+                error: Some("Invalid verification code".to_string()),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+        Err(e) => {
+            let template = RegistrationVerifyTemplate {
+                challenge_id: form.challenge_id,
+                user_id: form.user_id,
                 error: Some(format!("Verification failed: {e}")),
             };
             match template.render() {

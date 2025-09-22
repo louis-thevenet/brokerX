@@ -4,6 +4,7 @@ use askama::Template;
 #[template(path = "login.html")]
 pub struct LoginTemplate {
     pub error: Option<String>,
+    pub success: Option<String>,
 }
 
 #[derive(Template)]
@@ -16,6 +17,14 @@ pub struct RegisterTemplate {
 #[template(path = "mfa_verify.html")]
 pub struct MfaVerifyTemplate {
     pub challenge_id: String,
+    pub error: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "registration_verify.html")]
+pub struct RegistrationVerifyTemplate {
+    pub challenge_id: String,
+    pub user_id: String,
     pub error: Option<String>,
 }
 

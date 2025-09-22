@@ -24,6 +24,10 @@ where
         self.storage.insert(id, item);
     }
 
+    pub fn remove(&mut self, id: &Id) -> Option<T> {
+        self.storage.remove(id)
+    }
+
     pub fn get(&self, id: &Id) -> Option<&T> {
         self.storage.get(id)
     }
