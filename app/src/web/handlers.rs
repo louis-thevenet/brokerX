@@ -7,8 +7,12 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::web::{jwt, templates::*, AppState};
-use domain::account::AccountRepoExt;
+use crate::web::{
+    jwt,
+    templates::{DashboardTemplate, LoginTemplate, MfaVerifyTemplate, RegisterTemplate},
+    AppState,
+};
+use domain::user::UserRepoExt;
 
 #[derive(Deserialize)]
 pub struct LoginForm {
@@ -64,15 +68,15 @@ pub async fn login_submit(
     }
 
     // First factor authentication using the domain layer
-    let account_found = {
+    let user_id_found = {
         let broker = app_state.lock().unwrap();
         broker
-            .account_repo
-            .authenticate(&form.email, &form.password)
-            .is_some()
+            .user_repo
+            .authenticate_user(&form.email, &form.password)
+            .is_ok()
     };
 
-    if !account_found {
+    if !user_id_found {
         let template = LoginTemplate {
             error: Some("Invalid email or password".to_string()),
         };
@@ -82,8 +86,6 @@ pub async fn login_submit(
         };
     }
 
-    // Initiate MFA challenge
-    let target_email = "louis.tvnt@gmail.com";
     let challenge_id_result = {
         let broker = app_state.lock().unwrap();
         // TODO: tokio::task::spawn_blocking ?
@@ -159,9 +161,9 @@ pub async fn register_submit(
     // Check if username already exists using the domain layer
     {
         let broker = app_state.lock().unwrap();
-        if broker.account_repo.email_exists(&form.email) {
+        if broker.user_repo.email_exists(&form.email) {
             let template = RegisterTemplate {
-                error: Some("Username already exists".to_string()),
+                error: Some("Email already exists".to_string()),
             };
             return match template.render() {
                 Ok(html) => Html(html).into_response(),
@@ -170,27 +172,35 @@ pub async fn register_submit(
         }
     }
 
-    // Create account in the domain layer
-    let _account_id = {
+    // Create user in the domain layer
+    let _user_id = {
         let mut broker = app_state.lock().unwrap();
-        let account_id = broker.account_repo.create_account(
-            form.firstname.clone(),
-            form.surname.clone(),
+        match broker.user_repo.create_user(
+            form.email.clone(), // username = email for now
             form.email.clone(),
             form.password.clone(),
+            form.firstname.clone(),
+            form.surname.clone(),
             1000.0, // TODO: change
-        );
-
-        println!(
-            "Created new account for user: {} (ID: {})",
-            form.email, account_id
-        );
-        println!(
-            "Account created with email: {} and initial balance: $1000.00",
-            form.email
-        );
-
-        account_id
+        ) {
+            Ok(user_id) => {
+                println!("Created new user: {} (ID: {})", form.email, user_id);
+                println!(
+                    "User created with email: {} and initial balance: $1000.00",
+                    form.email
+                );
+                user_id
+            }
+            Err(e) => {
+                let template = RegisterTemplate {
+                    error: Some(format!("Registration failed: {e}")),
+                };
+                return match template.render() {
+                    Ok(html) => Html(html).into_response(),
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                };
+            }
+        }
     };
 
     println!("Registration successful for user: {}", form.email);
@@ -214,34 +224,31 @@ pub async fn dashboard(
     State(app_state): State<AppState>,
     request: axum::extract::Request,
 ) -> Response {
-    // Extract user claims from request (added by auth middleware)
-    let claims = match request.extensions().get::<jwt::Claims>() {
-        Some(claims) => claims,
-        None => return Redirect::to("/login").into_response(),
+    // Extract user claims from request
+    let Some(claims) = request.extensions().get::<jwt::Claims>() else {
+        return Redirect::to("/login").into_response();
     };
 
-    // Get user account from domain layer
-    let account_id = match Uuid::parse_str(&claims.sub) {
-        Ok(id) => id,
-        Err(_) => return Redirect::to("/login").into_response(),
+    // Get user from domain layer
+    let Ok(user_id) = Uuid::parse_str(&claims.sub) else {
+        return Redirect::to("/login").into_response();
     };
 
     let broker = app_state.lock().unwrap();
-    let account = match broker.account_repo.get(&account_id) {
-        Some(account) => account,
-        None => return Redirect::to("/login").into_response(),
+    let Some(user) = broker.user_repo.get(&user_id) else {
+        return Redirect::to("/login").into_response();
     };
 
-    let balance = broker.account_repo.get_balance(&account_id).unwrap_or(0.0);
+    let balance = broker.user_repo.get_user_balance(&user_id).unwrap_or(0.0);
 
     // Create dashboard template (we'll need to create this)
     let template = DashboardTemplate {
         username: &claims.email,
-        firstname: &account.firstname,
-        surname: &account.surname,
-        email: &account.email,
+        firstname: &user.firstname,
+        surname: &user.surname,
+        email: &user.email,
         account_balance: balance,
-        recent_orders: vec![], // Empty for now, will be populated when order system is implemented
+        recent_orders: vec![], // TODO: Empty for now, will be populated when order system is implemented
     };
 
     match template.render() {
@@ -301,42 +308,43 @@ pub async fn mfa_verify_submit(
 
             match challenge {
                 Ok(challenge) => {
-                    // Get the account using the email from the challenge
-                    let (account_id, email) = {
+                    // Get the user using the email from the challenge
+                    let (user_id, email) = {
                         let broker = app_state.lock().unwrap();
-                        match broker
-                            .account_repo
-                            .get_account_id_by_email(&challenge.user_email)
+                        if let Some(user) =
+                            broker.user_repo.get_user_by_email(&challenge.user_email)
                         {
-                            Some(account_id) => {
-                                if let Some(account) = broker.account_repo.get(&account_id) {
-                                    (account_id, account.email.clone())
-                                } else {
-                                    let template = MfaVerifyTemplate {
-                                        challenge_id: form.challenge_id,
-                                        error: Some("Account not found".to_string()),
-                                    };
-                                    return match template.render() {
-                                        Ok(html) => Html(html).into_response(),
-                                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                                    };
-                                }
-                            }
-                            None => {
+                            // Find the user ID by iterating through the repo
+                            if let Some((id, _)) = broker
+                                .user_repo
+                                .iter()
+                                .find(|(_, stored_user)| stored_user.email == user.email)
+                            {
+                                (*id, user.email.clone())
+                            } else {
                                 let template = MfaVerifyTemplate {
                                     challenge_id: form.challenge_id,
-                                    error: Some("User account not found".to_string()),
+                                    error: Some("User ID not found".to_string()),
                                 };
                                 return match template.render() {
                                     Ok(html) => Html(html).into_response(),
                                     Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
                                 };
                             }
+                        } else {
+                            let template = MfaVerifyTemplate {
+                                challenge_id: form.challenge_id,
+                                error: Some("User account not found".to_string()),
+                            };
+                            return match template.render() {
+                                Ok(html) => Html(html).into_response(),
+                                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                            };
                         }
                     };
 
                     // Create JWT token
-                    if let Ok(token) = jwt::create_jwt(account_id, email) {
+                    if let Ok(token) = jwt::create_jwt(user_id, email) {
                         // Create response with auth cookie
                         let mut response = Redirect::to("/dashboard").into_response();
                         response.headers_mut().insert(
@@ -358,7 +366,7 @@ pub async fn mfa_verify_submit(
                 Err(e) => {
                     let template = MfaVerifyTemplate {
                         challenge_id: form.challenge_id,
-                        error: Some(format!("Challenge error: {}", e)),
+                        error: Some(format!("Challenge error: {e}")),
                     };
                     match template.render() {
                         Ok(html) => Html(html).into_response(),
@@ -380,7 +388,7 @@ pub async fn mfa_verify_submit(
         Err(e) => {
             let template = MfaVerifyTemplate {
                 challenge_id: form.challenge_id,
-                error: Some(format!("Verification failed: {}", e)),
+                error: Some(format!("Verification failed: {e}")),
             };
             match template.render() {
                 Ok(html) => Html(html).into_response(),

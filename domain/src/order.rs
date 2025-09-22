@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use in_memory_adapter::InMemoryRepo;
 use uuid::Uuid;
 
-use crate::account::AccountId;
+use crate::user::UserId;
 #[derive(Debug)]
 pub enum OrderStatus {
     /// Order has not yet been processed by the system
@@ -31,7 +31,7 @@ pub enum IssuerType {
 
 #[derive(Debug)]
 pub struct Order {
-    pub client_id: AccountId,
+    pub client_id: UserId,
     pub date: NaiveDateTime,
     pub symbol: String,
     pub quantity: u64,

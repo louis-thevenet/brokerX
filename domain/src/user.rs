@@ -3,7 +3,6 @@ use color_eyre::Result;
 use in_memory_adapter::InMemoryRepo;
 use uuid::Uuid;
 
-use crate::account::AccountId;
 use crate::mfa::{MfaError, MfaProvider, MfaService};
 
 #[derive(Debug, Clone)]
@@ -11,9 +10,14 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub password_hash: String,
-    pub account_id: AccountId,
+    pub firstname: String,
+    pub surname: String,
+    pub balance: f64,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
+
+#[derive(Debug)]
+pub struct NotEnoughMoneyError;
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -45,7 +49,9 @@ impl User {
         username: String,
         email: String,
         password: String,
-        account_id: AccountId,
+        firstname: String,
+        surname: String,
+        initial_balance: f64,
     ) -> Result<Self, AuthError> {
         if password.len() < 6 {
             return Err(AuthError::WeakPassword);
@@ -55,7 +61,9 @@ impl User {
             username,
             email,
             password_hash: Self::hash_password(&password),
-            account_id,
+            firstname,
+            surname,
+            balance: initial_balance,
             created_at: chrono::Utc::now(),
         })
     }
@@ -69,6 +77,25 @@ impl User {
     fn hash_password(password: &str) -> String {
         // Simple hash for demonstration - use bcrypt in production!
         format!("hash_{}", password)
+    }
+
+    /// Deposit money into the user's account
+    pub fn deposit(&mut self, amount: f64) {
+        self.balance += amount;
+    }
+
+    /// Withdraw money from the user's account
+    pub fn withdraw(&mut self, amount: f64) -> Result<(), NotEnoughMoneyError> {
+        if self.balance < amount {
+            return Err(NotEnoughMoneyError);
+        }
+        self.balance -= amount;
+        Ok(())
+    }
+
+    /// Get the current balance
+    pub fn get_balance(&self) -> f64 {
+        self.balance
     }
 }
 
@@ -84,11 +111,13 @@ pub trait UserRepoExt {
         username: String,
         email: String,
         password: String,
-        account_id: AccountId,
+        firstname: String,
+        surname: String,
+        initial_balance: f64,
     ) -> Result<UserId, AuthError>;
 
     /// Authenticates a user by username and password (first factor)
-    fn authenticate_user(&self, username: &str, password: &str) -> Result<AccountId, AuthError>;
+    fn authenticate_user(&self, username: &str, password: &str) -> Result<UserId, AuthError>;
 
     /// Initiates MFA for a user after successful first-factor authentication
     async fn initiate_mfa<P: MfaProvider>(
@@ -108,11 +137,26 @@ pub trait UserRepoExt {
     /// Gets a user by username
     fn get_user_by_username(&self, username: &str) -> Option<&User>;
 
+    /// Gets a user by email
+    fn get_user_by_email(&self, email: &str) -> Option<&User>;
+
+    /// Gets a user by user ID
+    fn get_user_by_id(&self, user_id: &UserId) -> Option<&User>;
+
     /// Checks if a username already exists
     fn username_exists(&self, username: &str) -> bool;
 
-    /// Gets a user by account ID
-    fn get_user_by_account_id(&self, account_id: &AccountId) -> Option<&User>;
+    /// Checks if an email already exists
+    fn email_exists(&self, email: &str) -> bool;
+
+    /// Deposits money to a user's account
+    fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), &'static str>;
+
+    /// Withdraws money from a user's account
+    fn withdraw_from_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), &'static str>;
+
+    /// Gets the balance of a user's account
+    fn get_user_balance(&self, user_id: &UserId) -> Option<f64>;
 }
 
 #[async_trait]
@@ -122,24 +166,31 @@ impl UserRepoExt for UserRepo {
         username: String,
         email: String,
         password: String,
-        account_id: AccountId,
+        firstname: String,
+        surname: String,
+        initial_balance: f64,
     ) -> Result<UserId, AuthError> {
         // Check if username already exists
         if self.username_exists(&username) {
             return Err(AuthError::UserAlreadyExists);
         }
 
-        let user = User::new(username, email, password, account_id)?;
+        // Check if email already exists
+        if self.email_exists(&email) {
+            return Err(AuthError::UserAlreadyExists);
+        }
+
+        let user = User::new(username, email, password, firstname, surname, initial_balance)?;
         let user_id = Uuid::new_v4();
         self.insert(user_id, user);
 
         Ok(user_id)
     }
 
-    fn authenticate_user(&self, username: &str, password: &str) -> Result<AccountId, AuthError> {
-        if let Some(user) = self.get_user_by_username(username) {
+    fn authenticate_user(&self, username: &str, password: &str) -> Result<UserId, AuthError> {
+        if let Some((user_id, user)) = self.iter().find(|(_, user)| user.username == username || user.email == username) {
             if user.verify_password(password) {
-                Ok(user.account_id)
+                Ok(*user_id)
             } else {
                 Err(AuthError::InvalidPassword)
             }
@@ -155,6 +206,7 @@ impl UserRepoExt for UserRepo {
     ) -> Result<String, AuthError> {
         let user = self
             .get_user_by_username(username)
+            .or_else(|| self.get_user_by_email(username))
             .ok_or(AuthError::UserNotFound)?;
 
         mfa_service
@@ -185,17 +237,46 @@ impl UserRepoExt for UserRepo {
         })
     }
 
-    fn username_exists(&self, username: &str) -> bool {
-        self.get_user_by_username(username).is_some()
-    }
-
-    fn get_user_by_account_id(&self, account_id: &AccountId) -> Option<&User> {
+    fn get_user_by_email(&self, email: &str) -> Option<&User> {
         self.iter().find_map(|(_, user)| {
-            if user.account_id == *account_id {
+            if user.email == email {
                 Some(user)
             } else {
                 None
             }
         })
+    }
+
+    fn get_user_by_id(&self, user_id: &UserId) -> Option<&User> {
+        self.get(user_id)
+    }
+
+    fn username_exists(&self, username: &str) -> bool {
+        self.get_user_by_username(username).is_some()
+    }
+
+    fn email_exists(&self, email: &str) -> bool {
+        self.get_user_by_email(email).is_some()
+    }
+
+    fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), &'static str> {
+        if let Some(user) = self.get_mut(user_id) {
+            user.deposit(amount);
+            Ok(())
+        } else {
+            Err("User not found")
+        }
+    }
+
+    fn withdraw_from_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), &'static str> {
+        if let Some(user) = self.get_mut(user_id) {
+            user.withdraw(amount).map_err(|_| "Insufficient funds")
+        } else {
+            Err("User not found")
+        }
+    }
+
+    fn get_user_balance(&self, user_id: &UserId) -> Option<f64> {
+        self.get(user_id).map(|user| user.balance)
     }
 }

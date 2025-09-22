@@ -3,14 +3,14 @@ use std::collections::VecDeque;
 use rand::random;
 
 use crate::{
-    account::{AccountRepo, AccountRepoExt},
+    user::{UserRepo, UserRepoExt},
     mfa_factory::{DefaultMfaService, MfaServiceFactory},
     order::{OrderId, OrderRepo, OrderStatus},
 };
 
 #[derive(Debug)]
 pub struct BrokerX {
-    pub account_repo: AccountRepo,
+    pub user_repo: UserRepo,
     pub mfa_service: DefaultMfaService,
     order_repo: OrderRepo,
     order_queue: VecDeque<OrderId>,
@@ -20,18 +20,19 @@ impl BrokerX {
     #[must_use]
     pub fn new() -> Self {
         BrokerX {
-            account_repo: AccountRepo::new(),
+            user_repo: UserRepo::new(),
             mfa_service: MfaServiceFactory::create_email_mfa_service(),
             order_repo: OrderRepo::new(),
             order_queue: VecDeque::new(),
         }
     }
     pub fn debug_populate(&mut self) {
-        let _id = self.account_repo.create_account(
-            String::from("Test"),
-            String::from("Test"),
+        let _id = self.user_repo.create_user(
+            String::from("testuser"),
             String::from("test@test.com"),
             String::from("test"),
+            String::from("Test"),
+            String::from("User"),
             1000.0,
         );
     }
