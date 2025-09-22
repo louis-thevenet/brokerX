@@ -59,6 +59,11 @@ pub struct LoginQuery {
     pub registered: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ResendMfaQuery {
+    pub challenge_id: String,
+}
+
 // Handler functions
 pub async fn home() -> Redirect {
     Redirect::permanent("/dashboard")
@@ -589,6 +594,67 @@ pub async fn registration_verify_submit(
                 Ok(html) => Html(html).into_response(),
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             }
+        }
+    }
+}
+
+pub async fn resend_mfa(
+    Query(params): Query<ResendMfaQuery>,
+    State(app_state): State<AppState>,
+) -> Response {
+    // Get the original challenge to extract the user email
+    let challenge_result = {
+        let broker = app_state.lock().unwrap();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(broker.mfa_service.get_challenge(&params.challenge_id))
+        })
+    };
+
+    match challenge_result {
+        Ok(challenge) => {
+            // Initiate a new MFA challenge for the same user
+            let new_challenge_id_result = {
+                let broker = app_state.lock().unwrap();
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(broker.mfa_service.initiate_mfa(&challenge.user_email))
+                })
+            };
+
+            match new_challenge_id_result {
+                Ok(new_challenge_id) => {
+                    info!(
+                        "MFA code resent for email: {}, new challenge_id: {}",
+                        challenge.user_email, new_challenge_id
+                    );
+                    // Redirect to MFA verification page with new challenge ID
+                    Redirect::to(&format!("/verify-mfa?challenge_id={new_challenge_id}")).into_response()
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to resend MFA for email: {}, error: {}",
+                        challenge.user_email, e
+                    );
+                    // Redirect back to the original MFA page with error
+                    let template = MfaVerifyTemplate {
+                        challenge_id: params.challenge_id,
+                        error: Some(format!("Failed to resend verification code: {e}")),
+                    };
+                    match template.render() {
+                        Ok(html) => Html(html).into_response(),
+                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            error!(
+                "Failed to get challenge for resend: challenge_id={}, error={}",
+                params.challenge_id, e
+            );
+            // Redirect back to login if challenge is invalid/expired
+            Redirect::to("/login").into_response()
         }
     }
 }
