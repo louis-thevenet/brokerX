@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
 
 use rand::random;
+use tracing::error;
 
 use crate::{
-    user::{UserRepo, UserRepoExt},
     mfa_factory::{DefaultMfaService, MfaServiceFactory},
     order::{OrderId, OrderRepo, OrderStatus},
+    user::{UserRepo, UserRepoExt},
 };
 
 #[derive(Debug)]
@@ -74,10 +75,10 @@ impl BrokerX {
                     }
                 }
                 OrderStatus::PendingCancel => order.status = OrderStatus::Cancelled,
-                OrderStatus::Filled { date } => println!("Shouldn't happen"),
-                OrderStatus::Cancelled => println!("Shouldn't happen"),
-                OrderStatus::Expired { date } => println!("Shouldn't happen"),
-                OrderStatus::Rejected { date } => println!("Shouldn't happen"),
+                OrderStatus::Filled { date } => error!("Shouldn't happen"),
+                OrderStatus::Cancelled => error!("Shouldn't happen"),
+                OrderStatus::Expired { date } => error!("Shouldn't happen"),
+                OrderStatus::Rejected { date } => error!("Shouldn't happen"),
             }
         }
     }

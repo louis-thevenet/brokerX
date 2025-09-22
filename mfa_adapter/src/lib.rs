@@ -6,6 +6,7 @@ use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+use tracing::debug;
 use uuid::Uuid;
 
 // MFA Error types
@@ -242,6 +243,10 @@ impl MfaProvider for EmailOtpProvider {
     async fn send_otp(&self, user_email: &str) -> Result<String, MfaError> {
         let challenge_id = Uuid::new_v4().to_string();
         let code = self.generate_otp_code();
+        debug!(
+            "Generated OTP code: {} for challenge ID: {}",
+            code, challenge_id
+        );
         let now = SystemTime::now();
         let expires_at = now + self.challenge_duration;
 

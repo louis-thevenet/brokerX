@@ -5,6 +5,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use crate::web::{
@@ -57,7 +58,13 @@ pub async fn login_submit(
     State(app_state): State<AppState>,
     Form(form): Form<LoginForm>,
 ) -> Response {
+    info!("Login attempt for email: {}", form.email);
+
     if form.email.is_empty() || form.password.is_empty() {
+        warn!(
+            "Login attempt with empty credentials for email: {}",
+            form.email
+        );
         let template = LoginTemplate {
             error: Some("Email and password are required".to_string()),
         };
@@ -77,6 +84,7 @@ pub async fn login_submit(
     };
 
     if !user_id_found {
+        warn!("Failed authentication attempt for email: {}", form.email);
         let template = LoginTemplate {
             error: Some("Invalid email or password".to_string()),
         };
@@ -85,6 +93,11 @@ pub async fn login_submit(
             Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
     }
+
+    debug!(
+        "First factor authentication successful for email: {}",
+        form.email
+    );
 
     let challenge_id_result = {
         let broker = app_state.lock().unwrap();
@@ -96,10 +109,18 @@ pub async fn login_submit(
 
     match challenge_id_result {
         Ok(challenge_id) => {
+            info!(
+                "MFA challenge initiated for email: {}, challenge_id: {}",
+                form.email, challenge_id
+            );
             // Redirect to MFA verification page
             Redirect::to(&format!("/verify-mfa?challenge_id={challenge_id}")).into_response()
         }
         Err(e) => {
+            error!(
+                "Failed to initiate MFA for email: {}, error: {}",
+                form.email, e
+            );
             let template = LoginTemplate {
                 error: Some(format!("Failed to send verification code: {e}")),
             };
@@ -123,8 +144,14 @@ pub async fn register_submit(
     State(app_state): State<AppState>,
     Form(form): Form<RegisterForm>,
 ) -> Response {
+    info!("Registration attempt for email: {}", form.email);
+
     // Basic validation
     if form.password != form.confirm_password {
+        warn!(
+            "Registration failed for email: {} - passwords do not match",
+            form.email
+        );
         let template = RegisterTemplate {
             error: Some("Passwords do not match".to_string()),
         };
@@ -139,6 +166,10 @@ pub async fn register_submit(
         || form.email.is_empty()
         || form.password.is_empty()
     {
+        warn!(
+            "Registration failed for email: {} - missing required fields",
+            form.email
+        );
         let template = RegisterTemplate {
             error: Some("All fields are required".to_string()),
         };
@@ -184,11 +215,7 @@ pub async fn register_submit(
             1000.0, // TODO: change
         ) {
             Ok(user_id) => {
-                println!("Created new user: {} (ID: {})", form.email, user_id);
-                println!(
-                    "User created with email: {} and initial balance: $1000.00",
-                    form.email
-                );
+                debug!("Created new user: {} (ID: {})", form.email, user_id);
                 user_id
             }
             Err(e) => {
@@ -203,7 +230,7 @@ pub async fn register_submit(
         }
     };
 
-    println!("Registration successful for user: {}", form.email);
+    debug!("Registration successful for user: {}", form.email);
 
     // Redirect to login page with success
     Redirect::to("/login").into_response()

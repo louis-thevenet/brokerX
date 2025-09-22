@@ -180,7 +180,14 @@ impl UserRepoExt for UserRepo {
             return Err(AuthError::UserAlreadyExists);
         }
 
-        let user = User::new(username, email, password, firstname, surname, initial_balance)?;
+        let user = User::new(
+            username,
+            email,
+            password,
+            firstname,
+            surname,
+            initial_balance,
+        )?;
         let user_id = Uuid::new_v4();
         self.insert(user_id, user);
 
@@ -188,7 +195,10 @@ impl UserRepoExt for UserRepo {
     }
 
     fn authenticate_user(&self, username: &str, password: &str) -> Result<UserId, AuthError> {
-        if let Some((user_id, user)) = self.iter().find(|(_, user)| user.username == username || user.email == username) {
+        if let Some((user_id, user)) = self
+            .iter()
+            .find(|(_, user)| user.username == username || user.email == username)
+        {
             if user.verify_password(password) {
                 Ok(*user_id)
             } else {
