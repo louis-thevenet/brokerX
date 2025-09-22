@@ -10,10 +10,13 @@ use uuid::Uuid;
 
 use crate::web::{
     jwt,
-    templates::{DashboardTemplate, LoginTemplate, MfaVerifyTemplate, RegisterTemplate, RegistrationVerifyTemplate},
+    templates::{
+        DashboardTemplate, LoginTemplate, MfaVerifyTemplate, RegisterTemplate,
+        RegistrationVerifyTemplate,
+    },
     AppState,
 };
-use domain::user::UserRepoExt;
+use domain::user::{AuthError, UserRepoExt};
 
 #[derive(Deserialize)]
 pub struct LoginForm {
@@ -71,12 +74,15 @@ pub async fn home() -> Redirect {
 
 pub async fn login_page(Query(params): Query<LoginQuery>) -> Result<Html<String>, StatusCode> {
     let success = if params.registered.is_some() {
-        Some("Registration successful! Your email has been verified. You can now log in.".to_string())
+        Some(
+            "Registration successful! Your email has been verified. You can now log in."
+                .to_string(),
+        )
     } else {
         None
     };
-    
-    let template = LoginTemplate { 
+
+    let template = LoginTemplate {
         error: None,
         success,
     };
@@ -110,10 +116,21 @@ pub async fn login_submit(
     // First factor authentication using the domain layer
     let user_id_found = {
         let broker = app_state.lock().unwrap();
-        broker
+        match broker
             .user_repo
             .authenticate_user(&form.email, &form.password)
-            .is_ok()
+        {
+            Ok(_) => true,
+            Err(AuthError::NotVerified(user_id)) => {
+                drop(broker);
+                // start email verification MFA process
+                return registration_mfa(app_state.clone(), &form.email, user_id);
+            }
+            Err(e) => {
+                warn!("Authentication failed for email: {} - {}", form.email, e);
+                false
+            }
+        }
     };
 
     if !user_id_found {
@@ -225,51 +242,70 @@ pub async fn register_submit(
     }
 
     // Check if username already exists using the domain layer
-    {
-        let broker = app_state.lock().unwrap();
-        if broker.user_repo.email_exists(&form.email) {
-            let template = RegisterTemplate {
-                error: Some("Email already exists".to_string()),
-            };
-            return match template.render() {
-                Ok(html) => Html(html).into_response(),
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            };
-        }
-    }
+    // If so, is it verified yet?
 
-    // Create user in the domain layer
     let user_id = {
         let mut broker = app_state.lock().unwrap();
-        match broker.user_repo.create_user(
-            form.email.clone(), // username = email for now
-            form.email.clone(),
-            form.password.clone(),
-            form.firstname.clone(),
-            form.surname.clone(),
-            1000.0, // TODO: change
-        ) {
-            Ok(user_id) => {
-                debug!("Created new user: {} (ID: {})", form.email, user_id);
-                user_id
+
+        match broker.user_repo.get_user_by_email(&form.email) {
+            Some(u) if !u.is_verified => {
+                // just skip domain user creation and proceed to MFA
+                warn!(
+                    "Registration attempt for existing unverified email: {}",
+                    form.email
+                );
+                *broker.user_repo.get_user_id(&form.email).unwrap() // we know it exists
             }
-            Err(e) => {
+            Some(_u) => {
                 let template = RegisterTemplate {
-                    error: Some(format!("Registration failed: {e}")),
+                    error: Some("Email already exists".to_string()),
                 };
                 return match template.render() {
                     Ok(html) => Html(html).into_response(),
                     Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
                 };
             }
+            None => {
+                // Create user in the domain layer
+
+                match broker.user_repo.create_user(
+                    form.email.clone(), // username = email for now
+                    form.email.clone(),
+                    form.password.clone(),
+                    form.firstname.clone(),
+                    form.surname.clone(),
+                    1000.0, // TODO: change
+                ) {
+                    Ok(user_id) => {
+                        debug!("Created new user: {} (ID: {})", form.email, user_id);
+                        user_id
+                    }
+                    Err(e) => {
+                        let template = RegisterTemplate {
+                            error: Some(format!("Registration failed: {e}")),
+                        };
+                        return match template.render() {
+                            Ok(html) => Html(html).into_response(),
+                            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                        };
+                    }
+                }
+            }
         }
     };
+    registration_mfa(app_state, &form.email, user_id)
+}
 
+fn registration_mfa(
+    app_state: std::sync::Arc<std::sync::Mutex<domain::core::BrokerX>>,
+    email: &str,
+    user_id: Uuid,
+) -> axum::http::Response<axum::body::Body> {
     // Initiate MFA for email verification
     let challenge_id_result = {
         let broker = app_state.lock().unwrap();
         tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(broker.mfa_service.initiate_mfa(&form.email))
+            tokio::runtime::Handle::current().block_on(broker.mfa_service.initiate_mfa(email))
         })
     };
 
@@ -277,15 +313,18 @@ pub async fn register_submit(
         Ok(challenge_id) => {
             info!(
                 "Registration MFA challenge initiated for email: {}, challenge_id: {}",
-                form.email, challenge_id
+                email, challenge_id
             );
             // Redirect to registration MFA verification page
-            Redirect::to(&format!("/verify-registration?challenge_id={challenge_id}&user_id={user_id}")).into_response()
+            Redirect::to(&format!(
+                "/verify-registration?challenge_id={challenge_id}&user_id={user_id}"
+            ))
+            .into_response()
         }
         Err(e) => {
             error!(
                 "Failed to initiate registration MFA for email: {}, error: {}",
-                form.email, e
+                email, e
             );
             // Delete the created user since verification failed
             {
@@ -492,7 +531,9 @@ pub async fn mfa_verify_submit(
     }
 }
 
-pub async fn registration_verify_page(Query(params): Query<RegistrationVerifyQuery>) -> Result<Html<String>, StatusCode> {
+pub async fn registration_verify_page(
+    Query(params): Query<RegistrationVerifyQuery>,
+) -> Result<Html<String>, StatusCode> {
     let template = RegistrationVerifyTemplate {
         challenge_id: params.challenge_id,
         user_id: params.user_id,
@@ -521,19 +562,18 @@ pub async fn registration_verify_submit(
     }
 
     // Parse user ID
-    let user_id = match Uuid::parse_str(&form.user_id) {
-        Ok(id) => id,
-        Err(_) => {
-            let template = RegistrationVerifyTemplate {
-                challenge_id: form.challenge_id,
-                user_id: form.user_id,
-                error: Some("Invalid user ID".to_string()),
-            };
-            return match template.render() {
-                Ok(html) => Html(html).into_response(),
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            };
-        }
+    let user_id = if let Ok(id) = Uuid::parse_str(&form.user_id) {
+        id
+    } else {
+        let template = RegistrationVerifyTemplate {
+            challenge_id: form.challenge_id,
+            user_id: form.user_id,
+            error: Some("Invalid user ID".to_string()),
+        };
+        return match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
     };
 
     // Verify the MFA code
@@ -629,7 +669,8 @@ pub async fn resend_mfa(
                         challenge.user_email, new_challenge_id
                     );
                     // Redirect to MFA verification page with new challenge ID
-                    Redirect::to(&format!("/verify-mfa?challenge_id={new_challenge_id}")).into_response()
+                    Redirect::to(&format!("/verify-mfa?challenge_id={new_challenge_id}"))
+                        .into_response()
                 }
                 Err(e) => {
                     error!(

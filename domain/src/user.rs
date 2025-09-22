@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use color_eyre::Result;
 use in_memory_adapter::InMemoryRepo;
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::mfa::{MfaError, MfaProvider, MfaService};
@@ -28,6 +29,7 @@ pub enum AuthError {
     WeakPassword,
     MfaRequired,
     MfaFailed(MfaError),
+    NotVerified(UserId),
 }
 
 impl std::fmt::Display for AuthError {
@@ -38,7 +40,8 @@ impl std::fmt::Display for AuthError {
             AuthError::UserAlreadyExists => write!(f, "User already exists"),
             AuthError::WeakPassword => write!(f, "Password is too weak"),
             AuthError::MfaRequired => write!(f, "Multi-factor authentication required"),
-            AuthError::MfaFailed(err) => write!(f, "MFA failed: {}", err),
+            AuthError::MfaFailed(err) => write!(f, "MFA failed: {err}"),
+            AuthError::NotVerified(_) => write!(f, "User email not verified"),
         }
     }
 }
@@ -151,6 +154,8 @@ pub trait UserRepoExt {
 
     /// Gets a user by email
     fn get_user_by_email(&self, email: &str) -> Option<&User>;
+    /// Gets a user ID by email
+    fn get_user_id(&self, email: &str) -> Option<&UserId>;
 
     /// Gets a user by user ID
     fn get_user_by_id(&self, user_id: &UserId) -> Option<&User>;
@@ -160,6 +165,9 @@ pub trait UserRepoExt {
 
     /// Checks if an email already exists
     fn email_exists(&self, email: &str) -> bool;
+
+    /// Checks if an email is verified
+    fn is_verified(&self, email: &str) -> bool;
 
     /// Deposits money to a user's account
     fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), &'static str>;
@@ -218,7 +226,8 @@ impl UserRepoExt for UserRepo {
             .find(|(_, user)| user.username == username || user.email == username)
         {
             if !user.is_verified {
-                return Err(AuthError::UserNotFound); // Treat unverified users as not found for security
+                debug!("User {} not verified", user_id);
+                return Err(AuthError::NotVerified(*user_id));
             }
             if user.verify_password(password) {
                 Ok(*user_id)
@@ -277,7 +286,15 @@ impl UserRepoExt for UserRepo {
             }
         })
     }
-
+    fn get_user_id(&self, email: &str) -> Option<&UserId> {
+        self.iter().find_map(|(user_id, user)| {
+            if user.email == email {
+                Some(user_id)
+            } else {
+                None
+            }
+        })
+    }
     fn get_user_by_id(&self, user_id: &UserId) -> Option<&User> {
         self.get(user_id)
     }
@@ -288,6 +305,11 @@ impl UserRepoExt for UserRepo {
 
     fn email_exists(&self, email: &str) -> bool {
         self.get_user_by_email(email).is_some()
+    }
+
+    fn is_verified(&self, email: &str) -> bool {
+        self.get_user_by_email(email)
+            .is_some_and(|user| user.is_verified)
     }
 
     fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), &'static str> {
@@ -321,6 +343,6 @@ impl UserRepoExt for UserRepo {
     }
 
     fn is_user_verified(&self, user_id: &UserId) -> Option<bool> {
-        self.get(user_id).map(|user| user.is_email_verified())
+        self.get(user_id).map(User::is_email_verified)
     }
 }
