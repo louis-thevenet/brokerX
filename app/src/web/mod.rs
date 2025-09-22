@@ -12,9 +12,9 @@ use axum::{
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use domain::core::BrokerX;
 
-use handlers::{dashboard, home, login_page, login_submit, logout, register_page, register_submit};
+use handlers::{dashboard, home, login_page, login_submit, logout, register_page, register_submit, mfa_verify_page, mfa_verify_submit};
 
-// App state type
+// App state type - simplified to only contain BrokerX
 pub type AppState = Arc<Mutex<BrokerX>>;
 
 pub fn create_app(state: AppState) -> Router {
@@ -22,7 +22,8 @@ pub fn create_app(state: AppState) -> Router {
     let public_routes = Router::new()
         .route("/", get(home))
         .route("/login", get(login_page).post(login_submit))
-        .route("/register", get(register_page).post(register_submit));
+        .route("/register", get(register_page).post(register_submit))
+        .route("/verify-mfa", get(mfa_verify_page).post(mfa_verify_submit));
 
     // Protected routes (authentication required)
     let protected_routes = Router::new()

@@ -4,12 +4,14 @@ use rand::random;
 
 use crate::{
     account::{AccountRepo, AccountRepoExt},
-    order::{Order, OrderId, OrderRepo, OrderStatus},
+    mfa_factory::{DefaultMfaService, MfaServiceFactory},
+    order::{OrderId, OrderRepo, OrderStatus},
 };
 
 #[derive(Debug)]
 pub struct BrokerX {
     pub account_repo: AccountRepo,
+    pub mfa_service: DefaultMfaService,
     order_repo: OrderRepo,
     order_queue: VecDeque<OrderId>,
 }
@@ -19,6 +21,7 @@ impl BrokerX {
     pub fn new() -> Self {
         BrokerX {
             account_repo: AccountRepo::new(),
+            mfa_service: MfaServiceFactory::create_email_mfa_service(),
             order_repo: OrderRepo::new(),
             order_queue: VecDeque::new(),
         }

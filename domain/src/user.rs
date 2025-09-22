@@ -1,9 +1,10 @@
+use async_trait::async_trait;
 use color_eyre::Result;
 use in_memory_adapter::InMemoryRepo;
 use uuid::Uuid;
-use std::collections::HashMap;
 
 use crate::account::AccountId;
+use crate::mfa::{MfaError, MfaProvider, MfaService};
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -20,6 +21,8 @@ pub enum AuthError {
     InvalidPassword,
     UserAlreadyExists,
     WeakPassword,
+    MfaRequired,
+    MfaFailed(MfaError),
 }
 
 impl std::fmt::Display for AuthError {
@@ -29,6 +32,8 @@ impl std::fmt::Display for AuthError {
             AuthError::InvalidPassword => write!(f, "Invalid password"),
             AuthError::UserAlreadyExists => write!(f, "User already exists"),
             AuthError::WeakPassword => write!(f, "Password is too weak"),
+            AuthError::MfaRequired => write!(f, "Multi-factor authentication required"),
+            AuthError::MfaFailed(err) => write!(f, "MFA failed: {}", err),
         }
     }
 }
@@ -36,7 +41,12 @@ impl std::fmt::Display for AuthError {
 impl std::error::Error for AuthError {}
 
 impl User {
-    pub fn new(username: String, email: String, password: String, account_id: AccountId) -> Result<Self, AuthError> {
+    pub fn new(
+        username: String,
+        email: String,
+        password: String,
+        account_id: AccountId,
+    ) -> Result<Self, AuthError> {
         if password.len() < 6 {
             return Err(AuthError::WeakPassword);
         }
@@ -66,25 +76,54 @@ pub type UserId = Uuid;
 
 pub type UserRepo = InMemoryRepo<User, UserId>;
 
+#[async_trait]
 pub trait UserRepoExt {
     /// Creates a new user with the given details
-    fn create_user(&mut self, username: String, email: String, password: String, account_id: AccountId) -> Result<UserId, AuthError>;
-    
-    /// Authenticates a user by username and password
+    fn create_user(
+        &mut self,
+        username: String,
+        email: String,
+        password: String,
+        account_id: AccountId,
+    ) -> Result<UserId, AuthError>;
+
+    /// Authenticates a user by username and password (first factor)
     fn authenticate_user(&self, username: &str, password: &str) -> Result<AccountId, AuthError>;
-    
+
+    /// Initiates MFA for a user after successful first-factor authentication
+    async fn initiate_mfa<P: MfaProvider>(
+        &self,
+        username: &str,
+        mfa_service: &MfaService<P>,
+    ) -> Result<String, AuthError>;
+
+    /// Completes authentication by verifying MFA
+    async fn complete_mfa_authentication<P: MfaProvider>(
+        &self,
+        challenge_id: &str,
+        code: &str,
+        mfa_service: &MfaService<P>,
+    ) -> Result<bool, AuthError>;
+
     /// Gets a user by username
     fn get_user_by_username(&self, username: &str) -> Option<&User>;
-    
+
     /// Checks if a username already exists
     fn username_exists(&self, username: &str) -> bool;
-    
+
     /// Gets a user by account ID
     fn get_user_by_account_id(&self, account_id: &AccountId) -> Option<&User>;
 }
 
+#[async_trait]
 impl UserRepoExt for UserRepo {
-    fn create_user(&mut self, username: String, email: String, password: String, account_id: AccountId) -> Result<UserId, AuthError> {
+    fn create_user(
+        &mut self,
+        username: String,
+        email: String,
+        password: String,
+        account_id: AccountId,
+    ) -> Result<UserId, AuthError> {
         // Check if username already exists
         if self.username_exists(&username) {
             return Err(AuthError::UserAlreadyExists);
@@ -93,7 +132,7 @@ impl UserRepoExt for UserRepo {
         let user = User::new(username, email, password, account_id)?;
         let user_id = Uuid::new_v4();
         self.insert(user_id, user);
-        
+
         Ok(user_id)
     }
 
@@ -109,8 +148,41 @@ impl UserRepoExt for UserRepo {
         }
     }
 
+    async fn initiate_mfa<P: MfaProvider>(
+        &self,
+        username: &str,
+        mfa_service: &MfaService<P>,
+    ) -> Result<String, AuthError> {
+        let user = self
+            .get_user_by_username(username)
+            .ok_or(AuthError::UserNotFound)?;
+
+        mfa_service
+            .initiate_mfa(&user.email)
+            .await
+            .map_err(AuthError::MfaFailed)
+    }
+
+    async fn complete_mfa_authentication<P: MfaProvider>(
+        &self,
+        challenge_id: &str,
+        code: &str,
+        mfa_service: &MfaService<P>,
+    ) -> Result<bool, AuthError> {
+        mfa_service
+            .verify_mfa(challenge_id, code)
+            .await
+            .map_err(AuthError::MfaFailed)
+    }
+
     fn get_user_by_username(&self, username: &str) -> Option<&User> {
-        self.values().find(|user| user.username == username)
+        self.iter().find_map(|(_, user)| {
+            if user.username == username {
+                Some(user)
+            } else {
+                None
+            }
+        })
     }
 
     fn username_exists(&self, username: &str) -> bool {
@@ -118,6 +190,12 @@ impl UserRepoExt for UserRepo {
     }
 
     fn get_user_by_account_id(&self, account_id: &AccountId) -> Option<&User> {
-        self.values().find(|user| user.account_id == *account_id)
+        self.iter().find_map(|(_, user)| {
+            if user.account_id == *account_id {
+                Some(user)
+            } else {
+                None
+            }
+        })
     }
 }

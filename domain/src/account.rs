@@ -73,6 +73,9 @@ pub trait AccountRepoExt {
     /// Authenticate a user and return their account ID if successful
     fn authenticate(&self, username: &str, password: &str) -> Option<AccountId>;
 
+    /// Get account ID by email address
+    fn get_account_id_by_email(&self, email: &str) -> Option<AccountId>;
+
     /// Check if a username is already taken
     fn email_exists(&self, username: &str) -> bool;
 
@@ -126,6 +129,15 @@ impl AccountRepoExt for AccountRepo {
 
     fn email_exists(&self, email: &str) -> bool {
         self.iter().any(|(_, account)| account.email == email)
+    }
+
+    fn get_account_id_by_email(&self, email: &str) -> Option<AccountId> {
+        for (id, account) in self.iter() {
+            if account.email == email {
+                return Some(*id);
+            }
+        }
+        None
     }
 
     fn deposit_to_account(

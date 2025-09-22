@@ -2,3 +2,4 @@
 .envrc
 /docs/src/*.pdf
 /target
+.env

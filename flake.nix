@@ -39,7 +39,12 @@
           devShells.default = pkgs.mkShell {
             RUST_BACKTRACE = "full";
             RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
-
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+            ];
+            buildInputs = with pkgs; [
+              openssl
+            ];
             packages = with pkgs; [
               # Nix
               nil

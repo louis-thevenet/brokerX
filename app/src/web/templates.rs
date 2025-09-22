@@ -13,6 +13,13 @@ pub struct RegisterTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "mfa_verify.html")]
+pub struct MfaVerifyTemplate {
+    pub challenge_id: String,
+    pub error: Option<String>,
+}
+
+#[derive(Template)]
 #[template(path = "dashboard.html")]
 pub struct DashboardTemplate<'a> {
     pub username: &'a str,

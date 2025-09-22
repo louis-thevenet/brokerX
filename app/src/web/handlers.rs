@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Form, State},
+    extract::{Form, Query, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::web::{jwt, templates::*, AppState};
 use domain::account::AccountRepoExt;
+
 #[derive(Deserialize)]
 pub struct LoginForm {
     pub email: String,
@@ -22,6 +23,17 @@ pub struct RegisterForm {
     pub email: String,
     pub password: String,
     pub confirm_password: String,
+}
+
+#[derive(Deserialize)]
+pub struct MfaVerifyForm {
+    pub challenge_id: String,
+    pub code: String,
+}
+
+#[derive(Deserialize)]
+pub struct MfaQuery {
+    pub challenge_id: String,
 }
 
 // Handler functions
@@ -38,7 +50,7 @@ pub async fn login_page() -> Result<Html<String>, StatusCode> {
 }
 
 pub async fn login_submit(
-    State(broker_x): State<AppState>,
+    State(app_state): State<AppState>,
     Form(form): Form<LoginForm>,
 ) -> Response {
     if form.email.is_empty() || form.password.is_empty() {
@@ -51,61 +63,48 @@ pub async fn login_submit(
         };
     }
 
-    // Authenticate using the domain layer
-    let (account_id, email) = {
-        let broker = broker_x.lock().unwrap();
-        if let Some(account_id) = broker
+    // First factor authentication using the domain layer
+    let account_found = {
+        let broker = app_state.lock().unwrap();
+        broker
             .account_repo
             .authenticate(&form.email, &form.password)
-        {
-            if let Some(account) = broker.account_repo.get(&account_id) {
-                println!(
-                    "Successful login for user: {} (Account ID: {})",
-                    form.email, account_id
-                );
-                println!(
-                    "Account: {} {} - Balance: ${:.2}",
-                    account.firstname,
-                    account.surname,
-                    broker.account_repo.get_balance(&account_id).unwrap_or(0.0)
-                );
-                (account_id, account.email.clone())
-            } else {
-                let template = LoginTemplate {
-                    error: Some("Account not found".to_string()),
-                };
-                return match template.render() {
-                    Ok(html) => Html(html).into_response(),
-                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                };
-            }
-        } else {
-            let template = LoginTemplate {
-                error: Some("Invalid email or password".to_string()),
-            };
-            return match template.render() {
-                Ok(html) => Html(html).into_response(),
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            };
-        }
+            .is_some()
     };
 
-    // Create JWT token
-    if let Ok(token) = jwt::create_jwt(account_id, email) {
-        // Create response with auth cookie
-        let mut response = Redirect::to("/dashboard").into_response();
-        response.headers_mut().insert(
-            header::SET_COOKIE,
-            jwt::create_auth_cookie(&token).parse().unwrap(),
-        );
-        response
-    } else {
+    if !account_found {
         let template = LoginTemplate {
-            error: Some("Failed to create session".to_string()),
+            error: Some("Invalid email or password".to_string()),
         };
-        match template.render() {
+        return match template.render() {
             Ok(html) => Html(html).into_response(),
             Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
+
+    // Initiate MFA challenge
+    let target_email = "louis.tvnt@gmail.com";
+    let challenge_id_result = {
+        let broker = app_state.lock().unwrap();
+        // TODO: tokio::task::spawn_blocking ?
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(broker.mfa_service.initiate_mfa(&form.email))
+        })
+    };
+
+    match challenge_id_result {
+        Ok(challenge_id) => {
+            // Redirect to MFA verification page
+            Redirect::to(&format!("/verify-mfa?challenge_id={challenge_id}")).into_response()
+        }
+        Err(e) => {
+            let template = LoginTemplate {
+                error: Some(format!("Failed to send verification code: {e}")),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
         }
     }
 }
@@ -119,7 +118,7 @@ pub async fn register_page() -> Result<Html<String>, StatusCode> {
 }
 
 pub async fn register_submit(
-    State(broker_x): State<AppState>,
+    State(app_state): State<AppState>,
     Form(form): Form<RegisterForm>,
 ) -> Response {
     // Basic validation
@@ -159,7 +158,7 @@ pub async fn register_submit(
 
     // Check if username already exists using the domain layer
     {
-        let broker = broker_x.lock().unwrap();
+        let broker = app_state.lock().unwrap();
         if broker.account_repo.email_exists(&form.email) {
             let template = RegisterTemplate {
                 error: Some("Username already exists".to_string()),
@@ -172,8 +171,8 @@ pub async fn register_submit(
     }
 
     // Create account in the domain layer
-    let account_id = {
-        let mut broker = broker_x.lock().unwrap();
+    let _account_id = {
+        let mut broker = app_state.lock().unwrap();
         let account_id = broker.account_repo.create_account(
             form.firstname.clone(),
             form.surname.clone(),
@@ -212,7 +211,7 @@ pub async fn logout() -> Response {
 
 /// Dashboard handler - requires authentication
 pub async fn dashboard(
-    State(broker_x): State<AppState>,
+    State(app_state): State<AppState>,
     request: axum::extract::Request,
 ) -> Response {
     // Extract user claims from request (added by auth middleware)
@@ -227,7 +226,7 @@ pub async fn dashboard(
         Err(_) => return Redirect::to("/login").into_response(),
     };
 
-    let broker = broker_x.lock().unwrap();
+    let broker = app_state.lock().unwrap();
     let account = match broker.account_repo.get(&account_id) {
         Some(account) => account,
         None => return Redirect::to("/login").into_response(),
@@ -248,5 +247,145 @@ pub async fn dashboard(
     match template.render() {
         Ok(html) => Html(html).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn mfa_verify_page(Query(params): Query<MfaQuery>) -> Result<Html<String>, StatusCode> {
+    let template = MfaVerifyTemplate {
+        challenge_id: params.challenge_id,
+        error: None,
+    };
+    match template.render() {
+        Ok(html) => Ok(Html(html)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+pub async fn mfa_verify_submit(
+    State(app_state): State<AppState>,
+    Form(form): Form<MfaVerifyForm>,
+) -> Response {
+    if form.code.is_empty() || form.code.len() != 6 {
+        let template = MfaVerifyTemplate {
+            challenge_id: form.challenge_id,
+            error: Some("Please enter a valid 6-digit code".to_string()),
+        };
+        return match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    }
+
+    // Verify the MFA code
+    let verification_result = {
+        let broker = app_state.lock().unwrap();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(
+                broker
+                    .mfa_service
+                    .verify_mfa(&form.challenge_id, &form.code),
+            )
+        })
+    };
+
+    match verification_result {
+        Ok(true) => {
+            // MFA verified successfully, now get the challenge to retrieve user info
+            let challenge = {
+                let broker = app_state.lock().unwrap();
+                tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(broker.mfa_service.get_challenge(&form.challenge_id))
+                })
+            };
+
+            match challenge {
+                Ok(challenge) => {
+                    // Get the account using the email from the challenge
+                    let (account_id, email) = {
+                        let broker = app_state.lock().unwrap();
+                        match broker
+                            .account_repo
+                            .get_account_id_by_email(&challenge.user_email)
+                        {
+                            Some(account_id) => {
+                                if let Some(account) = broker.account_repo.get(&account_id) {
+                                    (account_id, account.email.clone())
+                                } else {
+                                    let template = MfaVerifyTemplate {
+                                        challenge_id: form.challenge_id,
+                                        error: Some("Account not found".to_string()),
+                                    };
+                                    return match template.render() {
+                                        Ok(html) => Html(html).into_response(),
+                                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                                    };
+                                }
+                            }
+                            None => {
+                                let template = MfaVerifyTemplate {
+                                    challenge_id: form.challenge_id,
+                                    error: Some("User account not found".to_string()),
+                                };
+                                return match template.render() {
+                                    Ok(html) => Html(html).into_response(),
+                                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                                };
+                            }
+                        }
+                    };
+
+                    // Create JWT token
+                    if let Ok(token) = jwt::create_jwt(account_id, email) {
+                        // Create response with auth cookie
+                        let mut response = Redirect::to("/dashboard").into_response();
+                        response.headers_mut().insert(
+                            header::SET_COOKIE,
+                            jwt::create_auth_cookie(&token).parse().unwrap(),
+                        );
+                        response
+                    } else {
+                        let template = MfaVerifyTemplate {
+                            challenge_id: form.challenge_id,
+                            error: Some("Failed to create session".to_string()),
+                        };
+                        match template.render() {
+                            Ok(html) => Html(html).into_response(),
+                            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                        }
+                    }
+                }
+                Err(e) => {
+                    let template = MfaVerifyTemplate {
+                        challenge_id: form.challenge_id,
+                        error: Some(format!("Challenge error: {}", e)),
+                    };
+                    match template.render() {
+                        Ok(html) => Html(html).into_response(),
+                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                    }
+                }
+            }
+        }
+        Ok(false) => {
+            let template = MfaVerifyTemplate {
+                challenge_id: form.challenge_id,
+                error: Some("Invalid verification code".to_string()),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+        Err(e) => {
+            let template = MfaVerifyTemplate {
+                challenge_id: form.challenge_id,
+                error: Some(format!("Verification failed: {}", e)),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
     }
 }

@@ -8,12 +8,12 @@ use domain::core::BrokerX;
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // Initialize the domain layer
+    // Initialize the domain layer (which now includes MFA service)
     let mut broker_x = BrokerX::new();
     broker_x.debug_populate();
     println!("BrokerX initialized: {broker_x:#?}");
 
-    // Wrap BrokerX in Arc<Mutex> for shared access
+    // Create app state
     let app_state = Arc::new(Mutex::new(broker_x));
 
     // Create the web application with state
