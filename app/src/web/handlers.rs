@@ -60,9 +60,7 @@ pub struct RegistrationVerifyQuery {
 }
 
 #[derive(Deserialize)]
-pub struct LoginQuery {
-    pub registered: Option<String>,
-}
+pub struct LoginQuery {}
 
 #[derive(Deserialize)]
 pub struct ResendMfaQuery {

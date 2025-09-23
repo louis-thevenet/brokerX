@@ -6,7 +6,7 @@ use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
-use tracing::debug;
+use tracing::{debug, error};
 use uuid::Uuid;
 
 // MFA Error types
@@ -74,7 +74,7 @@ pub struct EmailConfig {
 impl EmailConfig {
     fn new() -> Result<Self, MfaError> {
         if let Err(e) = dotenvy::dotenv() {
-            eprintln!("Warning: Could not load .env file: {}", e);
+            error!("Warning: Could not load .env file: {}", e);
             return Err(MfaError::ServiceUnavailable);
         }
 
@@ -109,7 +109,7 @@ impl EmailConfig {
     /// - SMTP_PORT: SMTP server port (default: 587)
     /// - SMTP_FROM_NAME: Display name for sender (default: BrokerX Security)
     pub fn from_env() -> Result<Self, String> {
-        dotenvy::dotenv();
+        let _ = dotenvy::dotenv();
 
         let smtp_server =
             std::env::var("SMTP_SERVER").unwrap_or_else(|_| "smtp.gmail.com".to_string());
