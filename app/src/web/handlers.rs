@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Form, Query, State},
+    extract::{Form, FromRequest, Query, State},
     http::{header, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -16,7 +16,9 @@ use crate::web::{
     },
     AppState,
 };
-use domain::user::{AuthError, UserRepoExt};
+use domain::user::{AuthError, User, UserRepoExt};
+
+use super::templates::DepositTemplate;
 
 #[derive(Deserialize)]
 pub struct LoginForm {
@@ -67,25 +69,18 @@ pub struct ResendMfaQuery {
     pub challenge_id: String,
 }
 
+#[derive(Deserialize)]
+pub struct DepositForm {
+    pub amount: String,
+}
+
 // Handler functions
 pub async fn home() -> Redirect {
     Redirect::permanent("/dashboard")
 }
 
-pub async fn login_page(Query(params): Query<LoginQuery>) -> Result<Html<String>, StatusCode> {
-    let success = if params.registered.is_some() {
-        Some(
-            "Registration successful! Your email has been verified. You can now log in."
-                .to_string(),
-        )
-    } else {
-        None
-    };
-
-    let template = LoginTemplate {
-        error: None,
-        success,
-    };
+pub async fn login_page(Query(_params): Query<LoginQuery>) -> Result<Html<String>, StatusCode> {
+    let template = LoginTemplate { error: None };
     match template.render() {
         Ok(html) => Ok(Html(html)),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -105,7 +100,6 @@ pub async fn login_submit(
         );
         let template = LoginTemplate {
             error: Some("Email and password are required".to_string()),
-            success: None,
         };
         return match template.render() {
             Ok(html) => Html(html).into_response(),
@@ -137,7 +131,6 @@ pub async fn login_submit(
         warn!("Failed authentication attempt for email: {}", form.email);
         let template = LoginTemplate {
             error: Some("Invalid email or password".to_string()),
-            success: None,
         };
         return match template.render() {
             Ok(html) => Html(html).into_response(),
@@ -174,7 +167,6 @@ pub async fn login_submit(
             );
             let template = LoginTemplate {
                 error: Some(format!("Failed to send verification code: {e}")),
-                success: None,
             };
             match template.render() {
                 Ok(html) => Html(html).into_response(),
@@ -350,11 +342,10 @@ pub async fn logout() -> Response {
     );
     response
 }
-
-/// Dashboard handler - requires authentication
-pub async fn dashboard(
-    State(app_state): State<AppState>,
+fn check_token_and_execute(
+    app_state: State<AppState>,
     request: axum::extract::Request,
+    handler: fn(State<AppState>, User, axum::extract::Request) -> Response,
 ) -> Response {
     // Extract user claims from request
     let Some(claims) = request.extensions().get::<jwt::Claims>() else {
@@ -362,31 +353,36 @@ pub async fn dashboard(
     };
 
     // Get user from domain layer
-    let Ok(user_id) = Uuid::parse_str(&claims.sub) else {
+    let Ok(user_id) = Uuid::parse_str(&claims.subject) else {
         return Redirect::to("/login").into_response();
     };
 
     let broker = app_state.lock().unwrap();
-    let Some(user) = broker.user_repo.get(&user_id) else {
+    let Some(user) = broker.user_repo.get(&user_id).cloned() else {
         return Redirect::to("/login").into_response();
     };
 
-    let balance = broker.user_repo.get_user_balance(&user_id).unwrap_or(0.0);
+    drop(broker);
+    handler(app_state, user, request)
+}
+/// Dashboard handler - requires authentication
+pub async fn dashboard(app_state: State<AppState>, request: axum::extract::Request) -> Response {
+    check_token_and_execute(app_state, request, |_app_state, user, _request| {
+        // Create dashboard template (we'll need to create this)
+        let template = DashboardTemplate {
+            username: &user.email,
+            firstname: &user.firstname,
+            surname: &user.surname,
+            email: &user.email,
+            account_balance: user.balance,
+            recent_orders: vec![], // TODO: Empty for now, will be populated when order system is implemented
+        };
 
-    // Create dashboard template (we'll need to create this)
-    let template = DashboardTemplate {
-        username: &claims.email,
-        firstname: &user.firstname,
-        surname: &user.surname,
-        email: &user.email,
-        account_balance: balance,
-        recent_orders: vec![], // TODO: Empty for now, will be populated when order system is implemented
-    };
-
-    match template.render() {
-        Ok(html) => Html(html).into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
+        match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    })
 }
 
 pub async fn mfa_verify_page(Query(params): Query<MfaQuery>) -> Result<Html<String>, StatusCode> {
@@ -695,6 +691,101 @@ pub async fn resend_mfa(
             );
             // Redirect back to login if challenge is invalid/expired
             Redirect::to("/login").into_response()
+        }
+    }
+}
+pub async fn deposit_page(app_state: State<AppState>, request: axum::extract::Request) -> Response {
+    check_token_and_execute(app_state, request, |_app_state, _user, _request| {
+        let template = DepositTemplate { error: None };
+        match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    })
+}
+pub async fn deposit_submit(
+    State(app_state): State<AppState>,
+    request: axum::extract::Request,
+) -> Response {
+    let (parts, body) = request.into_parts(); // get form
+
+    // Check for authentication token
+    let Some(claims) = parts.extensions.get::<jwt::Claims>() else {
+        return Redirect::to("/login").into_response();
+    };
+
+    // Get user from domain layer
+    let Ok(user_id) = Uuid::parse_str(&claims.subject) else {
+        return Redirect::to("/login").into_response();
+    };
+
+    let user = {
+        let broker = app_state.lock().unwrap();
+        let Some(user) = broker.user_repo.get(&user_id).cloned() else {
+            return Redirect::to("/login").into_response();
+        };
+        user
+    };
+
+    let request = axum::extract::Request::from_parts(parts, body);
+    let Ok(Form(form)) = Form::<DepositForm>::from_request(request, &app_state).await else {
+        let template = DepositTemplate {
+            error: Some("Invalid form data".to_string()),
+        };
+        return match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    };
+
+    info!(
+        "Deposit attempt for user: {} amount: {}",
+        user.email, form.amount
+    );
+
+    // Parse and validate amount
+    let amount: f64 = match form.amount.parse() {
+        Ok(amt) if amt > 0.0 => amt,
+        _ => {
+            let template = DepositTemplate {
+                error: Some("Please enter a valid positive amount".to_string()),
+            };
+            return match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
+    };
+
+    // Process the deposit
+    let deposit_result = {
+        let mut broker = app_state.lock().unwrap();
+        // TODO: Implement proper deposit logic in domain layer
+        if let Some(user_mut) = broker.user_repo.get_mut(&user_id) {
+            user_mut.balance += amount;
+            Ok(())
+        } else {
+            Err("User not found")
+        }
+    };
+
+    match deposit_result {
+        Ok(()) => {
+            info!(
+                "Deposit successful for user: {} amount: {}",
+                user.email, amount
+            );
+            Redirect::to("/dashboard").into_response()
+        }
+        Err(e) => {
+            error!("Deposit failed for user: {} error: {}", user.email, e);
+            let template = DepositTemplate {
+                error: Some(format!("Deposit failed: {e}")),
+            };
+            match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
         }
     }
 }

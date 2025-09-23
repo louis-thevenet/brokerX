@@ -16,10 +16,10 @@ const JWT_SECRET: &[u8] = b"your_secret_key_here_change_in_production";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,   // Subject (user ID)
-    pub email: String, // Username for convenience
-    pub exp: i64,      // Expiration time
-    pub iat: i64,      // Issued at
+    pub subject: String, // Subject (user ID)
+    pub email: String,   // Username for convenience
+    pub exp: i64,        // Expiration time
+    pub iat: i64,        // Issued at
 }
 
 impl Claims {
@@ -28,7 +28,7 @@ impl Claims {
         let exp = now + Duration::hours(24); // Token expires in 24 hours
 
         Self {
-            sub: user_id.to_string(),
+            subject: user_id.to_string(),
             email: username,
             exp: exp.timestamp(),
             iat: now.timestamp(),
@@ -104,7 +104,7 @@ pub async fn auth_middleware(
     };
 
     // Verify user still exists in the system
-    let user_id = match Uuid::parse_str(&claims.sub) {
+    let user_id = match Uuid::parse_str(&claims.subject) {
         Ok(id) => id,
         Err(_) => return Redirect::to("/login").into_response(),
     };

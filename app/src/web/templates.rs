@@ -4,7 +4,6 @@ use askama::Template;
 #[template(path = "login.html")]
 pub struct LoginTemplate {
     pub error: Option<String>,
-    pub success: Option<String>,
 }
 
 #[derive(Template)]
@@ -47,4 +46,9 @@ pub struct OrderDisplayData {
     pub quantity: u32,
     pub price: f64,
     pub status: String,
+}
+#[derive(Template)]
+#[template(path = "deposit.html")]
+pub struct DepositTemplate {
+    pub error: Option<String>,
 }

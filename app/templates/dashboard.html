@@ -9,8 +9,7 @@
             <div class="logo">BrokerX</div>
             <div class="nav-links">
                 <a href="/dashboard">Dashboard</a>
-                <a href="/accounts">Accounts</a>
-                <a href="/orders">Orders</a>
+                <a href="/deposit">Deposit</a>
                 <a href="/place_order">Trade</a>
                 <form action="/logout" method="post" style="margin: 0;">
                     <button type="submit" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">
@@ -22,129 +21,20 @@
     </div>
 
     <div class="main-content">
-        <div style="margin-bottom: 30px;">
-            <h1 style="margin-bottom: 10px;">Welcome back, {{ username }}!</h1>
-            <p style="color: #718096;">Here's your trading overview for today.</p>
-        </div>
-
-        <!-- Account Summary -->
-        <div class="grid grid-3" style="margin-bottom: 30px;">
-            <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                <h3 style="margin-bottom: 10px; opacity: 0.9;">Total Balance</h3>
-                <p style="font-size: 28px; font-weight: bold;">${{ account_balance }}</p>
-                <p style="opacity: 0.8; font-size: 14px;">+2.34% today</p>
-            </div>
-            
-            <div class="card">
-                <h3 style="margin-bottom: 10px; color: #4a5568;">Active Orders</h3>
-                <p style="font-size: 28px; font-weight: bold; color: #5a67d8;">
-                    2
-                </p>
-                <p style="color: #718096; font-size: 14px;">2 pending</p>
-            </div>
-            
-            <div class="card">
-                <h3 style="margin-bottom: 10px; color: #4a5568;">Today's P&L</h3>
-                <p style="font-size: 28px; font-weight: bold; color: #38a169;">+$234.50</p>
-                <p style="color: #718096; font-size: 14px;">+1.87% gain</p>
-            </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div style="margin-bottom: 30px;">
-            <h2 style="margin-bottom: 20px; color: #4a5568;">Quick Actions</h2>
-            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                <a href="/place_order" class="btn">Place Order</a>
-                <a href="/accounts" class="btn btn-secondary">View Accounts</a>
-                <a href="/orders" class="btn btn-secondary">Order History</a>
-            </div>
-        </div>
-
-        <!-- Recent Orders -->
-        <div>
-            <h2 style="margin-bottom: 20px; color: #4a5568;">Recent Orders</h2>
-            
-            {% if recent_orders.is_empty() %}
-            <div class="card" style="text-align: center; padding: 40px;">
-                <p style="color: #718096; margin-bottom: 20px;">No recent orders found.</p>
-                <a href="/place_order" class="btn">Place Your First Order</a>
-            </div>
-            {% else %}
-            <div class="card" style="padding: 0; overflow: hidden;">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Order ID</th>
-                            <th>Symbol</th>
-                            <th>Quantity</th>
-                            <th>Price</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for order in recent_orders %}
-                        <tr>
-                            <td style="font-family: monospace; font-size: 14px;">{{ order.id }}</td>
-                            <td style="font-weight: 600;">{{ order.symbol }}</td>
-                            <td>{{ order.quantity }}</td>
-                            <td>${{ order.price }}</td>
-                            <td>
-                                {% if order.status == "Filled" %}
-                                <span class="status-filled">{{ order.status }}</span>
-                                {% else if order.status == "Pending" %}
-                                <span class="status-pending">{{ order.status }}</span>
-                                {% else %}
-                                <span class="status-cancelled">{{ order.status }}</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- Market Overview (Placeholder) -->
-        <div style="margin-top: 30px;">
-            <h2 style="margin-bottom: 20px; color: #4a5568;">Market Overview</h2>
-            <div class="grid grid-2">
-                <div class="card">
-                    <h3 style="margin-bottom: 15px; color: #4a5568;">Popular Stocks</h3>
-                    <div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="font-weight: 500;">AAPL</span>
-                            <span style="color: #38a169;">$150.25 (+1.2%)</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="font-weight: 500;">GOOGL</span>
-                            <span style="color: #38a169;">$2,800.75 (+0.8%)</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="font-weight: 500;">MSFT</span>
-                            <span style="color: #e53e3e;">$420.10 (-0.5%)</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3 style="margin-bottom: 15px; color: #4a5568;">Market Indices</h3>
-                    <div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="font-weight: 500;">S&P 500</span>
-                            <span style="color: #38a169;">4,515.23 (+0.3%)</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="font-weight: 500;">NASDAQ</span>
-                            <span style="color: #38a169;">14,123.45 (+0.7%)</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <span style="font-weight: 500;">DOW</span>
-                            <span style="color: #e53e3e;">35,234.12 (-0.2%)</span>
-                        </div>
-                    </div>
+        <!-- Account Balance -->
+        <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; max-width: 400px; margin: 0 auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="font-size: 18px; margin: 0;">Account Balance</h2>
+                <div style="background: rgba(255, 255, 255, 0.2); padding: 8px; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
+                    💰
                 </div>
             </div>
+            <div style="font-size: 36px; font-weight: bold; margin-bottom: 5px;">
+                ${{ account_balance }}
+            </div>
+            <p style="opacity: 0.8; font-size: 14px;">
+                Available for trading
+            </p>
         </div>
     </div>
 </div>

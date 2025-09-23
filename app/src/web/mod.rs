@@ -12,9 +12,9 @@ use std::sync::{Arc, Mutex};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 
 use handlers::{
-    dashboard, home, login_page, login_submit, logout, mfa_verify_page, mfa_verify_submit,
-    register_page, register_submit, registration_verify_page, registration_verify_submit,
-    resend_mfa,
+    dashboard, deposit_page, deposit_submit, home, login_page, login_submit, logout,
+    mfa_verify_page, mfa_verify_submit, register_page, register_submit, registration_verify_page,
+    registration_verify_submit, resend_mfa,
 };
 
 // App state type - simplified to only contain BrokerX
@@ -27,12 +27,17 @@ pub fn create_app(state: AppState) -> Router {
         .route("/login", get(login_page).post(login_submit))
         .route("/register", get(register_page).post(register_submit))
         .route("/verify-mfa", get(mfa_verify_page).post(mfa_verify_submit))
-        .route("/verify-registration", get(registration_verify_page).post(registration_verify_submit))
+        .route(
+            "/verify-registration",
+            get(registration_verify_page).post(registration_verify_submit),
+        )
         .route("/resend-mfa", get(resend_mfa));
 
     // Protected routes (authentication required)
     let protected_routes = Router::new()
         .route("/dashboard", get(dashboard))
+        // add or remove money from account
+        .route("/deposit", get(deposit_page).post(deposit_submit))
         .route("/logout", post(logout))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
