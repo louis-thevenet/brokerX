@@ -269,7 +269,6 @@ pub async fn register_submit(
                 // Create user in the domain layer
 
                 match broker.user_repo.create_user(
-                    form.email.clone(), // username = email for now
                     form.email.clone(),
                     form.password.clone(),
                     form.firstname.clone(),

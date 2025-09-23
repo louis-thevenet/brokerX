@@ -8,7 +8,6 @@ use crate::mfa::{MfaError, MfaProvider, MfaService};
 
 #[derive(Debug, Clone)]
 pub struct User {
-    pub username: String,
     pub email: String,
     pub password_hash: String,
     pub firstname: String,
@@ -50,7 +49,6 @@ impl std::error::Error for AuthError {}
 
 impl User {
     pub fn new(
-        username: String,
         email: String,
         password: String,
         firstname: String,
@@ -62,7 +60,6 @@ impl User {
         }
 
         Ok(Self {
-            username,
             email,
             password_hash: Self::hash_password(&password),
             firstname,
@@ -123,7 +120,6 @@ pub trait UserRepoExt {
     /// Creates a new user with the given details
     fn create_user(
         &mut self,
-        username: String,
         email: String,
         password: String,
         firstname: String,
@@ -149,9 +145,6 @@ pub trait UserRepoExt {
         mfa_service: &MfaService<P>,
     ) -> Result<bool, AuthError>;
 
-    /// Gets a user by username
-    fn get_user_by_username(&self, username: &str) -> Option<&User>;
-
     /// Gets a user by email
     fn get_user_by_email(&self, email: &str) -> Option<&User>;
     /// Gets a user ID by email
@@ -159,9 +152,6 @@ pub trait UserRepoExt {
 
     /// Gets a user by user ID
     fn get_user_by_id(&self, user_id: &UserId) -> Option<&User>;
-
-    /// Checks if a username already exists
-    fn username_exists(&self, username: &str) -> bool;
 
     /// Checks if an email already exists
     fn email_exists(&self, email: &str) -> bool;
@@ -189,42 +179,26 @@ pub trait UserRepoExt {
 impl UserRepoExt for UserRepo {
     fn create_user(
         &mut self,
-        username: String,
         email: String,
         password: String,
         firstname: String,
         surname: String,
         initial_balance: f64,
     ) -> Result<UserId, AuthError> {
-        // Check if username already exists
-        if self.username_exists(&username) {
-            return Err(AuthError::UserAlreadyExists);
-        }
-
         // Check if email already exists
         if self.email_exists(&email) {
             return Err(AuthError::UserAlreadyExists);
         }
 
-        let user = User::new(
-            username,
-            email,
-            password,
-            firstname,
-            surname,
-            initial_balance,
-        )?;
+        let user = User::new(email, password, firstname, surname, initial_balance)?;
         let user_id = Uuid::new_v4();
         self.insert(user_id, user);
 
         Ok(user_id)
     }
 
-    fn authenticate_user(&self, username: &str, password: &str) -> Result<UserId, AuthError> {
-        if let Some((user_id, user)) = self
-            .iter()
-            .find(|(_, user)| user.username == username || user.email == username)
-        {
+    fn authenticate_user(&self, email: &str, password: &str) -> Result<UserId, AuthError> {
+        if let Some((user_id, user)) = self.iter().find(|(_, user)| user.email == email) {
             if !user.is_verified {
                 debug!("User {} not verified", user_id);
                 return Err(AuthError::NotVerified(*user_id));
@@ -241,12 +215,12 @@ impl UserRepoExt for UserRepo {
 
     async fn initiate_mfa<P: MfaProvider>(
         &self,
-        username: &str,
+        email: &str,
         mfa_service: &MfaService<P>,
     ) -> Result<String, AuthError> {
         let user = self
-            .get_user_by_username(username)
-            .or_else(|| self.get_user_by_email(username))
+            .get_user_by_email(email)
+            .or_else(|| self.get_user_by_email(email))
             .ok_or(AuthError::UserNotFound)?;
 
         mfa_service
@@ -265,16 +239,6 @@ impl UserRepoExt for UserRepo {
             .verify_mfa(challenge_id, code)
             .await
             .map_err(AuthError::MfaFailed)
-    }
-
-    fn get_user_by_username(&self, username: &str) -> Option<&User> {
-        self.iter().find_map(|(_, user)| {
-            if user.username == username {
-                Some(user)
-            } else {
-                None
-            }
-        })
     }
 
     fn get_user_by_email(&self, email: &str) -> Option<&User> {
@@ -297,10 +261,6 @@ impl UserRepoExt for UserRepo {
     }
     fn get_user_by_id(&self, user_id: &UserId) -> Option<&User> {
         self.get(user_id)
-    }
-
-    fn username_exists(&self, username: &str) -> bool {
-        self.get_user_by_username(username).is_some()
     }
 
     fn email_exists(&self, email: &str) -> bool {
