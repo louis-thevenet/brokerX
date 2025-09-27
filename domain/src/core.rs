@@ -27,14 +27,19 @@ impl BrokerX {
             order_queue: VecDeque::new(),
         }
     }
+    #[allow(clippy::missing_panics_doc)]
     pub fn debug_populate(&mut self) {
-        let _id = self.user_repo.create_user(
-            String::from("test@test.com"),
-            String::from("test"),
-            String::from("Test"),
-            String::from("User"),
-            1000.0,
-        );
+        let id = self
+            .user_repo
+            .create_user(
+                String::from("test@test.com"),
+                String::from("aaaaaa"),
+                String::from("Test"),
+                String::from("User"),
+                1000.0,
+            )
+            .unwrap();
+        self.user_repo.verify_user_email(&id).unwrap();
     }
 
     fn update_orders(&mut self) {
