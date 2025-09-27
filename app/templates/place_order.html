@@ -46,11 +46,19 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="order_type">Order Type</label>
-                        <select id="order_type" name="order_type" required>
-                            <option value="">Select order type</option>
+                        <label for="side">Side</label>
+                        <select id="side" name="side" required>
+                            <option value="">Select side</option>
                             <option value="buy">Buy</option>
                             <option value="sell">Sell</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="order_type">Order Type</label>
+                        <select id="order_type" name="order_type" required onchange="togglePriceField()">
+                            <option value="market" selected>Market</option>
+                            <option value="limit">Limit</option>
                         </select>
                     </div>
 
@@ -60,10 +68,20 @@
                                placeholder="Number of shares">
                     </div>
 
-                    <div class="form-group">
-                        <label for="price">Price per Share</label>
-                        <input type="number" id="price" name="price" required min="0.01" step="0.01"
+                    <div class="form-group" id="price-group">
+                        <label for="price">Price per Share <span id="price-required">(required for limit orders)</span></label>
+                        <input type="number" id="price" name="price" min="0.01" step="0.01"
                                placeholder="0.00">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="time_in_force">Time in Force</label>
+                        <select id="time_in_force" name="time_in_force" required>
+                            <option value="">Select duration</option>
+                            <option value="DAY">Day</option>
+                            <option value="IOC">Immediate or Cancel</option>
+                            <option value="FOK">Fill or Kill</option>
+                        </select>
                     </div>
 
                     <div style="margin-bottom: 20px; padding: 15px; background: #f7fafc; border-radius: 8px;">
@@ -92,11 +110,7 @@
                     <h3 style="margin-bottom: 15px; color: #4a5568;">Account Balance</h3>
                     <div style="margin-bottom: 15px;">
                         <p style="color: #718096; font-size: 14px; margin-bottom: 5px;">Available Cash</p>
-                        <p style="font-size: 24px; font-weight: bold; color: #38a169;">$8,497.50</p>
-                    </div>
-                    <div>
-                        <p style="color: #718096; font-size: 14px; margin-bottom: 5px;">Buying Power</p>
-                        <p style="font-size: 20px; font-weight: bold; color: #5a67d8;">$25,492.50</p>
+                        <p style="font-size: 24px; font-weight: bold; color: #38a169;">${{ account_balance }}</p>
                     </div>
                 </div>
 
@@ -152,7 +166,32 @@
         document.getElementById('total-cost').textContent = '$' + total.toFixed(2);
     }
 
+    function togglePriceField() {
+        const orderType = document.getElementById('order_type').value;
+        const priceGroup = document.getElementById('price-group');
+        const priceInput = document.getElementById('price');
+        const priceRequired = document.getElementById('price-required');
+        
+        if (orderType === 'market') {
+            priceGroup.style.display = 'none';
+            priceInput.removeAttribute('required');
+            priceRequired.textContent = '(not required for market orders)';
+        } else if (orderType === 'limit') {
+            priceGroup.style.display = 'block';
+            priceInput.setAttribute('required', '');
+            priceRequired.textContent = '(required for limit orders)';
+        } else {
+            priceGroup.style.display = 'block';
+            priceInput.removeAttribute('required');
+            priceRequired.textContent = '(required for limit orders)';
+        }
+        updateEstimatedTotal();
+    }
+
     document.getElementById('quantity').addEventListener('input', updateEstimatedTotal);
     document.getElementById('price').addEventListener('input', updateEstimatedTotal);
+    
+    // Initialize the form state
+    togglePriceField();
 </script>
 {% endblock %}

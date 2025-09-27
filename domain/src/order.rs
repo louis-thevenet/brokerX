@@ -1,9 +1,11 @@
-use chrono::NaiveDateTime;
+use async_trait::async_trait;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use in_memory_adapter::InMemoryRepo;
 use uuid::Uuid;
 
 use crate::user::UserId;
 #[derive(Debug)]
+/// Represents the current status of an order
 pub enum OrderStatus {
     /// Order has not yet been processed by the system
     Queued,
@@ -24,27 +26,41 @@ pub enum OrderStatus {
 }
 
 #[derive(Debug, Clone)]
-pub enum IssuerType {
-    Buyer,
-    Seller,
+pub enum OrderSide {
+    Buy,
+    Sell,
+}
+#[derive(Debug, Clone)]
+pub enum OrderType {
+    Market,
+    Limit(f64),
 }
 
 #[derive(Debug)]
 pub struct Order {
     pub client_id: UserId,
-    pub date: NaiveDateTime,
+    pub date: DateTime<Utc>,
     pub symbol: String,
     pub quantity: u64,
     pub status: OrderStatus,
-    pub issuer: IssuerType,
-    /// Optional limit price for limit orders
-    pub limit: Option<f64>,
+    pub order_type: OrderType,
+    pub order_side: OrderSide,
 }
-
-impl Order {}
 
 pub type OrderId = Uuid;
 
 pub type OrderRepo = InMemoryRepo<Order, OrderId>;
 
-pub trait OrderRepoExt {}
+#[async_trait]
+pub trait OrderRepoExt {
+    fn create_order(&mut self, order: Order) -> OrderId;
+}
+
+#[async_trait]
+impl OrderRepoExt for OrderRepo {
+    fn create_order(&mut self, order: Order) -> OrderId {
+        let id = Uuid::new_v4();
+        self.insert(id, order);
+        id
+    }
+}

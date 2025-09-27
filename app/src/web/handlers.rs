@@ -8,6 +8,7 @@ use serde::Deserialize;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use super::templates::{DepositTemplate, PlaceOrderTemplate};
 use crate::web::{
     jwt,
     templates::{
@@ -16,9 +17,8 @@ use crate::web::{
     },
     AppState,
 };
+use domain::order::{Order, OrderRepoExt};
 use domain::user::{AuthError, User, UserRepoExt};
-
-use super::templates::DepositTemplate;
 
 #[derive(Deserialize)]
 pub struct LoginForm {
@@ -70,6 +70,15 @@ pub struct ResendMfaQuery {
 #[derive(Deserialize)]
 pub struct DepositForm {
     pub amount: String,
+}
+
+#[derive(Deserialize)]
+pub struct PlaceOrderForm {
+    pub symbol: String,
+    pub side: String,       // "buy" or "sell"
+    pub order_type: String, // "market" or "limit"
+    pub quantity: String,
+    pub price: String,
 }
 
 // Handler functions
@@ -783,6 +792,152 @@ pub async fn deposit_submit(
             match template.render() {
                 Ok(html) => Html(html).into_response(),
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+    }
+}
+pub async fn place_order_page(
+    app_state: State<AppState>,
+    request: axum::extract::Request,
+) -> Response {
+    check_token_and_execute(app_state, request, |_app_state, user, _request| {
+        let template = PlaceOrderTemplate {
+            error: None,
+            account_balance: user.balance,
+        };
+        match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    })
+}
+#[allow(clippy::too_many_lines)]
+pub async fn place_order_submit(
+    State(app_state): State<AppState>,
+    request: axum::extract::Request,
+) -> Response {
+    let (parts, body) = request.into_parts(); // get form
+
+    // Check for authentication token
+    let Some(claims) = parts.extensions.get::<jwt::Claims>() else {
+        return Redirect::to("/login").into_response();
+    };
+
+    // Get user from domain layer
+    let Ok(user_id) = Uuid::parse_str(&claims.subject) else {
+        return Redirect::to("/login").into_response();
+    };
+
+    let user = {
+        let broker = app_state.lock().unwrap();
+        let Some(user) = broker.user_repo.get(&user_id).cloned() else {
+            return Redirect::to("/login").into_response();
+        };
+        user
+    };
+
+    let request = axum::extract::Request::from_parts(parts, body);
+    let Ok(Form(form)) = Form::<PlaceOrderForm>::from_request(request, &app_state).await else {
+        let template = PlaceOrderTemplate {
+            error: Some("Invalid form data".to_string()),
+            account_balance: user.balance,
+        };
+        return match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+    };
+    info!(
+        "Place order attempt for user: {} symbol: {} type: {} quantity: {} price: {}",
+        user.email, form.symbol, form.order_type, form.quantity, form.price
+    );
+    let quantity = match form.quantity.parse::<u64>() {
+        Ok(q) if q > 0 => q,
+        _ => {
+            let template = PlaceOrderTemplate {
+                error: Some("Please enter a valid positive quantity".to_string()),
+                account_balance: user.balance,
+            };
+            return match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
+    };
+
+    let order_side = match form.side.as_str() {
+        "buy" => domain::order::OrderSide::Buy,
+        "sell" => domain::order::OrderSide::Sell,
+        _ => {
+            let template = PlaceOrderTemplate {
+                error: Some("Invalid order side".to_string()),
+                account_balance: user.balance,
+            };
+            return match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
+    };
+    let order_type = match form.order_type.as_str() {
+        "market" => domain::order::OrderType::Market,
+        "limit" => {
+            let limit = match form.price.parse::<f64>() {
+                Ok(p) if p > 0.0 => p,
+                _ => {
+                    let template = PlaceOrderTemplate {
+                        error: Some("Please enter a valid positive price".to_string()),
+                        account_balance: user.balance,
+                    };
+                    return match template.render() {
+                        Ok(html) => Html(html).into_response(),
+                        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                    };
+                }
+            };
+            domain::order::OrderType::Limit(limit)
+        }
+        _ => {
+            let template = PlaceOrderTemplate {
+                error: Some("Invalid order type".to_string()),
+                account_balance: user.balance,
+            };
+            return match template.render() {
+                Ok(html) => Html(html).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+        }
+    };
+    {
+        let mut broker = app_state.lock().unwrap();
+        match broker.create_order(
+            user_id,
+            form.symbol.clone(),
+            quantity,
+            order_side,
+            order_type,
+        ) {
+            Ok(_) => {
+                info!(
+                    "Order successfully sent for user: {} symbol: {} type: {} quantity: {} price: {}",
+                    user.email, form.symbol, form.order_type, form.quantity, form.price
+                );
+                Redirect::to("/dashboard").into_response()
+            }
+
+            Err(e) => {
+                error!(
+                    "Order placement failed for user: {} error: {}",
+                    user.email, e
+                );
+                let template = PlaceOrderTemplate {
+                    error: Some(format!("Order placement failed: {e}")),
+                    account_balance: user.balance,
+                };
+                match template.render() {
+                    Ok(html) => Html(html).into_response(),
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                }
             }
         }
     }
