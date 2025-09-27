@@ -1,11 +1,9 @@
-use std::collections::VecDeque;
-
-use rand::random;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{
     mfa_factory::{DefaultMfaService, MfaServiceFactory},
-    order::{Order, OrderId, OrderRepo, OrderRepoExt, OrderSide, OrderStatus, OrderType},
+    order::{Order, OrderId, OrderRepoExt, OrderSide, OrderStatus, OrderType},
+    order_processing::OrderProcessingPool,
     pre_trade::{PreTradeError, PreTradeValidator},
     user::{UserId, UserRepo, UserRepoExt},
 };
@@ -14,21 +12,34 @@ use crate::{
 pub struct BrokerX {
     pub user_repo: UserRepo,
     pub mfa_service: DefaultMfaService,
-    pub order_repo: OrderRepo,
-    order_queue: VecDeque<OrderId>,
     pre_trade_validator: PreTradeValidator,
+    order_processing_pool: OrderProcessingPool,
 }
 
 impl BrokerX {
     #[must_use]
     pub fn new() -> Self {
+        Self::with_thread_count(4)
+    }
+
+    #[must_use]
+    pub fn with_thread_count(num_threads: usize) -> Self {
+        let order_processing_pool = OrderProcessingPool::new(num_threads);
+
         BrokerX {
             user_repo: UserRepo::new(),
             mfa_service: MfaServiceFactory::create_email_mfa_service(),
-            order_repo: OrderRepo::new(),
-            order_queue: VecDeque::new(),
             pre_trade_validator: PreTradeValidator::with_default_config(),
+            order_processing_pool,
         }
+    }
+
+    pub fn start_order_processing(&self) {
+        self.order_processing_pool.start();
+    }
+
+    pub fn stop_order_processing(&self) {
+        self.order_processing_pool.stop();
     }
     pub fn create_order(
         &mut self,
@@ -65,11 +76,16 @@ impl BrokerX {
             status: OrderStatus::Queued,
         };
 
-        let order_id = self.order_repo.create_order(order);
+        // Create order in the thread pool's repository
+        let order_id = {
+            let mut state = self.order_processing_pool.shared_state.lock().unwrap();
+            state.order_repo.create_order(order)
+        };
+
         info!("Pre-trade checks validated for {order_id}");
 
-        // Add to processing queue
-        self.order_queue.push_back(order_id);
+        // Submit to processing pool
+        self.order_processing_pool.submit_order(order_id);
 
         Ok(order_id)
     }
@@ -88,60 +104,33 @@ impl BrokerX {
         self.user_repo.verify_user_email(&id).unwrap();
     }
 
-    pub fn update_orders(&mut self) {
-        if !self.order_queue.is_empty() {
-            let id = self.order_queue.pop_front().unwrap();
+    /// Get an order by ID
+    #[must_use]
+    pub fn get_order(&self, order_id: &OrderId) -> Option<Order> {
+        self.order_processing_pool.get_order(order_id)
+    }
 
-            let order = self.order_repo.get_mut(&id).unwrap();
-            match order.status {
-                OrderStatus::Queued => {
-                    // TODO: check balance based on limit
-                    order.status = OrderStatus::Pending;
-                    self.order_queue.push_back(id);
-                }
-                OrderStatus::Pending => {
-                    let random = random::<u32>() % 3;
-                    if random == 0 {
-                        order.status = OrderStatus::Filled {
-                            date: chrono::Utc::now().naive_local(),
-                        };
-                    } else if random == 1 {
-                        let amount_executed = if order.quantity > 1 {
-                            order.quantity / 2
-                        } else {
-                            1
-                        };
-                        order.status = OrderStatus::PartiallyFilled { amount_executed };
-                        self.order_queue.push_back(id);
-                    } else {
-                        order.status = OrderStatus::Rejected {
-                            date: chrono::Utc::now().naive_local(),
-                        };
-                    }
-                }
-                OrderStatus::PartiallyFilled { amount_executed: _ } => {
-                    order.status = OrderStatus::Filled {
-                        date: chrono::Utc::now().naive_local(),
-                    }
-                }
-                OrderStatus::PendingCancel => order.status = OrderStatus::Cancelled,
-                OrderStatus::Filled { date: _ } => {
-                    error!("Shouldn't happen - order already filled")
-                }
-                OrderStatus::Cancelled => error!("Shouldn't happen - order already cancelled"),
-                OrderStatus::Expired { date: _ } => {
-                    error!("Shouldn't happen - order already expired")
-                }
-                OrderStatus::Rejected { date: _ } => {
-                    error!("Shouldn't happen - order already rejected")
-                }
-            }
-        }
+    /// Get the current queue size (number of orders waiting to be processed)
+    #[must_use]
+    pub fn get_queue_size(&self) -> usize {
+        self.order_processing_pool.get_queue_size()
+    }
+
+    /// Cancel an order (sets it to `PendingCancel` status)
+    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), String> {
+        self.order_processing_pool.cancel_order(order_id)
     }
 }
 
 impl Default for BrokerX {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for BrokerX {
+    fn drop(&mut self) {
+        info!("BrokerX shutting down...");
+        self.stop_order_processing();
     }
 }

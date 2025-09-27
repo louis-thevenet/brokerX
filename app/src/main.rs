@@ -16,6 +16,7 @@ async fn main() -> Result<()> {
 
     let mut broker_x = BrokerX::new();
     broker_x.debug_populate();
+    broker_x.start_order_processing();
     tracing::debug!("BrokerX initialized: {broker_x:#?}");
 
     let app_state = Arc::new(Mutex::new(broker_x));

@@ -4,7 +4,7 @@ use in_memory_adapter::InMemoryRepo;
 use uuid::Uuid;
 
 use crate::user::UserId;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Represents the current status of an order
 pub enum OrderStatus {
     /// Order has not yet been processed by the system
@@ -36,7 +36,7 @@ pub enum OrderType {
     Limit(f64),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Order {
     pub client_id: UserId,
     pub date: DateTime<Utc>,
