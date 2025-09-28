@@ -1,0 +1,86 @@
+classDiagram
+  title: Level 4 - Module Structure
+  
+  %% Application Crate
+  class app {
+    <<crate>>
+    +main.rs
+    +config.rs
+    +logging.rs
+    +web/mod.rs
+    +web/handlers.rs
+    +web/templates.rs
+    +web/jwt.rs
+  }
+  
+  %% Domain Crate
+  class domain {
+    <<crate>>
+    +lib.rs
+    +core.rs
+    +user.rs
+    +order.rs
+    +portfolio.rs
+    +pre_trade.rs
+    +order_processing.rs
+  }
+  
+  %% Infrastructure Adapter Crates
+  class database_adapter {
+    <<crate>>
+    +lib.rs
+    +db.rs
+    +tests.rs
+  }
+  
+  class mfa_adapter {
+    <<crate>>
+    +lib.rs
+    +mfa.rs
+    EmailOtpProvider
+    MfaProvider trait
+    MfaService
+  }
+  
+  %% class in_memory_adapter {
+  %%   <<crate>>
+  %%   +lib.rs
+  %%   InMemoryRepo
+  %% }
+  
+  %% Key External Dependencies
+  class Axum {
+    <<external>>
+    Web framework
+  }
+  
+  class SQLx {
+    <<external>>
+    Database toolkit
+  }
+  
+  class Lettre {
+    <<external>>
+    Email library
+  }
+  
+  class Askama {
+    <<external>>
+    Template engine
+  }
+  
+  %% Workspace Dependencies
+  app --> domain: direct dependency
+  domain --> database_adapter: path dependency
+  domain --> mfa_adapter: path dependency
+  
+  %% External Dependencies
+  app --> Axum: axum 0.7
+  app --> Askama: askama 0.12
+  database_adapter --> SQLx: sqlx 0.8 postgres
+  mfa_adapter --> Lettre: lettre 0.11
+  
+  %% Architecture Notes
+  @note right of domain: Hexagonal Core\nDepends on adapters via traits
+  @note left of app: Entry Point\nAxum web server
+  @note bottom of database_adapter: PostgreSQL Adapter\nGeneric Repository impl

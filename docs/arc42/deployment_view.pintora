@@ -1,0 +1,14 @@
+classDiagram
+  title: BrokerX - Vue de Déploiement
+  
+  class BrokerXBinary {
+    <<executable>>
+    Rust Application
+  }
+  
+  class PostgreSQL {
+    <<database>>
+    Data Storage
+  }
+  
+  BrokerXBinary --> PostgreSQL: SQL connections

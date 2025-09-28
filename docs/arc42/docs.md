@@ -6,12 +6,11 @@ Ce document, basé sur le modèle arc42, décrit une application de courtage en 
 
 ### Panorama des exigences
 
-L'application « BrokerX » est un système monolithique avec interface en ligne de commande qui permet aux particuliers et petites entreprises d'accéder à une plateforme de courtage moderne en ligne. L'application permet aux clients de :
+L'application « BrokerX » est un système monolithique avec interface web qui permet aux particuliers et petites entreprises d'accéder à une plateforme de courtage moderne en ligne. L'application permet aux clients de :
 
-- Passer des ordres
-- Consulter leurs portefeuilles
-- Recevoir exécutions et confirmations
-- Effectuer le règlement et la compensation des transactions​
+- Gérer un portefeuille personnel (solde, historique),
+- Passer des ordres d'achat/vente d'instruments financiers (actions),
+- Consulter les données de marché en temps réel.
 
 ### Objectifs qualité
 
@@ -23,9 +22,7 @@ L'application « BrokerX » est un système monolithique avec interface en ligne
 
 ### Parties prenantes (Stakeholders)
 
-<!-- TODO: tiré du cahier des charges, à réécrire ? -->
-
-- **Clients** : utilisateurs via interface web/mobile.
+- **Clients** : utilisateurs via interface web.
 
 - **Opérations Back-Office** : gestion des règlements, supervision.
   **Risque** : surveillance pré- et post-trade.
@@ -59,124 +56,35 @@ Le système permet aux utilisateurs de :
 #### Priorisation MoSCoW
 
 - Must Have
-  - UC-01 — Inscription & Vérification d’identité
-  - UC-03 — Approvisionnement du portefeuille (dépôt virtuel)
-  - UC-05 — Placement d’un ordre (marché/limite) avec contrôles pré-trade
+  - UC-01 — Inscription & Vérification d’identité [FAIT]
+  - UC-03 — Approvisionnement du portefeuille (dépôt virtuel) [FAIT]
+  - UC-05 — Placement d’un ordre (marché/limite) avec contrôles pré-trade [FAIT]
 - Should Have
-  - UC-07 — Appariement interne & Exécution (matching)
-  - UC-06 — Modification / Annulation d’un ordre
+  - UC-07 — Appariement interne & Exécution (matching) [NON FAIT]
+  - UC-06 — Modification / Annulation d’un ordre [NON FAIT]
 - Could Have
-  - UC-08 — Confirmation d’exécution et Notifications
-  - UC-02 — Authentification & MFA
-  - UC-04 — Abonnement aux données de marché
+  - UC-08 — Confirmation d’exécution et Notifications [NON FAIT]
+  - UC-02 — Authentification & MFA [FAIT]
+  - UC-04 — Abonnement aux données de marché [NON FAIT]
 - Won't Have
 
 #### UC-01 — Inscription & Vérification d’identité
 
-**Objectif** : ​Permettre à un nouvel utilisateur de créer un compte sur la plateforme en fournissant ses informations personnelles, de vérifier son identité selon les exigences réglementaires (KYC/AML) et d’activer son accès à la plateforme. Ce cas établit la relation de confiance initiale entre l’utilisateur et BrokerX.
-
-**Acteur principal** : Client​
-
-**Déclencheur** : L’utilisateur souhaite créer un compte.​
-
-**Pré-conditions** : Aucune.​
-
-**Postconditions (succès)** : Compte créé en état Pending et changer à Active après validation.​
-
-**Postconditions (échec)** : Compte non créé ou marqué Rejected avec raison.
-
-**Flux principal (succès)** :
-
-- Le Client fournit email/téléphone, mot de passe, données personnelles requises (nom, adresse, date de naissance).​
-- Le Système valide le format, crée un compte en Pending, envoie un lien de vérification email/SMS.​
-- Le Client confirme le lien OTP (one-time passwords)/MFA (multi-factor authentication).​
-- Le Système passe le compte à Active et journalise l’audit (horodatage, empreinte des
-  documents).​
-
-  **Alternatifs / Exceptions​** :
-
-* A1. Vérif email non complétée : compte reste Pending (rappel, expiration après X jours).​
-* E1. Doublon (email/tel déjà utilisés) : rejet, proposition de récupération de compte.
-
 #### UC-03 — Approvisionnement du portefeuille (dépôt virtuel)
 
-**Objectif** : Donner aux utilisateurs la possibilité de créditer leur portefeuille virtuel en effectuant des dépôts simulés, afin de disposer de liquidités nécessaires pour placer des ordres d’achat. Ce cas assure la disponibilité des fonds pour les opérations boursières.
-
-**Acteur principal** : Client​
-
-**Secondaires** : Service Paiement Simulé / Back-Office​
-
-**Déclencheur** : Le Client crédite son solde en monnaie fiduciaire simulée.​
-
-**Préconditions** : Compte Active.​
-
-**Postconditions (succès)** : Solde augmenté, écriture comptable ajoutée (journal immuable).​
-
-**Postconditions (échec)** : Solde inchangé.
-
-**Flux principal** :
-
-- Le Client saisit le montant.​
-- Le Système valide limites (min/max, anti-fraude).​
-- Le Système crée une transaction Pending.​
-- Le Service Paiement Simulé répond Settled.​
-- Le Système crédite le portefeuille, journalise et notifie.​
-
-  **Alternatifs / Exceptions​** :
-
-* A1. Paiement async : passe Pending, solde crédite à confirmation.​
-* E1. Paiement rejeté : état Failed, notification avec motif.​
-* E2. Idempotence : si retry reçu avec même idempotency-key, renvoyer le résultat précédent.
-
 #### UC-05 — Placement d’un ordre (marché/limite) avec contrôles pré-trade
-
-**Objectif** : Permettre aux clients de soumettre des ordres d’achat ou de vente (marché ou limite), qui seront validés par des contrôles pré-trade et insérés dans le moteur d’appariement. Ce cas constitue le cœur fonctionnel de la plateforme de courtage.
-
-**Acteur principal** : Client​
-
-**Secondaires** : Moteur de Règles Pré-trade, Gestion des Risques, Comptes/Portefeuilles​
-
-**Déclencheur** : Le Client soumet un ordre.​
-
-**Préconditions** : Session valide, portefeuille existant.​
-
-**Postconditions (succès)** : Ordre accepté (ACK) et placé dans le carnet interne.​
-
-**Postconditions (échec)** : Ordre rejeté avec raison.
-
-**Flux principal (succès)** :
-
-- Le Client renseigne symbole, sens (Achat/Vente), type (Marché/Limite), quantité, prix (si limite), durée (DAY/IOC…).
-- Le Système normalise les données et horodate l’opération (timestamp système en UTC avec millisecondes ou nanosecondes).
-- Contrôles pré-trade
-  - Pouvoir d’achat / marge disponible,​
-  - Règles de prix (bandes, tick size),​
-  - Interdictions (short-sell si non autorisé),​
-  - Limites par utilisateur (taille max, notionals),​
-  - Sanity checks (quantité > 0, instrument actif).​
-- Si OK, le Système attribue un OrderID, persiste, achemine au Moteur d’appariement interne.
-
-**Alternatifs / Exceptions​** :
-
-- A1. Type Marché : prix non requis, routage immédiat.​
-- A2. Durée IOC/FOK : logique spécifique au matching (voir UC-07).​
-- E1. Pouvoir d’achat insuffisant : Reject avec motif.​
-- E2. Violation bande de prix : Reject.​
-- E3. Idempotence : même clientOrderId → renvoyer résultat précédent.
 
 ### Contexte technique
 
 - Environnement d'execution
 
   - **Interface** : Application monolithique Rust avec interface Web.
-  - **Déploiement** : Docker, Cargo
-  <!-- TODO docker ? -->
+  - **Déploiement** : Docker (base de données), Cargo (application)
 
 - **Dépendances externes**
-  - **Base de données relationnelle** (ex. PostgreSQL, SQLite pour le proto) pour stocker :
+  - **Base de données relationnelle** (PostgreSQL) pour stocker :
     - Comptes utilisateurs
     - Ordres et transactions
-    - Portefeuilles
   - **Fournisseur de données de marché**.
 - **Interfaces utilisateurs**
   - Interface web
@@ -185,63 +93,152 @@ Le système permet aux utilisateurs de :
 
 <!-- TODO: compléter ça -->
 
-| Problème                           | Approche de solution                                                                      |
-| ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| **Performance**                    | Utilisation du langage Rust                                                               |
-| **Besoin d'un prototype évolutif** | Architecture monolithique modulaire avec séparation claire des responsabilités            |
-| **Gestion des données**            | Base relationnelle (**PostgreSQL** en production, **SQLite** pour le développement/proto) |
-| **Rapports statistiques**          | Traitement direct depuis Redis pour éviter la charge sur MySQL                            |
+| Problème                           | Approche de solution                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------ |
+| **Performance**                    | Utilisation du langage Rust                                                    |
+| **Besoin d'un prototype évolutif** | Architecture monolithique modulaire avec séparation claire des responsabilités |
+| **Gestion des données**            | Base relationnelle (**PostgreSQL**)                                            |
+| **Rapports statistiques**          |                                                                                |
 
 ## 5. Vue des blocs de construction
 
-![Class](class.png)
-![Component](component.png)
+### 5.1 Vue d'ensemble du système (Niveau 1)
+
+![](level1_context.svg)
+
+Le système BrokerX suit une architecture hexagonale (ports et adaptateurs) qui sépare clairement :
+
+- **Le coeur métier** : logique de domaine pure sans dépendances externes
+- **Les adaptateurs primaires** : interfaces utilisateur (Web, CLI)
+- **Les adaptateurs secondaires** : infrastructure (base de données, service MFA, etc)
+
+### 5.2 Architecture du domaine (Niveau 2)
+
+![](level2_domain.svg)
+
+Le coeur du système est organisé autour de l'agrégat principal `BrokerX` qui coordonne :
+
+- `ProcessingPool` avec `SharedState` : traitement asynchrone des ordres avec état partagé
+- `UserRepo` et `OrderRepo` : repositories pour la persistance (contenus dans `SharedState`)
+- `PreTradeValidator` : validation des règles de risque pré-trade
+- `MfaService` : authentification multi-facteurs (via mfa_adapter)
+
+### 5.3 Ports et Adaptateurs (Niveau 3)
+
+![](./level3_ports_and_adapters.svg)
+
+L'implémentation hexagonale respecte le principe d'inversion de dépendance :
+
+- **Ports primaires** : définissent les cas d'utilisation métier
+- **Ports secondaires** : définissent les besoins d'infrastructure
+- **Adaptateurs** : implémentations concrètes des ports
+
+### 5.4 Structure modulaire (Niveau 4)
+
+![](./level4_module_structure.svg)
+
+L'organisation en crates Rust respecte la séparation des responsabilités :
+
+- **domain** : logique métier pure (core, order_processing, user, order, portfolio, pre_trade)
+- **app** : orchestration et interface web (Axum + Askama + templates)
+- **database_adapter** : persistance PostgreSQL
+- **mfa_adapter** : services d'authentification multi-facteurs
+- **in_memory_adapter** : implémentation en mémoire pour les tests
+
+### 5.5 Détail du traitement des ordres
+
+![](order_processing_detail.svg)
+
+Le flux de traitement des ordres illustre l'architecture réactive :
+
+1. **Réception** via l'interface web (handlers Axum)
+2. **Validation pré-trade** avec contrôles de risque
+3. **Traitement asynchrone** dans un pool de threads
+4. **Persistance** avec gestion des états d'ordre
 
 ## 6. Vue d'exécution
 
-![Use Case](use_case.png)
+### 6.1 Parcours utilisateur complet
+
+![](./complete_user_journey.svg)
+
+Ce diagramme de séquence illustre l'ensemble des interactions utilisateur dans le système BrokerX, de l'inscription initiale jusqu'à la gestion complète du portefeuille. Il couvre tous les cas d'usage implémentés :
+
+#### Flux principaux documentés :
+
+1. **Inscription et vérification d'identité (UC-01)**
+
+   - Création de compte avec validation email
+   - Processus de vérification par code à 6 chiffres
+   - Activation du compte utilisateur
+
+2. **Authentification et MFA (UC-02)**
+
+   - Connexion sécurisée avec email/mot de passe
+   - Authentification multi-facteurs obligatoire
+   - Génération et validation de tokens JWT
+
+3. **Approvisionnement du portefeuille (UC-03)**
+
+   - Dépôt virtuel de fonds
+
+4. **Placement d'ordres avec contrôles pré-trade (UC-05)**
+
+   - Validation des formulaires d'ordre
+   - Contrôles de risque et de solvabilité
+   - Traitement asynchrone par le ProcessingPool
+
+5. **Traitement d'ordres en arrière-plan**
+   - Workers threads pour l'exécution des ordres
+   - Transitions d'état (Queued → Pending → Filled/Rejected)
+   - Mise à jour automatique des portefeuilles
 
 ## 7. Vue de déploiement
 
-![Deployment](deployment.png)
+![](./deployment_view.svg)
+
+1. **BrokerX Container**
+
+   - **Runtime** : Binaire Rust compilé statiquement
+   - **Framework** : Axum avec runtime Tokio asynchrone
+   - **Port** : 3000 (configurable via variables d'environnement)
+
+2. **PostgreSQL Container**
+   - **Base de données** : PostgreSQL
+   - **Persistance** : Volume Docker pour la durabilité des données
+   - **Connection pooling** : Géré par SQLx côté application
 
 ## 8. Concepts transversaux
 
-?
+- Architecture héxagonale
+- Persistance (Postgresql)
 
 ## 9. Décisions d'architecture
 
 <!-- TODO: les lister -->
 
+- [ADR-001](../adr/adr001.md) - Adoption de l'architecture hexagonale
+- [ADR-002](../adr/adr002.md) - Choix de la technologie web
+- [ADR-003](../adr/adr003.md) -Adoption des UUIDs comme identifiants pour les clients et les ordres
+- [ADR-004](../adr/adr004.md) - Choix de la technologie de journeaux de logs
+- [ADR-005](../adr/adr005.md) - Implémentation du traitement des ordres
+
 ## 10. Exigences qualité
 
-### Performance
+- **Disponibilité**
 
-- Temps de réponse optimisé pour les requêtes Redis
-- Support de charges élevées simultanées
-- Rapports statistiques générés sans impact sur MySQL
-
-### Maintenabilité
-
-- Séparation claire CQRS entre commands/ et queries/
-- Code modulaire avec responsabilités bien définies
-- Synchronisation automatique et cohérence des bases de données
-
-### Évolutivité
-
-- Architecture préparée pour l'ajout de nouveaux types de rapports
-- Extensibilité du système de cache Redis
-- Support de nouvelles entités métier
+- **Performance**
+- **Observabilité**
 
 ## 11. Risques et dettes techniques
 
-Non applicable pour cette application.
+- **Complexité du traitement asynchrone** : Le traitement des ordres dans un pool de threads introduit une complexité supplémentaire. Une mauvaise gestion peut entraîner des conditions de course ou des blocages (double lock sur un mutex par exemple).
 
 ## 12. Glossaire
 
-| Terme                      | Définition                                                                                                                                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **CQRS**                   | Command Query Responsibility Segregation : séparation des opérations de lecture et d'écriture                                                                                                                       |
-| **DDD**                    | Domain-Driven Design : approche de conception logicielle qui nous permet de gérer la complexité d'une application en séparant les responsabilités par domaine et en utilisant la conception tactique et stratégique |
-| **ORM**                    | Object-Relational Mapping : technique de mapping entre objets et base de données relationnelle                                                                                                                      |
-| **Persistance polyglotte** | Utilisation de plusieurs technologies de stockage pour différents besoins                                                                                                                                           |
+| Terme        | Définition                                                       |
+| ------------ | ---------------------------------------------------------------- |
+| Ordre        | Instruction d'achat ou de vente d'un instrument financier        |
+| Portefeuille | Ensemble des actifs financiers détenus par un utilisateur        |
+| MFA          | Authentification multi-facteurs                                  |
+| JWT          | JSON Web Token, format de token sécurisé pour l'authentification |

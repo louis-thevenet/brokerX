@@ -1,0 +1,78 @@
+sequenceDiagram
+  title: UC-03 - Approvisionnement du portefeuille (dépôt virtuel)
+  
+  participant User as User Browser
+  participant Handler as DepositHandler
+  participant BrokerX as BrokerX Core
+  participant UserRepo as UserRepo
+  participant MfaService as MfaService
+  participant SMTP as SMTP Server
+  
+  Note over User: User must be logged in
+  User->>Handler: GET /deposit
+  Handler->>Handler: extractJwtClaims()
+  Handler-->>User: Deposit form (HTML with current balance)
+  
+  User->>Handler: POST /deposit (amount, payment_method)
+  Handler->>Handler: validateForm()
+  Handler->>Handler: extractJwtClaims() 
+  
+  Note over Handler: Amount Validation
+  Handler->>Handler: validateDepositAmount(amount)
+  Note right of Handler: Check min/max limits\nPositive amount\nValid decimal format
+  
+  alt Amount Valid
+    Handler->>BrokerX: initiateDeposit(user_id, amount, payment_method)
+    
+    Note over BrokerX: User Verification Check
+    BrokerX->>UserRepo: getUserById(user_id)
+    UserRepo-->>BrokerX: User(verified=true, current_balance)
+    
+    Note over BrokerX: MFA Challenge for Large Deposits
+    alt Amount > 1000.00
+      BrokerX->>MfaService: generateMfaCode(user_id)
+      MfaService->>MfaService: generate_6_digit_code()
+      MfaService->>MfaService: store_with_expiry(user_id, code, 5min)
+      MfaService-->>BrokerX: mfa_code
+      
+      BrokerX->>SMTP: sendMfaCode(user_email, code)
+      SMTP-->>BrokerX: email_sent
+      
+      BrokerX-->>Handler: MfaRequired(transaction_id)
+      Handler-->>User: redirect to /mfa_verify?transaction_id=xxx
+      
+      User->>Handler: GET /mfa_verify
+      Handler-->>User: MFA verification form
+      
+      User->>Handler: POST /mfa_verify (transaction_id, mfa_code)
+      Handler->>BrokerX: validateMfaAndDeposit(transaction_id, mfa_code)
+      
+      BrokerX->>MfaService: validateMfaCode(user_id, mfa_code)
+      alt MFA Valid
+        MfaService-->>BrokerX: ValidationSuccess
+      else MFA Invalid
+        MfaService-->>BrokerX: ValidationFailed
+        BrokerX-->>Handler: MfaError
+        Handler-->>User: error message (invalid code)
+      end
+    end
+    
+    Note over BrokerX: Process Deposit (Simulation)
+    BrokerX->>BrokerX: simulatePaymentProcessing()
+    Note right of BrokerX: In real system:\nPayment gateway integration\nBank transfer processing
+    
+    BrokerX->>UserRepo: updateUserBalance(user_id, current_balance + amount)
+    Note right of UserRepo: Atomic balance update\nTransaction logged
+    UserRepo-->>BrokerX: new_balance
+    
+    BrokerX->>UserRepo: createDepositTransaction(user_id, amount, payment_method)
+    Note right of UserRepo: Transaction history\nfor audit trail
+    
+    BrokerX-->>Handler: DepositSuccess(new_balance)
+    Handler-->>User: redirect to /dashboard (success message)
+    
+  else Amount Invalid
+    Handler-->>User: error message (invalid amount)
+  end
+  
+  Note over User: Balance updated in portfolio

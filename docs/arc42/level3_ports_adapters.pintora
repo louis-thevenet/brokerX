@@ -1,0 +1,112 @@
+classDiagram
+  title: Level 3 - Ports and Adapters
+  
+  %% Core Domain
+  class BrokerX {
+    <<domain>>
+    +createOrder()
+    +getUserRepo()
+    +getOrdersForUser()
+    +startOrderProcessing()
+  }
+  
+  %% Primary Adapters (Driving)
+  class AxumWebHandlers {
+    <<primary_adapter>>
+    +loginSubmit()
+    +registerSubmit()
+    +placeOrderSubmit()
+    +depositSubmit()
+    +dashboard()
+  }
+  
+  %% Secondary Ports (Driven - Traits)
+  class Repository {
+    <<port>>
+    +insert()
+    +update()
+    +get()
+    +findByField()
+  }
+  
+  class MfaProvider {
+    <<port>>
+    +sendOtp()
+    +verifyOtp()
+    +getChallenge()
+  }
+  
+  %% Secondary Adapters (Driven - Implementations)
+  class PostgresRepo {
+    <<secondary_adapter>>
+    -pool: Pool<Postgres>
+    -table: String
+    +executeQuery()
+    +handleTransactions()
+  }
+  
+
+  
+  class EmailOtpProvider {
+    <<secondary_adapter>>
+    -config: EmailConfig
+    -challenges: HashMap
+    +sendEmailOtp()
+    +verifyEmailOtp()
+  }
+  
+  %% Domain Services
+  class UserRepo {
+    <<repo_type>>
+    PostgresRepo<User, UserId>
+  }
+  
+  class OrderRepo {
+    <<repo_type>>
+    PostgresRepo<Order, OrderId>
+  }
+  
+  class MfaService {
+    <<service>>
+    -provider: EmailOtpProvider
+    +initiateMfa()
+    +verifyMfa()
+  }
+  
+  %% External Systems
+  class WebBrowser {
+    <<external>>
+  }
+  
+  class PostgreSQL {
+    <<external>>
+  }
+  
+  class SMTPServer {
+    <<external>>
+  }
+  
+  %% Primary flow (HTTP requests)
+  WebBrowser --> AxumWebHandlers: HTTP requests
+  AxumWebHandlers --> BrokerX: calls domain methods
+  
+  %% Domain uses repositories
+  BrokerX --> UserRepo: via ProcessingPool
+  BrokerX --> OrderRepo: via ProcessingPool
+  BrokerX --> MfaService: direct usage
+  
+  %% Repository implementations
+  Repository <|-- PostgresRepo: implements
+  UserRepo --> PostgresRepo: type alias
+  OrderRepo --> PostgresRepo: type alias
+  
+  %% MFA implementation
+  MfaProvider <|-- EmailOtpProvider: implements
+  MfaService --> EmailOtpProvider: uses
+  
+  %% External connections
+  PostgresRepo --> PostgreSQL: SQLx connection
+  EmailOtpProvider --> SMTPServer: Lettre transport
+  
+  @note left of AxumWebHandlers: Axum framework\nAskama templates
+  @note right of PostgresRepo: Generic repo\nJSON storage

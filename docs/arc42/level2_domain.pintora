@@ -1,0 +1,106 @@
+classDiagram
+  title: Level 2 - Domain Architecture
+  
+  class BrokerX {
+    <<aggregate>>
+    -MfaService<EmailOtpProvider> mfa_service
+    -PreTradeValidator pre_trade_validator
+    -ProcessingPool processing_pool
+    +new()
+    +getUserRepo()
+    +createOrder()
+    +getOrdersForUser()
+    +startOrderProcessing()
+  }
+  
+  class UserRepo {
+    <<repository>>
+    +create()
+    +get()
+    +authenticate()
+    +update()
+  }
+  
+  class ProcessingPool {
+    <<service>>
+    -shared_state: Arc<Mutex<SharedState>>
+    -worker_handles: Vec<JoinHandle>
+    -work_available: Arc<Condvar>
+    +new()
+    +start()
+    +stop()
+    +processOrder()
+    +submitOrder()
+  }
+  
+  class SharedState {
+    <<state>>
+    +order_repo: OrderRepo
+    +user_repo: UserRepo
+    +order_queue: VecDeque<OrderId>
+    +is_running: bool
+  }
+  
+  class OrderRepo {
+    <<repository>>
+    +create()
+    +get()
+    +update()
+    +findAllByField()
+  }
+  
+  class PreTradeValidator {
+    <<service>>
+    -config: PreTradeConfig
+    +validateOrder()
+    +checkBuyingPower()
+    +validatePriceBands()
+  }
+  
+
+  
+  class User {
+    <<entity>>
+    +id: UserId
+    +email: String
+    +name: String
+    +balance: f64
+    +portfolio: Portfolio
+  }
+  
+  class Order {
+    <<entity>>
+    +client_id: UserId
+    +symbol: String
+    +quantity: u64
+    +order_side: OrderSide
+    +order_type: OrderType
+    +status: OrderStatus
+    +date: DateTime
+  }
+  
+  class Portfolio {
+    <<value_object>>
+    +positions: Vec<Position>
+    +calculateValue()
+    +canAfford()
+  }
+  
+  %% Main aggregation relationships
+  BrokerX *-- ProcessingPool
+  BrokerX *-- PreTradeValidator
+  
+  %% ProcessingPool contains shared state
+  ProcessingPool *-- SharedState
+  
+  %% Centralized repositories in SharedState
+  SharedState *-- UserRepo
+  SharedState *-- OrderRepo
+  
+  %% Key domain relationships
+  UserRepo --> User: manages
+  OrderRepo --> Order: manages
+  
+  @note right of BrokerX: Main Domain Aggregate\nAccesses UserRepo via ProcessingPool
+  @note left of PreTradeValidator: Risk Management
+  @note top of SharedState: Centralized repositories\nThread-safe state\nNo duplication

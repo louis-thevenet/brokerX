@@ -1,0 +1,66 @@
+sequenceDiagram
+  title: UC-01 - Inscription & Vérification d'identité
+  
+  participant User as User Browser
+  participant Handler as RegisterHandler
+  participant BrokerX as BrokerX Core
+  participant UserRepo as UserRepo
+  participant MfaService as MfaService
+  participant SMTP as SMTP Server
+  participant VerifyHandler as VerifyHandler
+  
+  User->>Handler: GET /register
+  Handler-->>User: Registration form (HTML)
+  
+  User->>Handler: POST /register (email, password, personal_info)
+  Handler->>Handler: validateForm()
+  Handler->>Handler: hashPassword()
+  
+  Note over Handler: User Registration Phase
+  Handler->>BrokerX: registerUser(email, hashed_password, user_info)
+  BrokerX->>UserRepo: getUserByEmail(email)
+  UserRepo-->>BrokerX: None (user doesn't exist)
+  
+  BrokerX->>UserRepo: createUser(user_data)
+  Note right of UserRepo: User created with\nverified=false\nbalance=0.0
+  UserRepo-->>BrokerX: UserId
+  
+  Note over BrokerX: Email Verification Phase
+  BrokerX->>MfaService: generateVerificationCode(user_id)
+  MfaService->>MfaService: generate_random_6_digit_code()
+  MfaService->>MfaService: store_code_with_expiry(user_id, code, 15min)
+  MfaService-->>BrokerX: verification_code
+  
+  BrokerX->>SMTP: sendVerificationEmail(email, code)
+  SMTP-->>BrokerX: email_sent
+  
+  BrokerX-->>Handler: RegistrationSuccess(user_id)
+  Handler-->>User: redirect to /verify_registration
+  
+  Note over User: User checks email and enters code
+  User->>VerifyHandler: GET /verify_registration
+  VerifyHandler-->>User: Verification form (HTML)
+  
+  User->>VerifyHandler: POST /verify_registration (email, code)
+  VerifyHandler->>VerifyHandler: validateForm()
+  
+  VerifyHandler->>BrokerX: verifyRegistration(email, code)
+  BrokerX->>UserRepo: getUserByEmail(email)
+  UserRepo-->>BrokerX: User(id, verified=false)
+  
+  BrokerX->>MfaService: validateVerificationCode(user_id, code)
+  MfaService->>MfaService: check_code_validity_and_expiry()
+  
+  alt Code Valid and Not Expired
+    MfaService-->>BrokerX: ValidationSuccess
+    BrokerX->>UserRepo: updateUserVerification(user_id, verified=true)
+    BrokerX->>MfaService: invalidateVerificationCode(user_id)
+    BrokerX-->>VerifyHandler: VerificationSuccess
+    VerifyHandler-->>User: redirect to /login (success message)
+  else Code Invalid or Expired
+    MfaService-->>BrokerX: ValidationFailed
+    BrokerX-->>VerifyHandler: VerificationError
+    VerifyHandler-->>User: error message (try again)
+  end
+  
+  Note over User: Account ready for login

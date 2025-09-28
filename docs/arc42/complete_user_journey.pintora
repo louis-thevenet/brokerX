@@ -1,0 +1,55 @@
+classDiagram
+  title: BrokerX - Capacités Utilisateur (Cas d'Usage)
+  
+  class User {
+    <<actor>>
+    +email: String
+    +verified: Boolean
+  }
+  
+  class Sinscrire {
+    <<usecase>>
+  }
+  
+  class SeConnecterMFA {
+    <<usecase>>
+  }
+  
+  class VoirTableauBord {
+    <<usecase>>
+  }
+  
+  class DeposerFonds {
+    <<usecase>>
+  }
+  
+  class PlacerOrdreAchat {
+    <<usecase>>
+  }
+  
+  class PlacerOrdreVente {
+    <<usecase>>
+  }
+  
+  class VoirHistoriqueOrdres {
+    <<usecase>>
+  }
+  
+  class VoirPortefeuille {
+    <<usecase>>
+  }
+  
+  class SeDeconnecter {
+    <<usecase>>
+  }
+  
+  %% User can perform all these use cases
+  User --> Sinscrire
+  User --> SeConnecterMFA
+  User --> VoirTableauBord
+  User --> DeposerFonds
+  User --> PlacerOrdreAchat
+  User --> PlacerOrdreVente
+  User --> VoirHistoriqueOrdres
+  User --> VoirPortefeuille
+  User --> SeDeconnecter

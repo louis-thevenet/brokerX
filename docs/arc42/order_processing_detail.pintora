@@ -1,0 +1,70 @@
+sequenceDiagram
+  title: Order Processing Workflow (Actual Implementation)
+  
+  participant User as Web Browser
+  participant Handler as PlaceOrderHandler
+  participant BrokerX as BrokerX
+  participant PreTrade as PreTradeValidator
+  participant Pool as ProcessingPool
+  participant State as SharedState
+  participant OrderRepo as OrderRepo
+  participant UserRepo as UserRepo
+  participant Worker as Worker Thread
+  
+  %% Initial Order Submission
+  User->>Handler: POST /place_order (form data)
+  Handler->>Handler: Extract JWT claims
+  Handler->>Handler: Validate form data
+  Handler->>BrokerX: createOrder(client_id, symbol, quantity, side, type)
+  
+  %% Pre-trade Validation
+  BrokerX->>State: Get user balance
+  State->>UserRepo: get(client_id)
+  UserRepo-->>State: User with balance
+  State-->>BrokerX: user_balance
+  BrokerX->>PreTrade: validateOrder(side, type, symbol, quantity, balance)
+  PreTrade->>PreTrade: Check buying power, price bands, limits
+  PreTrade-->>BrokerX: Validation result
+  
+  %% Order Creation and Queuing
+  BrokerX->>State: Lock shared state
+  State->>OrderRepo: createOrder(Order with status=Queued)
+  OrderRepo-->>State: OrderId
+  State-->>BrokerX: OrderId
+  BrokerX->>Pool: submitOrder(order_id)
+  Pool->>State: Push order_id to queue
+  Pool->>Pool: Notify worker threads (condvar)
+  BrokerX-->>Handler: Ok(OrderId)
+  Handler-->>User: Redirect to /dashboard
+  
+  %% Asynchronous Order Processing
+  note over Worker: Background processing starts
+  Pool->>Worker: Worker thread wakes up
+  Worker->>State: Pop order_id from queue
+  State-->>Worker: OrderId
+  Worker->>OrderRepo: get(order_id)
+  OrderRepo-->>Worker: Order with status=Queued
+  
+  %% Status Transitions
+  Worker->>Worker: Process order (Queued → Pending)
+  Worker->>OrderRepo: update(order_id, status=Pending)
+  Worker->>State: Push back to queue for execution
+  
+  %% Order Execution (Simulation)
+  Worker->>State: Pop order_id again
+  Worker->>OrderRepo: get(order_id)
+  OrderRepo-->>Worker: Order with status=Pending
+  Worker->>Worker: Random execution simulation
+  
+  alt Order Filled
+    Worker->>UserRepo: withdraw/deposit funds
+    Worker->>UserRepo: update user holdings
+    Worker->>OrderRepo: update(order_id, status=Filled)
+    note over Worker: Portfolio updated
+  else Order Rejected
+    Worker->>OrderRepo: update(order_id, status=Rejected)
+    note over Worker: Insufficient funds
+  else Keep Pending
+    Worker->>State: Push back to queue
+    note over Worker: Continue processing later
+  end

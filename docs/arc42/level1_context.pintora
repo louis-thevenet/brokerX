@@ -1,0 +1,46 @@
+classDiagram
+  title: Level 1 - System Context
+  
+  class WebBrowser {
+    <<actor>>
+    +userInteractions()
+    +loginRegister()
+    +placeOrders()
+    +viewPortfolio()
+  }
+  
+  class BrokerXApp {
+    <<system>>
+    +axumWebServer()
+    +domainLogic()
+    +orderProcessing()
+    +userManagement()
+  }
+  
+  class PostgreSQLDatabase {
+    <<external>>
+    +userAccounts()
+    +ordersTransactions()
+    +portfolioData()
+    +persistentStorage()
+  }
+  
+  class SMTPEmailServer {
+    <<external>>
+    +emailDelivery()
+    +mfaCodes()
+    +registrationVerification()
+    +accountNotifications()
+  }
+  
+  %% User interactions
+  WebBrowser --> BrokerXApp: HTTPS requests port 3000
+  BrokerXApp --> WebBrowser: HTML responses Askama templates
+  
+  %% Infrastructure dependencies
+  BrokerXApp --> PostgreSQLDatabase: SQL queries SQLx connection pool
+  BrokerXApp --> SMTPEmailServer: Email notifications Lettre transport
+  
+  @note right of BrokerXApp: Rust monolith\nAxum + Tokio runtime\nStatic files via Tower-HTTP
+  @note left of WebBrowser: HTML forms\nJWT authentication
+  @note bottom of PostgreSQLDatabase: Connection pooling\nAsync operations
