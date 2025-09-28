@@ -17,7 +17,11 @@ use crate::web::{
     },
     AppState,
 };
-use domain::order::{Order, OrderRepoExt};
+use domain::{
+    order::{Order, OrderRepoExt},
+    Repository,
+};
+
 use domain::user::{AuthError, User, UserRepoExt};
 
 #[derive(Deserialize)]
@@ -125,6 +129,10 @@ pub async fn login_submit(
             Err(AuthError::NotVerified(user_id)) => {
                 drop(broker);
                 // start email verification MFA process
+                info!(
+                    "User email not verified for email: {}, initiating verification process",
+                    form.email
+                );
                 return registration_mfa(app_state.clone(), &form.email, user_id);
             }
             Err(e) => {
@@ -247,15 +255,24 @@ pub async fn register_submit(
         let mut broker = app_state.lock().unwrap();
 
         match broker.user_repo.get_user_by_email(&form.email) {
-            Some(u) if !u.is_verified => {
+            Err(e) => {
+                let template = RegisterTemplate {
+                    error: Some(format!("Registration failed: {e}")),
+                };
+                return match template.render() {
+                    Ok(html) => Html(html).into_response(),
+                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                };
+            }
+            Ok(Some(u)) if !u.is_verified => {
                 // just skip domain user creation and proceed to MFA
                 warn!(
                     "Registration attempt for existing unverified email: {}",
                     form.email
                 );
-                *broker.user_repo.get_user_id(&form.email).unwrap() // we know it exists
+                u.id.unwrap()
             }
-            Some(_u) => {
+            Ok(Some(_u)) => {
                 let template = RegisterTemplate {
                     error: Some("Email already exists".to_string()),
                 };
@@ -264,7 +281,7 @@ pub async fn register_submit(
                     Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
                 };
             }
-            None => {
+            Ok(None) => {
                 // Create user in the domain layer
 
                 match broker.user_repo.create_user(
@@ -324,11 +341,7 @@ fn registration_mfa(
                 "Failed to initiate registration MFA for email: {}, error: {}",
                 email, e
             );
-            // Delete the created user since verification failed
-            {
-                let mut broker = app_state.lock().unwrap();
-                let _ = broker.user_repo.remove(&user_id);
-            }
+            // Delete the created user since verification failed ?
             let template = RegisterTemplate {
                 error: Some(format!("Failed to send verification email: {e}")),
             };
@@ -356,16 +369,19 @@ fn check_token_and_execute(
 ) -> Response {
     // Extract user claims from request
     let Some(claims) = request.extensions().get::<jwt::Claims>() else {
+        warn!("No JWT claims found in request extensions");
         return Redirect::to("/login").into_response();
     };
 
     // Get user from domain layer
     let Ok(user_id) = Uuid::parse_str(&claims.subject) else {
+        warn!("Invalid user ID in JWT claims: {}", claims.subject);
         return Redirect::to("/login").into_response();
     };
 
     let broker = app_state.lock().unwrap();
-    let Some(user) = broker.user_repo.get(&user_id).cloned() else {
+    let Ok(Some(user)) = broker.user_repo.get(&user_id) else {
+        warn!("User not found for ID: {}", user_id);
         return Redirect::to("/login").into_response();
     };
 
@@ -384,6 +400,7 @@ pub async fn dashboard(app_state: State<AppState>, request: axum::extract::Reque
             account_balance: user.balance,
             recent_orders: vec![], // TODO: Empty for now, will be populated when order system is implemented
         };
+        debug!("Rendering dashboard for user: {}", user.email);
 
         match template.render() {
             Ok(html) => Html(html).into_response(),
@@ -417,55 +434,36 @@ pub async fn mfa_verify_submit(
             Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
     }
-
+    debug!("Verifying MFA for challenge_id: {}", form.challenge_id);
     // Verify the MFA code
     let verification_result = {
         let broker = app_state.lock().unwrap();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(
-                broker
-                    .mfa_service
-                    .verify_mfa(&form.challenge_id, &form.code),
-            )
-        })
+        broker
+            .mfa_service
+            .verify_mfa(&form.challenge_id, &form.code)
     };
-
+    debug!(
+        "MFA verification result for challenge_id {}: {:?}",
+        form.challenge_id, verification_result
+    );
     match verification_result {
         Ok(true) => {
             // MFA verified successfully, now get the challenge to retrieve user info
             let challenge = {
                 let broker = app_state.lock().unwrap();
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(broker.mfa_service.get_challenge(&form.challenge_id))
-                })
+                broker.mfa_service.get_challenge(&form.challenge_id)
             };
-
             match challenge {
                 Ok(challenge) => {
                     // Get the user using the email from the challenge
-                    let (user_id, email) = {
+                    let user = {
                         let broker = app_state.lock().unwrap();
-                        if let Some(user) =
-                            broker.user_repo.get_user_by_email(&challenge.user_email)
-                        {
-                            // Find the user ID by iterating through the repo
-                            if let Some((id, _)) = broker
-                                .user_repo
-                                .iter()
-                                .find(|(_, stored_user)| stored_user.email == user.email)
-                            {
-                                (*id, user.email.clone())
-                            } else {
-                                let template = MfaVerifyTemplate {
-                                    challenge_id: form.challenge_id,
-                                    error: Some("User ID not found".to_string()),
-                                };
-                                return match template.render() {
-                                    Ok(html) => Html(html).into_response(),
-                                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                                };
-                            }
+
+                        broker.user_repo.get_user_by_email(&challenge.user_email)
+                    };
+                    let (user_id, email) = {
+                        if let Ok(Some(user)) = user {
+                            (user.id.unwrap(), user.email)
                         } else {
                             let template = MfaVerifyTemplate {
                                 challenge_id: form.challenge_id,
@@ -581,13 +579,9 @@ pub async fn registration_verify_submit(
     // Verify the MFA code
     let verification_result = {
         let broker = app_state.lock().unwrap();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(
-                broker
-                    .mfa_service
-                    .verify_mfa(&form.challenge_id, &form.code),
-            )
-        })
+        broker
+            .mfa_service
+            .verify_mfa(&form.challenge_id, &form.code)
     };
 
     match verification_result {
@@ -647,10 +641,7 @@ pub async fn resend_mfa(
     // Get the original challenge to extract the user email
     let challenge_result = {
         let broker = app_state.lock().unwrap();
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(broker.mfa_service.get_challenge(&params.challenge_id))
-        })
+        broker.mfa_service.get_challenge(&params.challenge_id)
     };
 
     match challenge_result {
@@ -728,7 +719,7 @@ pub async fn deposit_submit(
 
     let user = {
         let broker = app_state.lock().unwrap();
-        let Some(user) = broker.user_repo.get(&user_id).cloned() else {
+        let Ok(Some(user)) = broker.user_repo.get(&user_id) else {
             return Redirect::to("/login").into_response();
         };
         user
@@ -767,13 +758,7 @@ pub async fn deposit_submit(
     // Process the deposit
     let deposit_result = {
         let mut broker = app_state.lock().unwrap();
-        // TODO: Implement proper deposit logic in domain layer
-        if let Some(user_mut) = broker.user_repo.get_mut(&user_id) {
-            user_mut.balance += amount;
-            Ok(())
-        } else {
-            Err("User not found")
-        }
+        broker.user_repo.deposit_to_user(&user_id, amount)
     };
 
     match deposit_result {
@@ -830,7 +815,7 @@ pub async fn place_order_submit(
 
     let user = {
         let broker = app_state.lock().unwrap();
-        let Some(user) = broker.user_repo.get(&user_id).cloned() else {
+        let Ok(Some(user)) = broker.user_repo.get(&user_id) else {
             return Redirect::to("/login").into_response();
         };
         user

@@ -5,3 +5,5 @@ pub mod order;
 mod order_processing;
 mod pre_trade;
 pub mod user;
+
+pub use database_adapter::db::Repository;

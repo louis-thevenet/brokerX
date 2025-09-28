@@ -1,3 +1,4 @@
+use database_adapter::db::Repository;
 use tracing::info;
 
 use crate::{
@@ -27,7 +28,7 @@ impl BrokerX {
         let order_processing_pool = OrderProcessingPool::new(num_threads);
 
         BrokerX {
-            user_repo: UserRepo::new(),
+            user_repo: UserRepo::new("users").expect("users repo failed to load"),
             mfa_service: MfaServiceFactory::create_email_mfa_service(),
             pre_trade_validator: PreTradeValidator::with_default_config(),
             order_processing_pool,
@@ -53,7 +54,7 @@ impl BrokerX {
         let user_balance = self
             .user_repo
             .get(&client_id)
-            .map_or(0.0, |user| user.balance);
+            .map_or(0.0, |user| user.map_or(0.0, |user| user.balance));
 
         // Pre-trade validation
         self.pre_trade_validator.validate_order(
@@ -91,6 +92,9 @@ impl BrokerX {
     }
     #[allow(clippy::missing_panics_doc)]
     pub fn debug_populate(&mut self) {
+        if self.user_repo.len().unwrap() > 0 {
+            return;
+        }
         let id = self
             .user_repo
             .create_user(
@@ -102,23 +106,6 @@ impl BrokerX {
             )
             .unwrap();
         self.user_repo.verify_user_email(&id).unwrap();
-    }
-
-    /// Get an order by ID
-    #[must_use]
-    pub fn get_order(&self, order_id: &OrderId) -> Option<Order> {
-        self.order_processing_pool.get_order(order_id)
-    }
-
-    /// Get the current queue size (number of orders waiting to be processed)
-    #[must_use]
-    pub fn get_queue_size(&self) -> usize {
-        self.order_processing_pool.get_queue_size()
-    }
-
-    /// Cancel an order (sets it to `PendingCancel` status)
-    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), String> {
-        self.order_processing_pool.cancel_order(order_id)
     }
 }
 

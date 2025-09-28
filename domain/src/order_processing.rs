@@ -3,6 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use database_adapter::db::{DbError, Repository};
 use rand::random;
 use tracing::{debug, error, info};
 
@@ -24,11 +25,15 @@ pub struct OrderProcessingPool {
     work_available: Arc<Condvar>,
     should_stop: Arc<Mutex<bool>>,
 }
-
+enum OrderProcessingError {
+    DbError(DbError),
+    OrderNotFound,
+    CantCancel,
+}
 impl OrderProcessingPool {
     pub fn new(num_threads: usize) -> Self {
         let shared_state = Arc::new(Mutex::new(SharedOrderState {
-            order_repo: OrderRepo::new(),
+            order_repo: OrderRepo::new("orders").expect("orders repo failed to load"),
             order_queue: VecDeque::new(),
             is_running: false,
         }));
@@ -96,7 +101,7 @@ impl OrderProcessingPool {
                     drop(stop);
 
                     // Use wait_timeout with longer timeout to reduce CPU usage when idle
-                    let (_state, timeout_result) = work_available
+                    let (_state, _timeout_result) = work_available
                         .wait_timeout(state, Duration::from_millis(1000))
                         .unwrap();
                     state = _state;
@@ -132,10 +137,14 @@ impl OrderProcessingPool {
         thread_id: usize,
         order_id: OrderId,
         shared_state: &Arc<Mutex<SharedOrderState>>,
-    ) {
+    ) -> Result<(), OrderProcessingError> {
         let mut state = shared_state.lock().unwrap();
 
-        if let Some(order) = state.order_repo.get_mut(&order_id) {
+        if let Some(mut order) = state
+            .order_repo
+            .get(&order_id)
+            .map_err(|e| OrderProcessingError::DbError(e))?
+        {
             let old_status = format!("{:?}", order.status);
 
             match &order.status {
@@ -212,12 +221,17 @@ impl OrderProcessingPool {
                     );
                 }
             }
+            state
+                .order_repo
+                .update(order_id, order)
+                .map_err(|e| OrderProcessingError::DbError(e))?;
         } else {
             error!(
                 "Thread {} could not find order {} in repository",
                 thread_id, order_id
             );
         }
+        Ok(())
     }
 
     /// Submit a new order for processing
@@ -284,16 +298,23 @@ impl OrderProcessingPool {
 
     #[must_use]
     /// Get a copy of an order by its ID
-    pub fn get_order(&self, order_id: &OrderId) -> Option<Order> {
+    pub fn get_order(&self, order_id: &OrderId) -> Result<Option<Order>, OrderProcessingError> {
         let state = self.shared_state.lock().unwrap();
-        state.order_repo.get(order_id).cloned()
+        state
+            .order_repo
+            .get(order_id)
+            .map_err(|e| OrderProcessingError::DbError(e))
     }
 
     /// Cancel an order (sets it to PendingCancel status)
-    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), String> {
+    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), OrderProcessingError> {
         let mut state = self.shared_state.lock().unwrap();
 
-        if let Some(order) = state.order_repo.get_mut(order_id) {
+        if let Some(mut order) = state
+            .order_repo
+            .get(order_id)
+            .map_err(|e| OrderProcessingError::DbError(e))?
+        {
             match order.status {
                 OrderStatus::Queued
                 | OrderStatus::Pending
@@ -301,12 +322,16 @@ impl OrderProcessingPool {
                     order.status = OrderStatus::PendingCancel;
                     // Re-queue for processing the cancellation
                     state.order_queue.push_back(*order_id);
+                    state
+                        .order_repo
+                        .update(*order_id, order)
+                        .map_err(|e| OrderProcessingError::DbError(e))?;
                     Ok(())
                 }
-                _ => Err("Order cannot be cancelled in its current state".to_string()),
+                _ => Err(OrderProcessingError::CantCancel),
             }
         } else {
-            Err("Order not found".to_string())
+            Err(OrderProcessingError::OrderNotFound)
         }
     }
 }

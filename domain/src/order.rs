@@ -1,10 +1,12 @@
-use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use in_memory_adapter::InMemoryRepo;
+use database_adapter::db::PostgresRepo;
+use database_adapter::db::Repository;
+use serde::Deserialize;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::user::UserId;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 /// Represents the current status of an order
 pub enum OrderStatus {
     /// Order has not yet been processed by the system
@@ -25,18 +27,18 @@ pub enum OrderStatus {
     Rejected { date: NaiveDateTime }, // TODO: reason?
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderSide {
     Buy,
     Sell,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderType {
     Market,
     Limit(f64),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
     pub client_id: UserId,
     pub date: DateTime<Utc>,
@@ -49,14 +51,12 @@ pub struct Order {
 
 pub type OrderId = Uuid;
 
-pub type OrderRepo = InMemoryRepo<Order, OrderId>;
+pub type OrderRepo = PostgresRepo<Order, OrderId>;
 
-#[async_trait]
 pub trait OrderRepoExt {
     fn create_order(&mut self, order: Order) -> OrderId;
 }
 
-#[async_trait]
 impl OrderRepoExt for OrderRepo {
     fn create_order(&mut self, order: Order) -> OrderId {
         let id = Uuid::new_v4();

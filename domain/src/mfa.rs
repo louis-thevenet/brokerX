@@ -20,12 +20,12 @@ impl<P: MfaProvider> MfaService<P> {
     }
 
     /// Verifies MFA challenge
-    pub async fn verify_mfa(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError> {
-        self.provider.verify_otp(challenge_id, code).await
+    pub fn verify_mfa(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError> {
+        self.provider.verify_otp(challenge_id, code)
     }
 
     /// Gets challenge information
-    pub async fn get_challenge(&self, challenge_id: &str) -> Result<OtpChallenge, MfaError> {
-        self.provider.get_challenge(challenge_id).await
+    pub fn get_challenge(&self, challenge_id: &str) -> Result<OtpChallenge, MfaError> {
+        self.provider.get_challenge(challenge_id)
     }
 }

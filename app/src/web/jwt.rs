@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::{Duration, Utc};
+use domain::Repository;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -23,13 +24,13 @@ pub struct Claims {
 }
 
 impl Claims {
-    pub fn new(user_id: Uuid, username: String) -> Self {
+    pub fn new(user_id: Uuid, email: String) -> Self {
         let now = Utc::now();
         let exp = now + Duration::hours(24); // Token expires in 24 hours
 
         Self {
             subject: user_id.to_string(),
-            email: username,
+            email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
         }
@@ -111,7 +112,7 @@ pub async fn auth_middleware(
 
     {
         let broker = app_state.lock().unwrap();
-        if broker.user_repo.get(&user_id).is_none() {
+        if broker.user_repo.get(&user_id).is_ok_and(|u| u.is_none()) {
             // User no longer exists, redirect to login
             return Redirect::to("/login").into_response();
         }

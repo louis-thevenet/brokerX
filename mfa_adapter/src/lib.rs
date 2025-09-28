@@ -50,15 +50,8 @@ pub trait MfaProvider: Send + Sync {
         &self,
         user_email: &str,
     ) -> impl std::future::Future<Output = Result<String, MfaError>> + Send;
-    fn verify_otp(
-        &self,
-        challenge_id: &str,
-        code: &str,
-    ) -> impl std::future::Future<Output = Result<bool, MfaError>> + Send;
-    fn get_challenge(
-        &self,
-        challenge_id: &str,
-    ) -> impl std::future::Future<Output = Result<OtpChallenge, MfaError>> + Send;
+    fn verify_otp(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError>;
+    fn get_challenge(&self, challenge_id: &str) -> Result<OtpChallenge, MfaError>;
 }
 
 #[derive(Debug, Clone)]
@@ -170,7 +163,7 @@ impl EmailOtpProvider {
 
     fn generate_otp_code(&self) -> String {
         let mut rng = rand::thread_rng();
-        format!("{:06}", rng.gen_range(100000..999999))
+        format!("{:06}", rng.gen_range(100_000..999_999))
     }
 
     fn send_email(&self, to_email: &str, code: &str) -> Result<(), MfaError> {
@@ -273,7 +266,7 @@ impl MfaProvider for EmailOtpProvider {
         Ok(challenge_id)
     }
 
-    async fn verify_otp(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError> {
+    fn verify_otp(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError> {
         let mut challenges = self.challenges.lock().unwrap();
 
         let challenge = challenges
@@ -300,7 +293,7 @@ impl MfaProvider for EmailOtpProvider {
         }
     }
 
-    async fn get_challenge(&self, challenge_id: &str) -> Result<OtpChallenge, MfaError> {
+    fn get_challenge(&self, challenge_id: &str) -> Result<OtpChallenge, MfaError> {
         let challenges = self.challenges.lock().unwrap();
 
         let challenge = challenges
@@ -329,7 +322,7 @@ mod tests {
         assert!(code.chars().all(|c| c.is_ascii_digit()));
 
         let code_num: u32 = code.parse().unwrap();
-        assert!(code_num >= 100000 && code_num < 1000000);
+        assert!((100_000..1_000_000).contains(&code_num));
     }
 
     #[test]
