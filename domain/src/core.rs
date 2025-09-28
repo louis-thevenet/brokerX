@@ -1,8 +1,8 @@
 use database_adapter::db::Repository;
+use mfa_adapter::{EmailConfig, EmailOtpProvider, mfa::MfaService};
 use tracing::info;
 
 use crate::{
-    mfa_factory::{DefaultMfaService, MfaServiceFactory},
     order::{Order, OrderId, OrderRepoExt, OrderSide, OrderStatus, OrderType},
     order_processing::ProcessingPool,
     pre_trade::{PreTradeError, PreTradeValidator},
@@ -11,7 +11,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct BrokerX {
-    pub mfa_service: DefaultMfaService,
+    pub mfa_service: MfaService<EmailOtpProvider>,
     pre_trade_validator: PreTradeValidator,
     processing_pool: ProcessingPool,
 }
@@ -26,7 +26,9 @@ impl BrokerX {
     pub fn with_thread_count(num_threads: usize) -> Self {
         let order_processing_pool = ProcessingPool::new(num_threads);
         BrokerX {
-            mfa_service: MfaServiceFactory::create_email_mfa_service(),
+            mfa_service: MfaService::new(EmailOtpProvider::new(
+                EmailConfig::from_env().expect("Email config creation failed"),
+            )),
             pre_trade_validator: PreTradeValidator::with_default_config(),
             processing_pool: order_processing_pool,
         }

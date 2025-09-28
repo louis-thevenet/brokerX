@@ -3,13 +3,15 @@ use color_eyre::Result;
 use database_adapter::db::DbError;
 use database_adapter::db::PostgresRepo;
 use database_adapter::db::Repository;
+use mfa_adapter::mfa::MfaService;
+use mfa_adapter::MfaError;
+use mfa_adapter::MfaProvider;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use tracing::debug;
 use uuid::Uuid;
 
-use crate::mfa::{MfaError, MfaProvider, MfaService};
 use crate::portfolio::Holding;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

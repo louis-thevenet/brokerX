@@ -9,6 +9,8 @@ use std::time::{Duration, SystemTime};
 use tracing::{debug, error};
 use uuid::Uuid;
 
+pub mod mfa;
+
 // MFA Error types
 #[derive(Debug, Clone)]
 pub enum MfaError {

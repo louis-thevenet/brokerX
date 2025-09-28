@@ -1,7 +1,8 @@
 use color_eyre::Result;
 
+use crate::{MfaError, MfaProvider, OtpChallenge};
+
 // Re-export types from mfa_adapter for domain use
-pub use mfa_adapter::{MfaError, MfaProvider, OtpChallenge};
 
 /// Service for managing MFA operations
 #[derive(Debug)]

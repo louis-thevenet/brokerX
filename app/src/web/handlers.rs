@@ -249,8 +249,7 @@ pub async fn register_submit(
     // If so, is it verified yet?
 
     let user_id = {
-        let mut broker = app_state.lock().unwrap();
-
+        let broker = app_state.lock().unwrap();
         match broker.get_user_repo().get_user_by_email(&form.email) {
             Err(e) => {
                 let template = RegisterTemplate {
@@ -694,7 +693,7 @@ pub async fn registration_verify_submit(
         Ok(true) => {
             // MFA verified successfully, mark user as verified
             let verification_success = {
-                let mut broker = app_state.lock().unwrap();
+                let broker = app_state.lock().unwrap();
                 broker.get_user_repo().verify_user_email(&user_id).is_ok()
             };
 
@@ -863,7 +862,7 @@ pub async fn deposit_submit(
 
     // Process the deposit
     let deposit_result = {
-        let mut broker = app_state.lock().unwrap();
+        let broker = app_state.lock().unwrap();
         broker.get_user_repo().deposit_to_user(&user_id, amount)
     };
 
