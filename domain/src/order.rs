@@ -56,6 +56,7 @@ pub type OrderRepo = PostgresRepo<Order, OrderId>;
 
 pub trait OrderRepoExt {
     fn create_order(&mut self, order: Order) -> Result<OrderId, DbError>;
+    fn get_orders_for_user(&self, user_id: &UserId) -> Result<Vec<(OrderId, Order)>, DbError>;
 }
 
 impl OrderRepoExt for OrderRepo {
@@ -63,5 +64,9 @@ impl OrderRepoExt for OrderRepo {
         let id = Uuid::new_v4();
         self.insert(id, order)?;
         Ok(id)
+    }
+
+    fn get_orders_for_user(&self, user_id: &UserId) -> Result<Vec<(OrderId, Order)>, DbError> {
+        self.find_all_by_field("client_id", &user_id.to_string())
     }
 }

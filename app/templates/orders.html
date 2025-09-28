@@ -9,8 +9,8 @@
             <div class="logo">BrokerX</div>
             <div class="nav-links">
                 <a href="/dashboard">Dashboard</a>
-                <a href="/accounts">Accounts</a>
                 <a href="/orders" style="color: #5a67d8;">Orders</a>
+                <a href="/deposit">Deposit</a>
                 <a href="/place_order">Trade</a>
                 <form action="/logout" method="post" style="margin: 0;">
                     <button type="submit" class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">
@@ -30,26 +30,7 @@
             <a href="/place_order" class="btn">Place New Order</a>
         </div>
 
-        <!-- Order Filters -->
-        <div class="card" style="margin-bottom: 30px;">
-            <h3 style="margin-bottom: 15px; color: #4a5568;">Filter Orders</h3>
-            <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-                <select style="padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 6px;">
-                    <option>All Status</option>
-                    <option>Filled</option>
-                    <option>Pending</option>
-                    <option>Cancelled</option>
-                </select>
-                <select style="padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 6px;">
-                    <option>All Types</option>
-                    <option>Buy</option>
-                    <option>Sell</option>
-                </select>
-                <input type="text" placeholder="Search symbol..." 
-                       style="padding: 8px 12px; border: 2px solid #e2e8f0; border-radius: 6px; min-width: 200px;">
-                <button class="btn btn-secondary" style="padding: 8px 16px; font-size: 14px;">Apply Filters</button>
-            </div>
-        </div>
+
 
         <!-- Orders Table -->
         {% if orders.is_empty() %}
@@ -71,14 +52,13 @@
                         <th>Price</th>
                         <th>Total</th>
                         <th>Status</th>
-                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for order in orders %}
                     <tr>
                         <td style="font-family: monospace; font-size: 14px;">{{ order.id }}</td>
-                        <td>{{ order.created_at[0..10] }}</td>
+                        <td>{{ order.date }}</td>
                         <td style="font-weight: 600;">{{ order.symbol }}</td>
                         <td>
                             {% if order.order_type == "Buy" %}
@@ -88,25 +68,34 @@
                             {% endif %}
                         </td>
                         <td>{{ order.quantity }}</td>
-                        <td>${{ order.price }}</td>
-                        <td>${{ order.price * order.quantity }}</td>
+                        <td>
+                            {% if order.order_kind == "Market" %}
+                            Market
+                            {% else %}
+                            ${{ order.price }}
+                            {% endif %}
+                        </td>
+                        <td>${{ order.total }}</td>
                         <td>
                             {% if order.status == "Filled" %}
-                            <span class="status-filled">{{ order.status }}</span>
+                            <span style="background: #c6f6d5; color: #22543d; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
                             {% else if order.status == "Pending" %}
-                            <span class="status-pending">{{ order.status }}</span>
+                            <span style="background: #fed7d7; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                            {% else if order.status == "Queued" %}
+                            <span style="background: #fef5e7; color: #744210; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                            {% else if order.status == "Partially Filled" %}
+                            <span style="background: #bee3f8; color: #2c5282; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                            {% else if order.status == "Cancelled" %}
+                            <span style="background: #e2e8f0; color: #4a5568; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                            {% else if order.status == "Expired" %}
+                            <span style="background: #fed7d7; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                            {% else if order.status == "Rejected" %}
+                            <span style="background: #feb2b2; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
                             {% else %}
-                            <span class="status-cancelled">{{ order.status }}</span>
+                            <span style="background: #fed7d7; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
                             {% endif %}
                         </td>
-                        <td>
-                            {% if order.status == "Pending" %}
-                            <button class="btn" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">Modify</button>
-                            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;">Cancel</button>
-                            {% else %}
-                            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 12px;">View</button>
-                            {% endif %}
-                        </td>
+
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -114,29 +103,7 @@
         </div>
         {% endif %}
 
-        <!-- Order Statistics -->
-        <div style="margin-top: 30px;">
-            <h2 style="margin-bottom: 20px; color: #4a5568;">Order Statistics</h2>
-            <div class="grid grid-3">
-                <div class="card" style="text-align: center;">
-                    <h3 style="margin-bottom: 10px; color: #4a5568;">Total Orders</h3>
-                    <p style="font-size: 28px; font-weight: bold; color: #5a67d8;">2</p>
-                    <p style="color: #718096; font-size: 14px;">This month</p>
-                </div>
-                
-                <div class="card" style="text-align: center;">
-                    <h3 style="margin-bottom: 10px; color: #4a5568;">Filled Orders</h3>
-                    <p style="font-size: 28px; font-weight: bold; color: #38a169;">1</p>
-                    <p style="color: #718096; font-size: 14px;">Success rate: 85%</p>
-                </div>
-                
-                <div class="card" style="text-align: center;">
-                    <h3 style="margin-bottom: 10px; color: #4a5568;">Total Volume</h3>
-                    <p style="font-size: 28px; font-weight: bold; color: #ed8936;">$45,230</p>
-                    <p style="color: #718096; font-size: 14px;">This month</p>
-                </div>
-            </div>
-        </div>
+
     </div>
 </div>
 {% endblock %}

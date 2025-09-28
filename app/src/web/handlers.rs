@@ -8,7 +8,7 @@ use serde::Deserialize;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use super::templates::{DepositTemplate, PlaceOrderTemplate};
+use super::templates::{DepositTemplate, OrdersTemplate, PlaceOrderTemplate};
 use crate::web::{
     jwt,
     templates::{
@@ -387,17 +387,100 @@ fn check_token_and_execute(
 }
 /// Dashboard handler - requires authentication
 pub async fn dashboard(app_state: State<AppState>, request: axum::extract::Request) -> Response {
-    check_token_and_execute(app_state, request, |_app_state, user, _request| {
-        // Create dashboard template (we'll need to create this)
+    check_token_and_execute(app_state, request, |app_state, user, _request| {
+        // Fetch recent orders for the user
+        let recent_orders = {
+            match user.id {
+                Some(user_id) => {
+                    let broker = app_state.lock().unwrap();
+                    match broker.get_orders_for_user(&user_id) {
+                        Ok(orders) => {
+                            // Convert orders to display format and take the most recent 5
+                            orders
+                                .into_iter()
+                                .take(5)
+                                .map(|(order_id, order)| {
+                                    crate::web::templates::OrderDisplayData::from_order(
+                                        order_id, order,
+                                    )
+                                })
+                                .collect()
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch orders for user {}: {}", user.email, e);
+                            vec![]
+                        }
+                    }
+                }
+                None => {
+                    warn!("User {} has no ID, cannot fetch orders", user.email);
+                    vec![]
+                }
+            }
+        };
+
+        // Create dashboard template
         let template = DashboardTemplate {
             username: &user.email,
             firstname: &user.firstname,
             surname: &user.surname,
             email: &user.email,
             account_balance: user.balance,
-            recent_orders: vec![], // TODO: Empty for now, will be populated when order system is implemented
+            recent_orders,
         };
-        debug!("Rendering dashboard for user: {}", user.email);
+        debug!(
+            "Rendering dashboard for user: {} with {} orders",
+            user.email,
+            template.recent_orders.len()
+        );
+
+        match template.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        }
+    })
+}
+
+/// Orders page handler - requires authentication
+pub async fn orders_page(app_state: State<AppState>, request: axum::extract::Request) -> Response {
+    check_token_and_execute(app_state, request, |app_state, user, _request| {
+        // Fetch all orders for the user
+        let orders = {
+            match user.id {
+                Some(user_id) => {
+                    let broker = app_state.lock().unwrap();
+                    match broker.get_orders_for_user(&user_id) {
+                        Ok(orders) => {
+                            // Convert orders to display format
+                            orders
+                                .into_iter()
+                                .map(|(order_id, order)| {
+                                    crate::web::templates::OrderDisplayData::from_order(
+                                        order_id, order,
+                                    )
+                                })
+                                .collect()
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch orders for user {}: {}", user.email, e);
+                            vec![]
+                        }
+                    }
+                }
+                None => {
+                    warn!("User {} has no ID, cannot fetch orders", user.email);
+                    vec![]
+                }
+            }
+        };
+
+        // Create orders template
+        let template = OrdersTemplate { orders };
+        debug!(
+            "Rendering orders page for user: {} with {} orders",
+            user.email,
+            template.orders.len()
+        );
 
         match template.render() {
             Ok(html) => Html(html).into_response(),

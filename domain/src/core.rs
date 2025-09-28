@@ -41,6 +41,17 @@ impl BrokerX {
     pub fn stop_order_processing(&self) {
         self.order_processing_pool.stop();
     }
+
+    /// Get orders for a specific user
+    /// # Errors  
+    /// Returns `DbError` if the database operation fails
+    pub fn get_orders_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<(OrderId, Order)>, database_adapter::db::DbError> {
+        let shared_state = self.order_processing_pool.shared_state.lock().unwrap();
+        shared_state.order_repo.get_orders_for_user(user_id)
+    }
     /// Creates an order after performing pre-trade checks.
     /// # Errors
     /// Returns `PreTradeError` if any pre-trade validation fails.

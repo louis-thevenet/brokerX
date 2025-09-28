@@ -9,6 +9,7 @@
             <div class="logo">BrokerX</div>
             <div class="nav-links">
                 <a href="/dashboard">Dashboard</a>
+                <a href="/orders">Orders</a>
                 <a href="/deposit">Deposit</a>
                 <a href="/place_order">Trade</a>
                 <form action="/logout" method="post" style="margin: 0;">
@@ -22,7 +23,7 @@
 
     <div class="main-content">
         <!-- Account Balance -->
-        <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; max-width: 400px; margin: 0 auto;">
+        <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; max-width: 400px; margin: 0 auto 30px auto;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <h2 style="font-size: 18px; margin: 0;">Account Balance</h2>
                 <div style="background: rgba(255, 255, 255, 0.2); padding: 8px; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;">
@@ -35,6 +36,82 @@
             <p style="opacity: 0.8; font-size: 14px;">
                 Available for trading
             </p>
+        </div>
+
+        <!-- Recent Orders Section -->
+        <div style="margin-bottom: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #4a5568;">Recent Orders</h2>
+                <a href="/place_order" class="btn" style="padding: 8px 16px; font-size: 14px;">Place New Order</a>
+            </div>
+
+            {% if recent_orders.is_empty() %}
+            <div class="card" style="text-align: center; padding: 40px;">
+                <h3 style="margin-bottom: 15px; color: #4a5568;">No Orders Yet</h3>
+                <p style="color: #718096; margin-bottom: 20px;">You haven't placed any orders yet. Start trading to see your orders here.</p>
+                <a href="/place_order" class="btn">Place Your First Order</a>
+            </div>
+            {% else %}
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in recent_orders %}
+                        <tr>
+                            <td style="font-weight: 600;">{{ order.symbol }}</td>
+                            <td>
+                                {% if order.order_type == "Buy" %}
+                                <span style="color: #38a169; font-weight: 500;">{{ order.order_type }}</span>
+                                {% else %}
+                                <span style="color: #e53e3e; font-weight: 500;">{{ order.order_type }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ order.quantity }}</td>
+                            <td>
+                                {% if order.order_kind == "Market" %}
+                                Market
+                                {% else %}
+                                ${{ order.price }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if order.status == "Filled" %}
+                                <span style="background: #c6f6d5; color: #22543d; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else if order.status == "Pending" %}
+                                <span style="background: #fed7d7; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else if order.status == "Queued" %}
+                                <span style="background: #fef5e7; color: #744210; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else if order.status == "Partially Filled" %}
+                                <span style="background: #bee3f8; color: #2c5282; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else if order.status == "Cancelled" %}
+                                <span style="background: #e2e8f0; color: #4a5568; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else if order.status == "Expired" %}
+                                <span style="background: #fed7d7; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else if order.status == "Rejected" %}
+                                <span style="background: #feb2b2; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% else %}
+                                <span style="background: #fed7d7; color: #742a2a; padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: 500;" {% match order.status_tooltip %}{% when Some with (tooltip) %}title="{{ tooltip }}"{% when None %}{% endmatch %}>{{ order.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td style="font-size: 14px; color: #718096;">{{ order.date }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div style="padding: 15px; text-align: center; border-top: 1px solid #e2e8f0;">
+                    <a href="/orders" style="color: #5a67d8; text-decoration: none; font-weight: 500;">View All Orders →</a>
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>

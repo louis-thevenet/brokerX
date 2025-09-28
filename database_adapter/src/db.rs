@@ -72,6 +72,10 @@ pub trait Repository<T, Id> {
     /// # Errors
     /// - Returns `DbError` if the operation fails
     fn find_by_field(&self, field: &str, value: &str) -> Result<Option<T>, DbError>;
+    /// Find all items by a specific field and value
+    /// # Errors
+    /// - Returns `DbError` if the operation fails
+    fn find_all_by_field(&self, field: &str, value: &str) -> Result<Vec<(Id, T)>, DbError>;
 }
 
 /// Generic Postgres repository, stores T as JSON
@@ -149,6 +153,7 @@ impl<T, Id> Repository<T, Id> for PostgresRepo<T, Id>
 where
     T: Serialize + DeserializeOwned + Send + Sync,
     Id: ToString
+        + std::str::FromStr
         + for<'a> sqlx::Decode<'a, sqlx::Postgres>
         + sqlx::Type<sqlx::Postgres>
         + Send
@@ -289,5 +294,44 @@ where
         })?;
 
         Ok(row.map(|val| serde_json::from_value(val).unwrap()))
+    }
+
+    fn find_all_by_field(&self, field: &str, value: &str) -> Result<Vec<(Id, T)>, DbError> {
+        let query = format!(
+            "SELECT id, data FROM {} WHERE data->>$1 = $2 ORDER BY data->>'date' DESC",
+            self.table
+        );
+        let pool = self.pool.clone();
+        let field = field.to_string();
+        let value = value.to_string();
+
+        let rows: Vec<(String, serde_json::Value)> = std::thread::scope(|s| {
+            let handle = s.spawn(|| {
+                let rt = Runtime::new()?;
+                rt.block_on(async {
+                    sqlx::query_as(&query)
+                        .bind(field)
+                        .bind(value)
+                        .fetch_all(&pool)
+                        .await
+                })
+            });
+            handle
+                .join()
+                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
+                .map_err(DbError::from)
+        })?;
+
+        let result = rows
+            .into_iter()
+            .filter_map(|(id_str, val)| {
+                // Parse the string ID back to the proper type
+                let id = id_str.parse().ok()?;
+                let item: T = serde_json::from_value(val).ok()?;
+                Some((id, item))
+            })
+            .collect();
+
+        Ok(result)
     }
 }

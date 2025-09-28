@@ -13,8 +13,9 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 
 use handlers::{
     dashboard, deposit_page, deposit_submit, home, login_page, login_submit, logout,
-    mfa_verify_page, mfa_verify_submit, place_order_page, place_order_submit, register_page,
-    register_submit, registration_verify_page, registration_verify_submit, resend_mfa,
+    mfa_verify_page, mfa_verify_submit, orders_page, place_order_page, place_order_submit,
+    register_page, register_submit, registration_verify_page, registration_verify_submit,
+    resend_mfa,
 };
 
 // App state type - simplified to only contain BrokerX
@@ -36,6 +37,7 @@ pub fn create_app(state: AppState) -> Router {
     // Protected routes (authentication required)
     let protected_routes = Router::new()
         .route("/dashboard", get(dashboard))
+        .route("/orders", get(orders_page))
         // add or remove money from account
         .route("/deposit", get(deposit_page).post(deposit_submit))
         .route(
