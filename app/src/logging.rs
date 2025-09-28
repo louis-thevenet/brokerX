@@ -31,15 +31,18 @@ pub fn init() -> Result<()> {
         });
 
     let file_subscriber = fmt::layer()
-        .with_file(true)
-        .with_line_number(true)
         .with_writer(log_file)
         .with_target(false)
         .with_ansi(false)
+        .with_filter(env_filter.clone());
+    let stdout_subscriber = fmt::layer()
+        .with_file(true)
+        .with_line_number(true)
         .with_filter(env_filter);
 
     tracing_subscriber::registry()
         .with(file_subscriber)
+        .with(stdout_subscriber)
         .with(ErrorLayer::default())
         .try_init()?;
 
