@@ -7,12 +7,14 @@ use database_adapter::db::{DbError, Repository};
 use rand::random;
 use tracing::{debug, error, info};
 
-use crate::order::{Order, OrderId, OrderRepo, OrderStatus};
+use crate::order::{Order, OrderId, OrderRepo, OrderSide, OrderStatus};
+use crate::user::{UserRepo, UserRepoExt};
 
 /// Shared state between main thread and order processing threads
 #[derive(Debug)]
 pub struct SharedOrderState {
     pub order_repo: OrderRepo,
+    pub user_repo: UserRepo,
     pub order_queue: VecDeque<OrderId>,
     pub is_running: bool,
 }
@@ -34,9 +36,29 @@ impl OrderProcessingPool {
     pub fn new(num_threads: usize) -> Self {
         let shared_state = Arc::new(Mutex::new(SharedOrderState {
             order_repo: OrderRepo::new("orders").expect("orders repo failed to load"),
+            user_repo: UserRepo::new("users").expect("users repo failed to load"),
             order_queue: VecDeque::new(),
             is_running: false,
         }));
+
+        // Get all queued and pending orders from the database and add them to the queue
+        {
+            let mut state = shared_state.lock().unwrap();
+            match state.order_repo.find_all_by_field("status", "Pending") {
+                Ok(orders) => {
+                    for (uuid, _order) in orders {
+                        state.order_queue.push_back(uuid);
+                    }
+                    info!(
+                        "Loaded {} queued/pending orders into processing queue",
+                        state.order_queue.len()
+                    );
+                }
+                Err(e) => {
+                    error!("Failed to load queued/pending orders: {}", e);
+                }
+            }
+        }
 
         let work_available = Arc::new(Condvar::new());
         let should_stop = Arc::new(Mutex::new(false));
@@ -161,56 +183,59 @@ impl OrderProcessingPool {
                 OrderStatus::Pending => {
                     debug!("Thread {} executing pending order {}", thread_id, order_id);
                     // Simulate order matching with randomization
-                    let random = random::<u32>() % 4;
-                    match random {
+                    match random::<u32>() % 4 {
                         0 => {
-                            // Order filled completely
-                            order.status = OrderStatus::Filled {
-                                date: chrono::Utc::now().naive_local(),
-                            };
-                            info!("Thread {} filled order {} completely", thread_id, order_id);
-                        }
-                        1 => {
-                            // Partial fill
-                            let amount_executed = if order.quantity > 1 {
-                                order.quantity / 2
+                            let execution_price = 100.0;
+                            if let Ok(()) = match order.order_side {
+                                OrderSide::Buy => {
+                                    // Deduct funds from user's account
+                                    state.user_repo.withdraw_from_user(
+                                        &order.client_id,
+                                        execution_price * order.quantity as f64,
+                                    )
+                                }
+                                OrderSide::Sell => {
+                                    // Add funds to user's account
+                                    state.user_repo.deposit_to_user(
+                                        &order.client_id,
+                                        execution_price * order.quantity as f64,
+                                    )
+                                }
+                            } {
+                                Self::update_portfolio_for_filled_order(
+                                    &mut state,
+                                    &order,
+                                    execution_price,
+                                );
+                                // Order filled completely
+                                order.status = OrderStatus::Filled {
+                                    date: chrono::Utc::now().naive_local(),
+                                };
+                                info!("Thread {} filled order {} completely", thread_id, order_id);
                             } else {
-                                1
-                            };
-                            order.status = OrderStatus::PartiallyFilled { amount_executed };
-                            // Re-queue for remaining quantity
-                            state.order_queue.push_back(order_id);
-                            info!(
-                                "Thread {} partially filled order {} ({} shares)",
-                                thread_id, order_id, amount_executed
-                            );
+                                // Failed to update user funds, reject order
+                                order.status = OrderStatus::Rejected {
+                                    date: chrono::Utc::now().naive_local(),
+                                };
+                                error!(
+                                    "Thread {} rejected order {} due to insufficient funds",
+                                    thread_id, order_id
+                                );
+                            }
                         }
-                        2 => {
-                            // Order rejected
-                            order.status = OrderStatus::Rejected {
-                                date: chrono::Utc::now().naive_local(),
-                            };
-                            info!("Thread {} rejected order {}", thread_id, order_id);
-                        }
+
+                        // 2 => {
+                        //     // Order rejected
+                        //     order.status = OrderStatus::Rejected {
+                        //         date: chrono::Utc::now().naive_local(),
+                        //     };
+                        //     info!("Thread {} rejected order {}", thread_id, order_id);
+                        // }
                         _ => {
                             // Keep pending, re-queue
                             state.order_queue.push_back(order_id);
                         }
                     }
-                }
-                OrderStatus::PartiallyFilled { amount_executed: _ } => {
-                    debug!(
-                        "Thread {} completing partially filled order {}",
-                        thread_id, order_id
-                    );
-                    // Complete the remaining quantity
-                    order.status = OrderStatus::Filled {
-                        date: chrono::Utc::now().naive_local(),
-                    };
-                    info!(
-                        "Thread {} completed order {} (remaining quantity)",
-                        thread_id, order_id
-                    );
                 }
                 OrderStatus::PendingCancel => {
                     debug!("Thread {} cancelling order {}", thread_id, order_id);
@@ -318,9 +343,7 @@ impl OrderProcessingPool {
             .map_err(OrderProcessingError::DbError)?
         {
             match order.status {
-                OrderStatus::Queued
-                | OrderStatus::Pending
-                | OrderStatus::PartiallyFilled { .. } => {
+                OrderStatus::Queued | OrderStatus::Pending => {
                     order.status = OrderStatus::PendingCancel;
                     // Re-queue for processing the cancellation
                     state.order_queue.push_back(*order_id);
@@ -334,6 +357,56 @@ impl OrderProcessingPool {
             }
         } else {
             Err(OrderProcessingError::OrderNotFound)
+        }
+    }
+
+    /// Update portfolio when an order is filled
+    fn update_portfolio_for_filled_order(
+        state: &mut SharedOrderState,
+        order: &Order,
+        execution_price: f64,
+    ) {
+        let quantity_change = match order.order_side {
+            OrderSide::Buy => order.quantity as i64,
+            OrderSide::Sell => -(order.quantity as i64),
+        };
+
+        // Update the user's holdings
+        match state.user_repo.get(&order.client_id) {
+            Ok(Some(mut user)) => {
+                user.update_holding(&order.symbol, quantity_change, execution_price);
+                if let Err(e) = state.user_repo.update(order.client_id, user) {
+                    error!(
+                        "Failed to save updated user {} after order {}: {}",
+                        order.client_id, order.symbol, e
+                    );
+                } else {
+                    info!(
+                        "Updated portfolio for user {}: {} {} shares of {} at ${}",
+                        order.client_id,
+                        if quantity_change > 0 {
+                            "bought"
+                        } else {
+                            "sold"
+                        },
+                        quantity_change.abs(),
+                        order.symbol,
+                        execution_price
+                    );
+                }
+            }
+            Ok(None) => {
+                error!(
+                    "User {} not found when trying to update holdings after order {}",
+                    order.client_id, order.symbol
+                );
+            }
+            Err(e) => {
+                error!(
+                    "Failed to load user {} for portfolio update after order {}: {}",
+                    order.client_id, order.symbol, e
+                );
+            }
         }
     }
 }

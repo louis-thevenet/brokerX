@@ -5,10 +5,12 @@ use database_adapter::db::PostgresRepo;
 use database_adapter::db::Repository;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use tracing::debug;
 use uuid::Uuid;
 
 use crate::mfa::{MfaError, MfaProvider, MfaService};
+use crate::portfolio::Holding;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct User {
@@ -20,6 +22,7 @@ pub struct User {
     pub balance: f64,
     pub is_verified: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub holdings: HashMap<String, Holding>, // Symbol -> Holding
 }
 
 #[derive(Debug)]
@@ -77,6 +80,7 @@ impl User {
             balance: initial_balance,
             is_verified: false,
             created_at: chrono::Utc::now(),
+            holdings: HashMap::new(),
         })
     }
 
@@ -115,9 +119,65 @@ impl User {
         self.is_verified = true;
     }
 
-    /// Check if the user's email is verified
-    pub fn is_email_verified(&self) -> bool {
-        self.is_verified
+    /// Update a holding (buy or sell shares)
+    pub fn update_holding(&mut self, symbol: &str, quantity_change: i64, price: f64) {
+        let symbol = symbol.to_string();
+        
+        if let Some(holding) = self.holdings.get_mut(&symbol) {
+            // Update existing holding
+            let old_quantity = holding.quantity as i64;
+            let new_quantity = old_quantity + quantity_change;
+            
+            if new_quantity <= 0 {
+                // Remove holding if quantity becomes zero or negative
+                self.holdings.remove(&symbol);
+            } else {
+                // Update holding with new average cost
+                let old_total_cost = holding.average_cost * holding.quantity as f64;
+                let new_cost = if quantity_change > 0 {
+                    price * quantity_change as f64
+                } else {
+                    0.0 // For sells, don't add to cost basis
+                };
+                
+                holding.quantity = new_quantity as u64;
+                if new_quantity > old_quantity {
+                    // Only update average cost when buying
+                    holding.average_cost = (old_total_cost + new_cost) / holding.quantity as f64;
+                }
+                holding.last_updated = chrono::Utc::now();
+            }
+        } else if quantity_change > 0 {
+            // Create new holding (only for buys)
+            self.holdings.insert(symbol.clone(), Holding {
+                symbol: symbol.clone(),
+                quantity: quantity_change as u64,
+                average_cost: price,
+                last_updated: chrono::Utc::now(),
+            });
+        }
+    }
+
+    /// Get all holdings as a list
+    pub fn get_holdings_list(&self) -> Vec<&Holding> {
+        self.holdings.values().collect()
+    }
+
+    /// Get portfolio value (total cost basis for now)
+    pub fn get_portfolio_value(&self) -> f64 {
+        self.holdings.values()
+            .map(|h| h.average_cost * h.quantity as f64)
+            .sum()
+    }
+
+    /// Get total gain/loss (currently 0 since we use cost as current price)
+    pub fn get_total_gain_loss(&self) -> f64 {
+        0.0 // Would calculate based on current prices vs cost basis
+    }
+
+    /// Get gain/loss percentage
+    pub fn get_gain_loss_percentage(&self) -> f64 {
+        0.0 // Would calculate based on current prices vs cost basis
     }
 }
 
@@ -244,7 +304,7 @@ impl UserRepoExt for UserRepo {
         let user = self
             .get_user_by_email(email)?
             .ok_or(AuthError::UserNotFound)?;
-        Ok(user.is_email_verified())
+        Ok(user.is_verified)
     }
 
     fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
@@ -291,6 +351,6 @@ impl UserRepoExt for UserRepo {
             .get(user_id)
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
-        Ok(user.is_email_verified())
+        Ok(user.is_verified)
     }
 }

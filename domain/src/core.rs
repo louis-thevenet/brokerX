@@ -52,6 +52,16 @@ impl BrokerX {
         let shared_state = self.order_processing_pool.shared_state.lock().unwrap();
         shared_state.order_repo.get_orders_for_user(user_id)
     }
+
+    /// Get user by ID for portfolio access
+    /// # Errors
+    /// Returns `DbError` if the database operation fails
+    pub fn get_user_by_id(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<crate::user::User>, database_adapter::db::DbError> {
+        self.user_repo.get(user_id)
+    }
     /// Creates an order after performing pre-trade checks.
     /// # Errors
     /// Returns `PreTradeError` if any pre-trade validation fails.
@@ -98,7 +108,7 @@ impl BrokerX {
             state
                 .order_repo
                 .create_order(order)
-                .map_err(|e| PreTradeError::DbError(e))?
+                .map_err(PreTradeError::DbError)?
         };
 
         info!("Pre-trade checks validated for {order_id}");
@@ -124,6 +134,9 @@ impl BrokerX {
             )
             .unwrap();
         self.user_repo.verify_user_email(&id).unwrap();
+
+        // Portfolio is now embedded in the user, no need to create separately
+        tracing::info!("Test user {} created with empty portfolio", id);
     }
 }
 

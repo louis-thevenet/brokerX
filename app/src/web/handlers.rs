@@ -8,7 +8,7 @@ use serde::Deserialize;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use super::templates::{DepositTemplate, OrdersTemplate, PlaceOrderTemplate};
+use super::templates::{DepositTemplate, HoldingDisplayData, OrdersTemplate, PlaceOrderTemplate};
 use crate::web::{
     jwt,
     templates::{
@@ -289,7 +289,10 @@ pub async fn register_submit(
                     1000.0, // TODO: change
                 ) {
                     Ok(user_id) => {
-                        debug!("Created new user: {} (ID: {})", form.email, user_id);
+                        debug!(
+                            "Created new user: {} (ID: {}) with empty portfolio",
+                            form.email, user_id
+                        );
                         user_id
                     }
                     Err(e) => {
@@ -390,49 +393,77 @@ pub async fn dashboard(app_state: State<AppState>, request: axum::extract::Reque
     check_token_and_execute(app_state, request, |app_state, user, _request| {
         // Fetch recent orders for the user
         let recent_orders = {
-            match user.id {
-                Some(user_id) => {
-                    let broker = app_state.lock().unwrap();
-                    match broker.get_orders_for_user(&user_id) {
-                        Ok(orders) => {
-                            // Convert orders to display format and take the most recent 5
-                            orders
-                                .into_iter()
-                                .take(5)
-                                .map(|(order_id, order)| {
-                                    crate::web::templates::OrderDisplayData::from_order(
-                                        order_id, order,
-                                    )
-                                })
-                                .collect()
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch orders for user {}: {}", user.email, e);
-                            vec![]
-                        }
+            if let Some(user_id) = user.id {
+                let broker = app_state.lock().unwrap();
+                match broker.get_orders_for_user(&user_id) {
+                    Ok(orders) => {
+                        // Convert orders to display format and take the most recent 5
+                        orders
+                            .into_iter()
+                            .take(5)
+                            .map(|(order_id, order)| {
+                                crate::web::templates::OrderDisplayData::from_order(order_id, order)
+                            })
+                            .collect()
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch orders for user {}: {}", user.email, e);
+                        vec![]
                     }
                 }
-                None => {
-                    warn!("User {} has no ID, cannot fetch orders", user.email);
-                    vec![]
-                }
+            } else {
+                warn!("User {} has no ID, cannot fetch orders", user.email);
+                vec![]
             }
+        };
+
+        // Get portfolio data from user holdings
+        let (holdings, portfolio_value, total_gain_loss, total_gain_loss_percentage) = {
+            debug!(
+                "Getting portfolio data from user holdings for {}",
+                user.email
+            );
+            let holdings: Vec<HoldingDisplayData> = user
+                .get_holdings_list()
+                .into_iter()
+                .map(HoldingDisplayData::from_holding)
+                .collect();
+
+            let portfolio_value = (user.get_portfolio_value() * 100.0).round() / 100.0;
+            let total_gain_loss = (user.get_total_gain_loss() * 100.0).round() / 100.0;
+            let total_gain_loss_percentage =
+                (user.get_gain_loss_percentage() * 100.0).round() / 100.0;
+
+            (
+                holdings,
+                portfolio_value,
+                total_gain_loss,
+                total_gain_loss_percentage,
+            )
         };
 
         // Create dashboard template
         let template = DashboardTemplate {
-            username: &user.email,
-            firstname: &user.firstname,
-            surname: &user.surname,
-            email: &user.email,
             account_balance: user.balance,
             recent_orders,
+            holdings: holdings.clone(),
+            portfolio_value,
+            total_gain_loss,
+            total_gain_loss_percentage,
         };
         debug!(
-            "Rendering dashboard for user: {} with {} orders",
+            "Rendering dashboard for user: {} with {} orders and {} holdings. Portfolio value: ${}",
             user.email,
-            template.recent_orders.len()
+            template.recent_orders.len(),
+            template.holdings.len(),
+            portfolio_value
         );
+        for holding in &holdings {
+            debug!(
+                "Holding: {} shares of {} at ${}",
+                holding.quantity, holding.symbol, holding.average_cost
+            );
+        }
 
         match template.render() {
             Ok(html) => Html(html).into_response(),
@@ -446,31 +477,26 @@ pub async fn orders_page(app_state: State<AppState>, request: axum::extract::Req
     check_token_and_execute(app_state, request, |app_state, user, _request| {
         // Fetch all orders for the user
         let orders = {
-            match user.id {
-                Some(user_id) => {
-                    let broker = app_state.lock().unwrap();
-                    match broker.get_orders_for_user(&user_id) {
-                        Ok(orders) => {
-                            // Convert orders to display format
-                            orders
-                                .into_iter()
-                                .map(|(order_id, order)| {
-                                    crate::web::templates::OrderDisplayData::from_order(
-                                        order_id, order,
-                                    )
-                                })
-                                .collect()
-                        }
-                        Err(e) => {
-                            error!("Failed to fetch orders for user {}: {}", user.email, e);
-                            vec![]
-                        }
+            if let Some(user_id) = user.id {
+                let broker = app_state.lock().unwrap();
+                match broker.get_orders_for_user(&user_id) {
+                    Ok(orders) => {
+                        // Convert orders to display format
+                        orders
+                            .into_iter()
+                            .map(|(order_id, order)| {
+                                crate::web::templates::OrderDisplayData::from_order(order_id, order)
+                            })
+                            .collect()
+                    }
+                    Err(e) => {
+                        error!("Failed to fetch orders for user {}: {}", user.email, e);
+                        vec![]
                     }
                 }
-                None => {
-                    warn!("User {} has no ID, cannot fetch orders", user.email);
-                    vec![]
-                }
+            } else {
+                warn!("User {} has no ID, cannot fetch orders", user.email);
+                vec![]
             }
         };
 

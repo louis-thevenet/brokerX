@@ -38,6 +38,58 @@
             </p>
         </div>
 
+        <!-- Portfolio Section -->
+        <div style="margin-bottom: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #4a5568;">Your Portfolio</h2>
+                <div style="text-align: right;">
+                    <div style="font-size: 24px; font-weight: bold; color: #4a5568;">${{ portfolio_value }}</div>
+                    <div style="font-size: 14px; color: {% if total_gain_loss >= 0.0 %}#38a169{% else %}#e53e3e{% endif %};">
+                        {% if total_gain_loss >= 0.0 %}+{% endif %}${{ total_gain_loss }} ({% if total_gain_loss_percentage >= 0.0 %}+{% endif %}{{ total_gain_loss_percentage }}%)
+                    </div>
+                </div>
+            </div>
+
+            {% if holdings.is_empty() %}
+            <div class="card" style="text-align: center; padding: 40px;">
+                <h3 style="margin-bottom: 15px; color: #4a5568;">No Holdings Yet</h3>
+                <p style="color: #718096; margin-bottom: 20px;">You don't own any stocks yet. Start investing to build your portfolio.</p>
+                <a href="/place_order" class="btn">Buy Your First Stock</a>
+            </div>
+            {% else %}
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Shares</th>
+                            <th>Avg Cost</th>
+                            <th>Current Price</th>
+                            <th>Total Value</th>
+                            <th>Gain/Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for holding in holdings %}
+                        <tr>
+                            <td style="font-weight: 600; color: #4a5568;">{{ holding.symbol }}</td>
+                            <td>{{ holding.quantity }}</td>
+                            <td>${{ holding.average_cost }}</td>
+                            <td>${{ holding.current_price }}</td>
+                            <td style="font-weight: 500;">${{ holding.total_value }}</td>
+                            <td style="font-weight: 500; color: {% if holding.gain_loss >= 0.0 %}#38a169{% else %}#e53e3e{% endif %};">
+                                {% if holding.gain_loss >= 0.0 %}+{% endif %}${{ holding.gain_loss }}
+                                <br>
+                                <span style="font-size: 12px;">({% if holding.gain_loss_percentage >= 0.0 %}+{% endif %}{{ holding.gain_loss_percentage }}%)</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+
         <!-- Recent Orders Section -->
         <div style="margin-bottom: 30px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">

@@ -14,8 +14,6 @@ pub enum OrderStatus {
     Queued,
     /// The order has been sent to the exchange but hasn’t been executed yet.
     Pending,
-    /// Only part of the order has been executed
-    PartiallyFilled { amount_executed: u64 },
     /// Order has been completely executed
     Filled { date: NaiveDateTime },
     /// Order is in the process of being cancelled

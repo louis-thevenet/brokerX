@@ -1,5 +1,6 @@
 use askama::Template;
 use domain::order::{Order, OrderId, OrderSide, OrderStatus, OrderType};
+use domain::portfolio::Holding;
 
 #[derive(Template)]
 #[template(path = "login.html")]
@@ -30,13 +31,13 @@ pub struct RegistrationVerifyTemplate {
 
 #[derive(Template)]
 #[template(path = "dashboard.html")]
-pub struct DashboardTemplate<'a> {
-    pub username: &'a str,
-    pub firstname: &'a str,
-    pub surname: &'a str,
-    pub email: &'a str,
+pub struct DashboardTemplate {
     pub account_balance: f64,
     pub recent_orders: Vec<OrderDisplayData>,
+    pub holdings: Vec<HoldingDisplayData>,
+    pub portfolio_value: f64,
+    pub total_gain_loss: f64,
+    pub total_gain_loss_percentage: f64,
 }
 
 // Struct for order display in templates
@@ -52,6 +53,18 @@ pub struct OrderDisplayData {
     pub date: String,
     pub total: f64,
     pub status_tooltip: Option<String>, // Additional status information for tooltips
+}
+
+// Struct for holdings display in templates
+#[derive(Clone)]
+pub struct HoldingDisplayData {
+    pub symbol: String,
+    pub quantity: u64,
+    pub average_cost: f64,
+    pub current_price: f64, // For now, same as average cost
+    pub total_value: f64,
+    pub gain_loss: f64,
+    pub gain_loss_percentage: f64,
 }
 #[derive(Template)]
 #[template(path = "deposit.html")]
@@ -83,26 +96,6 @@ pub struct OrderConfirmationTemplate {
     pub total_cost: f64,
 }
 
-impl OrderConfirmationTemplate {
-    pub fn new(
-        order_id: String,
-        symbol: String,
-        order_type: String,
-        quantity: u64,
-        price: f64,
-    ) -> Self {
-        let total_cost = price * (quantity as f64); // Cast u64 to f64 for multiplication
-        Self {
-            order_id,
-            symbol,
-            order_type,
-            quantity,
-            price,
-            total_cost,
-        }
-    }
-}
-
 impl OrderDisplayData {
     pub fn from_order(order_id: OrderId, order: Order) -> Self {
         let order_type = match order.order_side {
@@ -124,13 +117,6 @@ impl OrderDisplayData {
                 "Pending".to_string(),
                 Some("Order has been sent to the exchange but not yet executed".to_string()),
             ),
-            OrderStatus::PartiallyFilled { amount_executed } => {
-                let tooltip = format!(
-                    "Only {} out of {} shares have been executed",
-                    amount_executed, order.quantity
-                );
-                ("Partially Filled".to_string(), Some(tooltip))
-            }
             OrderStatus::Filled { date } => {
                 let tooltip = format!(
                     "Order was completely filled on {}",
@@ -173,6 +159,30 @@ impl OrderDisplayData {
             date,
             total,
             status_tooltip,
+        }
+    }
+}
+
+impl HoldingDisplayData {
+    pub fn from_holding(holding: &Holding) -> Self {
+        let current_price = holding.average_cost; // For now, use average cost as current price
+        let total_value = current_price * holding.quantity as f64;
+        let cost_basis = holding.average_cost * holding.quantity as f64;
+        let gain_loss = total_value - cost_basis;
+        let gain_loss_percentage = if cost_basis == 0.0 {
+            0.0
+        } else {
+            (gain_loss / cost_basis) * 100.0
+        };
+
+        Self {
+            symbol: holding.symbol.clone(),
+            quantity: holding.quantity,
+            average_cost: (holding.average_cost * 100.0).round() / 100.0, // Round to 2 decimals
+            current_price: (current_price * 100.0).round() / 100.0,
+            total_value: (total_value * 100.0).round() / 100.0,
+            gain_loss: (gain_loss * 100.0).round() / 100.0,
+            gain_loss_percentage: (gain_loss_percentage * 100.0).round() / 100.0,
         }
     }
 }
