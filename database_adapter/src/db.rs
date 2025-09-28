@@ -62,6 +62,12 @@ pub trait Repository<T, Id> {
     /// - Returns `DbError` if the operation fails
     // TODO: remove
     fn len(&self) -> Result<usize, DbError>;
+    /// Check if the repository is empty
+    /// # Errors
+    /// - Returns `DbError` if the operation fails
+    fn is_empty(&self) -> Result<bool, DbError> {
+        Ok(self.len()? == 0)
+    }
     /// Find an item by a specific field and value
     /// # Errors
     /// - Returns `DbError` if the operation fails
@@ -80,7 +86,7 @@ impl<T, Id> std::fmt::Debug for PostgresRepo<T, Id> {
         f.debug_struct("PostgresRepo")
             .field("table", &self.table)
             .field("_phantom", &self._phantom)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -93,6 +99,11 @@ where
         + Send
         + Sync,
 {
+    /// Create a new Postgres repository
+    /// # Errors
+    /// - Returns `DbError` if the operation fails
+    /// # Panics
+    /// - Panics if `DATABASE_URL` is not set in the environment or .env file
     pub fn new(table: &str) -> Result<Self, DbError> {
         dotenvy::dotenv().ok();
         let db_url = std::env::var("DATABASE_URL")
@@ -249,7 +260,7 @@ where
                 .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
                 .map_err(DbError::from)
         })?;
-        Ok(count as usize)
+        Ok(count.saturating_abs() as usize)
     }
     fn find_by_field(&self, field: &str, value: &str) -> Result<Option<T>, DbError> {
         let query = format!(

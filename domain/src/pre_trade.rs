@@ -30,6 +30,7 @@ pub enum PreTradeError {
         price: f64,
         tick_size: f64,
     },
+    DbError(database_adapter::db::DbError),
 }
 
 impl std::fmt::Display for PreTradeError {
@@ -71,6 +72,9 @@ impl std::fmt::Display for PreTradeError {
                     f,
                     "Invalid tick size for {symbol}: price {price:.4} not aligned to tick size {tick_size:.4}"
                 )
+            }
+            PreTradeError::DbError(db_error) => {
+                write!(f, "Database error: {db_error}")
             }
         }
     }
@@ -264,19 +268,6 @@ impl PreTradeValidator {
             _ => 100.0, // Default estimate
         }
     }
-}
-
-/// Convenience function for validation with default config
-pub fn validate_pre_trade(
-    order_side: &OrderSide,
-    order_type: &OrderType,
-    symbol: &str,
-    quantity: u64,
-    user_balance: f64,
-    config: &PreTradeConfig,
-) -> Result<(), PreTradeError> {
-    let validator = PreTradeValidator::new(config.clone());
-    validator.validate_order(order_side, order_type, symbol, quantity, user_balance)
 }
 
 #[cfg(test)]

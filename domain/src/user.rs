@@ -48,7 +48,7 @@ impl std::fmt::Display for AuthError {
             AuthError::MfaFailed(err) => write!(f, "MFA failed: {err}"),
             AuthError::NotVerified(_) => write!(f, "User email not verified"),
             AuthError::UserRepo(err) => {
-                write!(f, "User repository error: {}", err)
+                write!(f, "User repository error: {err}")
             }
         }
     }
@@ -88,7 +88,7 @@ impl User {
 
     fn hash_password(password: &str) -> String {
         // Simple hash for demonstration - use bcrypt in production!
-        format!("hash_{}", password)
+        format!("hash_{password}")
     }
 
     /// Deposit money into the user's account
@@ -228,11 +228,11 @@ impl UserRepoExt for UserRepo {
 
     fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
         self.find_by_field("email", email)
-            .map_err(|e| AuthError::UserRepo(e))
+            .map_err(AuthError::UserRepo)
     }
 
     fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError> {
-        self.get(user_id).map_err(|e| AuthError::UserRepo(e))
+        self.get(user_id).map_err(AuthError::UserRepo)
     }
 
     fn email_exists(&self, email: &str) -> Result<bool, AuthError> {
@@ -250,28 +250,28 @@ impl UserRepoExt for UserRepo {
     fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
         let mut user = self
             .get(user_id)
-            .map_err(|e| AuthError::UserRepo(e))?
+            .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.deposit(amount);
         self.update(*user_id, user)
-            .map_err(|e| AuthError::UserRepo(e))?;
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
     fn withdraw_from_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
         let mut user = self
             .get(user_id)
-            .map_err(|e| AuthError::UserRepo(e))?
+            .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.withdraw(amount);
         self.update(*user_id, user)
-            .map_err(|e| AuthError::UserRepo(e))?;
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
 
     fn get_user_balance(&self, user_id: &UserId) -> Result<f64, AuthError> {
         let user = self
             .get(user_id)
-            .map_err(|e| AuthError::UserRepo(e))?
+            .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         Ok(user.get_balance())
     }
@@ -279,17 +279,17 @@ impl UserRepoExt for UserRepo {
     fn verify_user_email(&mut self, user_id: &UserId) -> Result<(), AuthError> {
         let mut user = self
             .get(user_id)
-            .map_err(|e| AuthError::UserRepo(e))?
+            .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.verify_email();
         self.update(*user_id, user)
-            .map_err(|e| AuthError::UserRepo(e))?;
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
     fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError> {
         let user = self
             .get(user_id)
-            .map_err(|e| AuthError::UserRepo(e))?
+            .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         Ok(user.is_email_verified())
     }

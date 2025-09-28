@@ -26,7 +26,6 @@ impl BrokerX {
     #[must_use]
     pub fn with_thread_count(num_threads: usize) -> Self {
         let order_processing_pool = OrderProcessingPool::new(num_threads);
-
         BrokerX {
             user_repo: UserRepo::new("users").expect("users repo failed to load"),
             mfa_service: MfaServiceFactory::create_email_mfa_service(),
@@ -42,6 +41,11 @@ impl BrokerX {
     pub fn stop_order_processing(&self) {
         self.order_processing_pool.stop();
     }
+    /// Creates an order after performing pre-trade checks.
+    /// # Errors
+    /// Returns `PreTradeError` if any pre-trade validation fails.
+    /// # Panics
+    /// Panics if the order repository fails to create the order.
     pub fn create_order(
         &mut self,
         client_id: UserId,
@@ -80,7 +84,10 @@ impl BrokerX {
         // Create order in the thread pool's repository
         let order_id = {
             let mut state = self.order_processing_pool.shared_state.lock().unwrap();
-            state.order_repo.create_order(order)
+            state
+                .order_repo
+                .create_order(order)
+                .map_err(|e| PreTradeError::DbError(e))?
         };
 
         info!("Pre-trade checks validated for {order_id}");

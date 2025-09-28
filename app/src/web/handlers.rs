@@ -17,10 +17,7 @@ use crate::web::{
     },
     AppState,
 };
-use domain::{
-    order::{Order, OrderRepoExt},
-    Repository,
-};
+use domain::Repository;
 
 use domain::user::{AuthError, User, UserRepoExt};
 
@@ -133,7 +130,7 @@ pub async fn login_submit(
                     "User email not verified for email: {}, initiating verification process",
                     form.email
                 );
-                return registration_mfa(app_state.clone(), &form.email, user_id);
+                return registration_mfa(&app_state, &form.email, user_id);
             }
             Err(e) => {
                 warn!("Authentication failed for email: {} - {}", form.email, e);
@@ -308,11 +305,11 @@ pub async fn register_submit(
             }
         }
     };
-    registration_mfa(app_state, &form.email, user_id)
+    registration_mfa(&app_state, &form.email, user_id)
 }
 
 fn registration_mfa(
-    app_state: std::sync::Arc<std::sync::Mutex<domain::core::BrokerX>>,
+    app_state: &std::sync::Arc<std::sync::Mutex<domain::core::BrokerX>>,
     email: &str,
     user_id: Uuid,
 ) -> axum::http::Response<axum::body::Body> {
@@ -562,9 +559,7 @@ pub async fn registration_verify_submit(
     }
 
     // Parse user ID
-    let user_id = if let Ok(id) = Uuid::parse_str(&form.user_id) {
-        id
-    } else {
+    let Ok(user_id) = Uuid::parse_str(&form.user_id) else {
         let template = RegistrationVerifyTemplate {
             challenge_id: form.challenge_id,
             user_id: form.user_id,

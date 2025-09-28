@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDateTime, Utc};
+use database_adapter::db::DbError;
 use database_adapter::db::PostgresRepo;
 use database_adapter::db::Repository;
 use serde::Deserialize;
@@ -54,13 +55,13 @@ pub type OrderId = Uuid;
 pub type OrderRepo = PostgresRepo<Order, OrderId>;
 
 pub trait OrderRepoExt {
-    fn create_order(&mut self, order: Order) -> OrderId;
+    fn create_order(&mut self, order: Order) -> Result<OrderId, DbError>;
 }
 
 impl OrderRepoExt for OrderRepo {
-    fn create_order(&mut self, order: Order) -> OrderId {
+    fn create_order(&mut self, order: Order) -> Result<OrderId, DbError> {
         let id = Uuid::new_v4();
-        self.insert(id, order);
-        id
+        self.insert(id, order)?;
+        Ok(id)
     }
 }

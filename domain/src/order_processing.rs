@@ -51,9 +51,9 @@ impl OrderProcessingPool {
             let handle = thread::spawn(move || {
                 Self::worker_thread(
                     thread_id,
-                    shared_state_clone,
-                    work_available_clone,
-                    should_stop_clone,
+                    &shared_state_clone,
+                    &work_available_clone,
+                    &should_stop_clone,
                 );
             });
 
@@ -72,9 +72,9 @@ impl OrderProcessingPool {
 
     fn worker_thread(
         thread_id: usize,
-        shared_state: Arc<Mutex<SharedOrderState>>,
-        work_available: Arc<Condvar>,
-        should_stop: Arc<Mutex<bool>>,
+        shared_state: &Arc<Mutex<SharedOrderState>>,
+        work_available: &Arc<Condvar>,
+        should_stop: &Arc<Mutex<bool>>,
     ) {
         debug!("Order processing thread {} started", thread_id);
 
@@ -101,10 +101,10 @@ impl OrderProcessingPool {
                     drop(stop);
 
                     // Use wait_timeout with longer timeout to reduce CPU usage when idle
-                    let (_state, _timeout_result) = work_available
+                    let (inner_state, _timeout_result) = work_available
                         .wait_timeout(state, Duration::from_millis(1000))
                         .unwrap();
-                    state = _state;
+                    state = inner_state;
                 }
 
                 // Check again if we should stop
@@ -119,7 +119,10 @@ impl OrderProcessingPool {
 
             // Process the order if we got one
             if let Some(order_id) = order_id {
-                Self::process_order(thread_id, order_id, &shared_state);
+                if let Ok(()) = Self::process_order(thread_id, order_id, shared_state) {
+                } else {
+                    error!("Thread {} failed to process order {}", thread_id, order_id);
+                }
 
                 // Add a small delay after processing to prevent tight loops
                 // This is especially important for orders that get re-queued
@@ -143,7 +146,7 @@ impl OrderProcessingPool {
         if let Some(mut order) = state
             .order_repo
             .get(&order_id)
-            .map_err(|e| OrderProcessingError::DbError(e))?
+            .map_err(OrderProcessingError::DbError)?
         {
             let old_status = format!("{:?}", order.status);
 
@@ -224,7 +227,7 @@ impl OrderProcessingPool {
             state
                 .order_repo
                 .update(order_id, order)
-                .map_err(|e| OrderProcessingError::DbError(e))?;
+                .map_err(OrderProcessingError::DbError)?;
         } else {
             error!(
                 "Thread {} could not find order {} in repository",
@@ -296,24 +299,23 @@ impl OrderProcessingPool {
         state.order_queue.len()
     }
 
-    #[must_use]
     /// Get a copy of an order by its ID
     pub fn get_order(&self, order_id: &OrderId) -> Result<Option<Order>, OrderProcessingError> {
         let state = self.shared_state.lock().unwrap();
         state
             .order_repo
             .get(order_id)
-            .map_err(|e| OrderProcessingError::DbError(e))
+            .map_err(OrderProcessingError::DbError)
     }
 
-    /// Cancel an order (sets it to PendingCancel status)
+    /// Cancel an order (sets it to `PendingCancel` status)
     pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), OrderProcessingError> {
         let mut state = self.shared_state.lock().unwrap();
 
         if let Some(mut order) = state
             .order_repo
             .get(order_id)
-            .map_err(|e| OrderProcessingError::DbError(e))?
+            .map_err(OrderProcessingError::DbError)?
         {
             match order.status {
                 OrderStatus::Queued
@@ -325,7 +327,7 @@ impl OrderProcessingPool {
                     state
                         .order_repo
                         .update(*order_id, order)
-                        .map_err(|e| OrderProcessingError::DbError(e))?;
+                        .map_err(OrderProcessingError::DbError)?;
                     Ok(())
                 }
                 _ => Err(OrderProcessingError::CantCancel),

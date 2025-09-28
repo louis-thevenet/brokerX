@@ -22,7 +22,7 @@ pub enum MfaError {
 impl std::fmt::Display for MfaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MfaError::SendingFailed(msg) => write!(f, "Failed to send OTP: {}", msg),
+            MfaError::SendingFailed(msg) => write!(f, "Failed to send OTP: {msg}"),
             MfaError::ChallengeNotFound => write!(f, "Challenge not found"),
             MfaError::ChallengeExpired => write!(f, "Challenge has expired"),
             MfaError::InvalidCode => write!(f, "Invalid verification code"),
@@ -188,7 +188,7 @@ impl EmailOtpProvider {
     
     <p>You have requested to sign in to your BrokerX account. Please use the verification code below:</p>
     
-    <div class="code">{}</div>
+    <div class="code">{code}</div>
     
     <p>This code will expire in 5 minutes for security reasons.</p>
     
@@ -199,34 +199,33 @@ impl EmailOtpProvider {
     </div>
 </body>
 </html>
-            "#,
-            code
+            "#
         );
 
         let email = Message::builder()
             .from(
                 format!("{} <{}>", self.config.from_name, self.config.from_email)
                     .parse()
-                    .map_err(|e| MfaError::SendingFailed(format!("Invalid from address: {}", e)))?,
+                    .map_err(|e| MfaError::SendingFailed(format!("Invalid from address: {e}")))?,
             )
             .to(to_email
                 .parse()
-                .map_err(|e| MfaError::SendingFailed(format!("Invalid to address: {}", e)))?)
+                .map_err(|e| MfaError::SendingFailed(format!("Invalid to address: {e}")))?)
             .subject("BrokerX - Your Verification Code")
             .header(ContentType::TEXT_HTML)
             .body(email_body)
-            .map_err(|e| MfaError::SendingFailed(format!("Failed to build email: {}", e)))?;
+            .map_err(|e| MfaError::SendingFailed(format!("Failed to build email: {e}")))?;
 
         let creds = Credentials::new(self.config.username.clone(), self.config.password.clone());
 
         let mailer = SmtpTransport::relay(&self.config.smtp_server)
-            .map_err(|e| MfaError::SendingFailed(format!("SMTP relay error: {}", e)))?
+            .map_err(|e| MfaError::SendingFailed(format!("SMTP relay error: {e}")))?
             .credentials(creds)
             .build();
 
         mailer
             .send(&email)
-            .map_err(|e| MfaError::SendingFailed(format!("Failed to send email: {}", e)))?;
+            .map_err(|e| MfaError::SendingFailed(format!("Failed to send email: {e}")))?;
 
         Ok(())
     }
