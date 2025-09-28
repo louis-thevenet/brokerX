@@ -112,7 +112,11 @@ pub async fn auth_middleware(
 
     {
         let broker = app_state.lock().unwrap();
-        if broker.user_repo.get(&user_id).is_ok_and(|u| u.is_none()) {
+        if broker
+            .get_user_repo()
+            .get(&user_id)
+            .is_ok_and(|u| u.is_none())
+        {
             // User no longer exists, redirect to login
             return Redirect::to("/login").into_response();
         }

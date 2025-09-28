@@ -122,12 +122,12 @@ impl User {
     /// Update a holding (buy or sell shares)
     pub fn update_holding(&mut self, symbol: &str, quantity_change: i64, price: f64) {
         let symbol = symbol.to_string();
-        
+
         if let Some(holding) = self.holdings.get_mut(&symbol) {
             // Update existing holding
             let old_quantity = holding.quantity as i64;
             let new_quantity = old_quantity + quantity_change;
-            
+
             if new_quantity <= 0 {
                 // Remove holding if quantity becomes zero or negative
                 self.holdings.remove(&symbol);
@@ -139,7 +139,7 @@ impl User {
                 } else {
                     0.0 // For sells, don't add to cost basis
                 };
-                
+
                 holding.quantity = new_quantity as u64;
                 if new_quantity > old_quantity {
                     // Only update average cost when buying
@@ -149,12 +149,15 @@ impl User {
             }
         } else if quantity_change > 0 {
             // Create new holding (only for buys)
-            self.holdings.insert(symbol.clone(), Holding {
-                symbol: symbol.clone(),
-                quantity: quantity_change as u64,
-                average_cost: price,
-                last_updated: chrono::Utc::now(),
-            });
+            self.holdings.insert(
+                symbol.clone(),
+                Holding {
+                    symbol: symbol.clone(),
+                    quantity: quantity_change as u64,
+                    average_cost: price,
+                    last_updated: chrono::Utc::now(),
+                },
+            );
         }
     }
 
@@ -165,7 +168,8 @@ impl User {
 
     /// Get portfolio value (total cost basis for now)
     pub fn get_portfolio_value(&self) -> f64 {
-        self.holdings.values()
+        self.holdings
+            .values()
             .map(|h| h.average_cost * h.quantity as f64)
             .sum()
     }
@@ -243,8 +247,7 @@ impl UserRepoExt for UserRepo {
         let mut user = User::new(email, password, firstname, surname, initial_balance)?;
         let user_id = Uuid::new_v4();
         user.id = Some(user_id);
-        self.insert(user_id, user);
-
+        self.insert(user_id, user).map_err(AuthError::UserRepo)?;
         Ok(user_id)
     }
     fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError> {
@@ -313,8 +316,7 @@ impl UserRepoExt for UserRepo {
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.deposit(amount);
-        self.update(*user_id, user)
-            .map_err(AuthError::UserRepo)?;
+        self.update(*user_id, user).map_err(AuthError::UserRepo)?;
         Ok(())
     }
     fn withdraw_from_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
@@ -323,8 +325,7 @@ impl UserRepoExt for UserRepo {
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.withdraw(amount);
-        self.update(*user_id, user)
-            .map_err(AuthError::UserRepo)?;
+        self.update(*user_id, user).map_err(AuthError::UserRepo)?;
         Ok(())
     }
 
@@ -342,8 +343,7 @@ impl UserRepoExt for UserRepo {
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.verify_email();
-        self.update(*user_id, user)
-            .map_err(AuthError::UserRepo)?;
+        self.update(*user_id, user).map_err(AuthError::UserRepo)?;
         Ok(())
     }
     fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError> {

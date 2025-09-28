@@ -12,7 +12,7 @@ use crate::user::{UserRepo, UserRepoExt};
 
 /// Shared state between main thread and order processing threads
 #[derive(Debug)]
-pub struct SharedOrderState {
+pub struct SharedState {
     pub order_repo: OrderRepo,
     pub user_repo: UserRepo,
     pub order_queue: VecDeque<OrderId>,
@@ -21,20 +21,20 @@ pub struct SharedOrderState {
 
 /// Order processing thread pool
 #[derive(Debug)]
-pub struct OrderProcessingPool {
+pub struct ProcessingPool {
     worker_handles: Vec<thread::JoinHandle<()>>,
-    pub shared_state: Arc<Mutex<SharedOrderState>>,
+    pub shared_state: Arc<Mutex<SharedState>>,
     work_available: Arc<Condvar>,
     should_stop: Arc<Mutex<bool>>,
 }
-enum OrderProcessingError {
+enum ProcessingError {
     DbError(DbError),
     OrderNotFound,
     CantCancel,
 }
-impl OrderProcessingPool {
+impl ProcessingPool {
     pub fn new(num_threads: usize) -> Self {
-        let shared_state = Arc::new(Mutex::new(SharedOrderState {
+        let shared_state = Arc::new(Mutex::new(SharedState {
             order_repo: OrderRepo::new("orders").expect("orders repo failed to load"),
             user_repo: UserRepo::new("users").expect("users repo failed to load"),
             order_queue: VecDeque::new(),
@@ -94,7 +94,7 @@ impl OrderProcessingPool {
 
     fn worker_thread(
         thread_id: usize,
-        shared_state: &Arc<Mutex<SharedOrderState>>,
+        shared_state: &Arc<Mutex<SharedState>>,
         work_available: &Arc<Condvar>,
         should_stop: &Arc<Mutex<bool>>,
     ) {
@@ -161,14 +161,14 @@ impl OrderProcessingPool {
     fn process_order(
         thread_id: usize,
         order_id: OrderId,
-        shared_state: &Arc<Mutex<SharedOrderState>>,
-    ) -> Result<(), OrderProcessingError> {
+        shared_state: &Arc<Mutex<SharedState>>,
+    ) -> Result<(), ProcessingError> {
         let mut state = shared_state.lock().unwrap();
 
         if let Some(mut order) = state
             .order_repo
             .get(&order_id)
-            .map_err(OrderProcessingError::DbError)?
+            .map_err(ProcessingError::DbError)?
         {
             let old_status = format!("{:?}", order.status);
 
@@ -252,7 +252,7 @@ impl OrderProcessingPool {
             state
                 .order_repo
                 .update(order_id, order)
-                .map_err(OrderProcessingError::DbError)?;
+                .map_err(ProcessingError::DbError)?;
         } else {
             error!(
                 "Thread {} could not find order {} in repository",
@@ -325,22 +325,22 @@ impl OrderProcessingPool {
     }
 
     /// Get a copy of an order by its ID
-    pub fn get_order(&self, order_id: &OrderId) -> Result<Option<Order>, OrderProcessingError> {
+    pub fn get_order(&self, order_id: &OrderId) -> Result<Option<Order>, ProcessingError> {
         let state = self.shared_state.lock().unwrap();
         state
             .order_repo
             .get(order_id)
-            .map_err(OrderProcessingError::DbError)
+            .map_err(ProcessingError::DbError)
     }
 
     /// Cancel an order (sets it to `PendingCancel` status)
-    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), OrderProcessingError> {
+    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), ProcessingError> {
         let mut state = self.shared_state.lock().unwrap();
 
         if let Some(mut order) = state
             .order_repo
             .get(order_id)
-            .map_err(OrderProcessingError::DbError)?
+            .map_err(ProcessingError::DbError)?
         {
             match order.status {
                 OrderStatus::Queued | OrderStatus::Pending => {
@@ -350,19 +350,19 @@ impl OrderProcessingPool {
                     state
                         .order_repo
                         .update(*order_id, order)
-                        .map_err(OrderProcessingError::DbError)?;
+                        .map_err(ProcessingError::DbError)?;
                     Ok(())
                 }
-                _ => Err(OrderProcessingError::CantCancel),
+                _ => Err(ProcessingError::CantCancel),
             }
         } else {
-            Err(OrderProcessingError::OrderNotFound)
+            Err(ProcessingError::OrderNotFound)
         }
     }
 
     /// Update portfolio when an order is filled
     fn update_portfolio_for_filled_order(
-        state: &mut SharedOrderState,
+        state: &mut SharedState,
         order: &Order,
         execution_price: f64,
     ) {

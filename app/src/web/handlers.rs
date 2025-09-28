@@ -119,7 +119,7 @@ pub async fn login_submit(
     let user_id_found = {
         let broker = app_state.lock().unwrap();
         match broker
-            .user_repo
+            .get_user_repo()
             .authenticate_user(&form.email, &form.password)
         {
             Ok(_) => true,
@@ -251,7 +251,7 @@ pub async fn register_submit(
     let user_id = {
         let mut broker = app_state.lock().unwrap();
 
-        match broker.user_repo.get_user_by_email(&form.email) {
+        match broker.get_user_repo().get_user_by_email(&form.email) {
             Err(e) => {
                 let template = RegisterTemplate {
                     error: Some(format!("Registration failed: {e}")),
@@ -281,7 +281,7 @@ pub async fn register_submit(
             Ok(None) => {
                 // Create user in the domain layer
 
-                match broker.user_repo.create_user(
+                match broker.get_user_repo().create_user(
                     form.email.clone(),
                     form.password.clone(),
                     form.firstname.clone(),
@@ -380,7 +380,7 @@ fn check_token_and_execute(
     };
 
     let broker = app_state.lock().unwrap();
-    let Ok(Some(user)) = broker.user_repo.get(&user_id) else {
+    let Ok(Some(user)) = broker.get_user_repo().get(&user_id) else {
         warn!("User not found for ID: {}", user_id);
         return Redirect::to("/login").into_response();
     };
@@ -565,7 +565,9 @@ pub async fn mfa_verify_submit(
                     let user = {
                         let broker = app_state.lock().unwrap();
 
-                        broker.user_repo.get_user_by_email(&challenge.user_email)
+                        broker
+                            .get_user_repo()
+                            .get_user_by_email(&challenge.user_email)
                     };
                     let (user_id, email) = {
                         if let Ok(Some(user)) = user {
@@ -693,7 +695,7 @@ pub async fn registration_verify_submit(
             // MFA verified successfully, mark user as verified
             let verification_success = {
                 let mut broker = app_state.lock().unwrap();
-                broker.user_repo.verify_user_email(&user_id).is_ok()
+                broker.get_user_repo().verify_user_email(&user_id).is_ok()
             };
 
             if verification_success {
@@ -823,7 +825,7 @@ pub async fn deposit_submit(
 
     let user = {
         let broker = app_state.lock().unwrap();
-        let Ok(Some(user)) = broker.user_repo.get(&user_id) else {
+        let Ok(Some(user)) = broker.get_user_repo().get(&user_id) else {
             return Redirect::to("/login").into_response();
         };
         user
@@ -862,7 +864,7 @@ pub async fn deposit_submit(
     // Process the deposit
     let deposit_result = {
         let mut broker = app_state.lock().unwrap();
-        broker.user_repo.deposit_to_user(&user_id, amount)
+        broker.get_user_repo().deposit_to_user(&user_id, amount)
     };
 
     match deposit_result {
@@ -919,7 +921,7 @@ pub async fn place_order_submit(
 
     let user = {
         let broker = app_state.lock().unwrap();
-        let Ok(Some(user)) = broker.user_repo.get(&user_id) else {
+        let Ok(Some(user)) = broker.get_user_repo().get(&user_id) else {
             return Redirect::to("/login").into_response();
         };
         user

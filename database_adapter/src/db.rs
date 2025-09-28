@@ -79,6 +79,7 @@ pub trait Repository<T, Id> {
 }
 
 /// Generic Postgres repository, stores T as JSON
+#[derive(Clone)]
 pub struct PostgresRepo<T, Id> {
     pool: Pool<Postgres>,
     table: String,
