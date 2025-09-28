@@ -59,20 +59,6 @@ impl BrokerX {
         shared_state.order_repo.get_orders_for_user(user_id)
     }
 
-    /// Get user by ID for portfolio access
-    /// # Errors
-    /// Returns `DbError` if the database operation fails
-    pub fn get_user_by_id(
-        &self,
-        user_id: &UserId,
-    ) -> Result<Option<crate::user::User>, database_adapter::db::DbError> {
-        self.processing_pool
-            .shared_state
-            .lock()
-            .unwrap()
-            .user_repo
-            .get(user_id)
-    }
     /// Creates an order after performing pre-trade checks.
     /// # Errors
     /// Returns `PreTradeError` if any pre-trade validation fails.
