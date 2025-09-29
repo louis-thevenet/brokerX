@@ -1,7 +1,22 @@
 {
-  "release-type": "rust",
-  "package-name": "app",
-  "path": "app",
-  "include-component-in-tag": false,
-  "tag-separator": ""
+  "packages": {
+    "app": {
+      "path": "app",
+      "release-type": "rust",
+      "component": "app"
+    }
+  },
+  "plugins": [
+    {
+      "type": "cargo-workspace",
+      "merge": false
+    },
+    {
+      "type": "linked-versions",
+      "groupName": "brokerx",
+      "components": [
+        "app"
+      ]
+    }
+  ]
 }
