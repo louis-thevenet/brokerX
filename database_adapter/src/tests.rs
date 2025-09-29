@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::db::{PostgresRepo, Repository};
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct User {
     name: String,
@@ -10,6 +8,7 @@ struct User {
 
 #[tokio::test]
 async fn test_postgres_repo_crud() -> anyhow::Result<()> {
+    use crate::db::{PostgresRepo, Repository};
     // Each test uses a fresh table to avoid conflicts
     let table = format!(
         "users_test_{}",
