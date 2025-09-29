@@ -225,16 +225,16 @@ Ce diagramme de séquence illustre l'ensemble des interactions utilisateur dans 
 
 ![](./deployment_view.svg)
 
-1. **BrokerX Container**
+### Continuous Integration (CI)
 
-   - **Runtime** : Binaire Rust compilé statiquement
-   - **Framework** : Axum avec runtime Tokio asynchrone
-   - **Port** : 3000 (configurable via variables d'environnement)
+Le projet utilise des **GitHub Actions** pour les tests unitaires, vérifications de styles et de lints (clippy).
 
-2. **PostgreSQL Container**
-   - **Base de données** : PostgreSQL
-   - **Persistance** : Volume Docker pour la durabilité des données
-   - **Connection pooling** : Géré par SQLx côté application
+### Continuous Deployment (CD)
+
+Le déploiement utilise **cargo-dist** et **release-please** :
+- Création automatique de releases sur tags git
+- Génération de binaires cross-platform
+- Distribution via GitHub Releases
 
 ## 8. Concepts transversaux
 
