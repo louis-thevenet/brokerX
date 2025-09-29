@@ -53,6 +53,13 @@ jobs:
         env: 
           CI: true
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brokerx_test
+          # MFA/Email configuration for tests
+          SMTP_SERVER: smtp.test.com
+          SMTP_PORT: 587
+          SMTP_USERNAME: test@example.com
+          SMTP_PASSWORD: test_password
+          SMTP_FROM_EMAIL: noreply@brokerx.test
+          SMTP_FROM_NAME: BrokerX Test
 
   rustfmt:
     name: Rustfmt
