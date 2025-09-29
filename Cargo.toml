@@ -1,3 +1,6 @@
 [workspace]
-members = [ "app", "database_adapter","domain", "in_memory_adapter", "mfa_adapter" ]
+members = [ "app", "database_adapter","domain", "in_memory_adapter", "mfa_adapter", "benchmark" ]
 resolver = "3"
+
+[profile.release]
+debug = true

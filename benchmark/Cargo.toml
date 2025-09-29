@@ -1,0 +1,23 @@
+[package]
+name = "benchmark"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "benchmark"
+path = "src/main.rs"
+
+[dependencies]
+domain = { path = "../domain" }
+database_adapter = { path = "../database_adapter" }
+tokio = { version = "1.40", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+color-eyre = "0.6"
+rand = "0.8"
+clap = { version = "4.0", features = ["derive"] }
+statistics = "0.4"
+hdrhistogram = "7.5"

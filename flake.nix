@@ -32,6 +32,7 @@
               pkgs.cargo-insta
               pkgs.cargo-machete
               pkgs.cargo-edit
+              pkgs.cargo-flamegraph
             ];
           };
         in

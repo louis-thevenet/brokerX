@@ -108,7 +108,7 @@ impl Default for PreTradeConfig {
 
         Self {
             max_position_size: 10000,
-            max_notional_per_order: 100_000.0,
+            max_notional_per_order: 100_000_000.0,
             active_instruments: vec![
                 "AAPL".to_string(),
                 "GOOGL".to_string(),

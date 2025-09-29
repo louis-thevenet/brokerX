@@ -121,7 +121,6 @@ where
                 let rt = Runtime::new()?;
                 let pool = rt.block_on(async {
                     PgPoolOptions::new()
-                        .max_connections(5)
                         .connect(&db_url)
                         .await
                 })?;
