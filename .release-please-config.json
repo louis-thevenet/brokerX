@@ -1,0 +1,7 @@
+{
+  "release-type": "rust",
+  "package-name": "app",
+  "path": "app",
+  "include-component-in-tag": false,
+  "tag-separator": ""
+}
