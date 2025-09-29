@@ -3,7 +3,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use database_adapter::db::{DbError, Repository};
+use database_adapter::db::Repository;
 use rand::random;
 use tracing::{debug, error, info};
 
@@ -22,15 +22,13 @@ pub struct SharedState {
 /// Order processing thread pool
 #[derive(Debug)]
 pub struct ProcessingPool {
-    worker_handles: Vec<thread::JoinHandle<()>>,
+    _worker_handles: Vec<thread::JoinHandle<()>>,
     pub shared_state: Arc<Mutex<SharedState>>,
     work_available: Arc<Condvar>,
     should_stop: Arc<Mutex<bool>>,
 }
 enum ProcessingError {
-    DbError(DbError),
-    OrderNotFound,
-    CantCancel,
+    DbError,
 }
 impl ProcessingPool {
     pub fn new(num_threads: usize) -> Self {
@@ -85,7 +83,7 @@ impl ProcessingPool {
         info!("Started order processing pool with {} threads", num_threads);
 
         Self {
-            worker_handles,
+            _worker_handles: worker_handles,
             shared_state,
             work_available,
             should_stop,
@@ -168,7 +166,7 @@ impl ProcessingPool {
         if let Some(mut order) = state
             .order_repo
             .get(&order_id)
-            .map_err(ProcessingError::DbError)?
+            .map_err(|_e| ProcessingError::DbError)?
         {
             let old_status = format!("{:?}", order.status);
 
@@ -252,7 +250,7 @@ impl ProcessingPool {
             state
                 .order_repo
                 .update(order_id, order)
-                .map_err(ProcessingError::DbError)?;
+                .map_err(|_e| ProcessingError::DbError)?;
         } else {
             error!(
                 "Thread {} could not find order {} in repository",
@@ -301,63 +299,6 @@ impl ProcessingPool {
         self.work_available.notify_all();
 
         info!("Order processing pool stop signal sent");
-    }
-
-    pub fn shutdown(self) {
-        info!("Shutting down order processing pool...");
-        self.stop();
-
-        // Wait for all threads to finish
-        for (i, handle) in self.worker_handles.into_iter().enumerate() {
-            if let Err(e) = handle.join() {
-                error!("Failed to join worker thread {}: {:?}", i, e);
-            }
-        }
-
-        info!("Order processing pool shutdown complete");
-    }
-
-    #[must_use]
-    /// Get current size of the order queue
-    pub fn get_queue_size(&self) -> usize {
-        let state = self.shared_state.lock().unwrap();
-        state.order_queue.len()
-    }
-
-    /// Get a copy of an order by its ID
-    pub fn get_order(&self, order_id: &OrderId) -> Result<Option<Order>, ProcessingError> {
-        let state = self.shared_state.lock().unwrap();
-        state
-            .order_repo
-            .get(order_id)
-            .map_err(ProcessingError::DbError)
-    }
-
-    /// Cancel an order (sets it to `PendingCancel` status)
-    pub fn cancel_order(&self, order_id: &OrderId) -> Result<(), ProcessingError> {
-        let mut state = self.shared_state.lock().unwrap();
-
-        if let Some(mut order) = state
-            .order_repo
-            .get(order_id)
-            .map_err(ProcessingError::DbError)?
-        {
-            match order.status {
-                OrderStatus::Queued | OrderStatus::Pending => {
-                    order.status = OrderStatus::PendingCancel;
-                    // Re-queue for processing the cancellation
-                    state.order_queue.push_back(*order_id);
-                    state
-                        .order_repo
-                        .update(*order_id, order)
-                        .map_err(ProcessingError::DbError)?;
-                    Ok(())
-                }
-                _ => Err(ProcessingError::CantCancel),
-            }
-        } else {
-            Err(ProcessingError::OrderNotFound)
-        }
     }
 
     /// Update portfolio when an order is filled

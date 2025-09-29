@@ -60,7 +60,7 @@ fn extract_token_from_request(request: &Request) -> Option<String> {
     if let Some(auth_header) = request.headers().get(header::AUTHORIZATION) {
         if let Ok(auth_str) = auth_header.to_str() {
             if auth_str.starts_with("Bearer ") {
-                return Some(auth_str[7..].to_string());
+                return auth_str.strip_prefix("Bearer ").map(ToOwned::to_owned);
             }
         }
     }
@@ -87,12 +87,9 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Response {
     // Extract token from request
-    let token = match extract_token_from_request(&request) {
-        Some(token) => token,
-        None => {
-            // No token found, redirect to login
-            return Redirect::to("/login").into_response();
-        }
+    let Some(token) = extract_token_from_request(&request) else {
+        // No token found, redirect to login
+        return Redirect::to("/login").into_response();
     };
 
     // Verify token
@@ -105,9 +102,8 @@ pub async fn auth_middleware(
     };
 
     // Verify user still exists in the system
-    let user_id = match Uuid::parse_str(&claims.subject) {
-        Ok(id) => id,
-        Err(_) => return Redirect::to("/login").into_response(),
+    let Ok(user_id) = Uuid::parse_str(&claims.subject) else {
+        return Redirect::to("/login").into_response();
     };
 
     {

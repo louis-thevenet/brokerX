@@ -40,6 +40,7 @@ pub enum AuthError {
     MfaFailed(MfaError),
     NotVerified(UserId),
     UserRepo(DbError),
+    NotEnoughMoneyError,
 }
 
 impl std::fmt::Display for AuthError {
@@ -54,6 +55,9 @@ impl std::fmt::Display for AuthError {
             AuthError::NotVerified(_) => write!(f, "User email not verified"),
             AuthError::UserRepo(err) => {
                 write!(f, "User repository error: {err}")
+            }
+            AuthError::NotEnoughMoneyError => {
+                write!(f, "Not enough money in account")
             }
         }
     }
@@ -112,6 +116,7 @@ impl User {
     }
 
     /// Get the current balance
+    #[must_use]
     pub fn get_balance(&self) -> f64 {
         self.balance
     }
@@ -326,7 +331,8 @@ impl UserRepoExt for UserRepo {
             .get(user_id)
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
-        user.withdraw(amount);
+        user.withdraw(amount)
+            .map_err(|_e| AuthError::NotEnoughMoneyError)?;
         self.update(*user_id, user).map_err(AuthError::UserRepo)?;
         Ok(())
     }

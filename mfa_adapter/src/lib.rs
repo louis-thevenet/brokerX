@@ -90,6 +90,19 @@ impl EmailConfig {
                 .unwrap_or_else(|_| "BrokerX Security".to_string()),
         })
     }
+
+    /// Create a test configuration that doesn't require environment variables
+    #[cfg(test)]
+    fn new_test_config() -> Self {
+        Self {
+            smtp_server: "test.smtp.com".to_string(),
+            smtp_port: 587,
+            username: "test_user".to_string(),
+            password: "test_password".to_string(),
+            from_email: "test@example.com".to_string(),
+            from_name: "Test Sender".to_string(),
+        }
+    }
 }
 
 impl EmailConfig {
@@ -155,6 +168,20 @@ impl EmailOtpProvider {
 
     pub fn new_with_default_config() -> Self {
         Self::new(EmailConfig::new().expect("Failed to load email config from environment"))
+    }
+
+    /// Create EmailOtpProvider with test configuration for testing purposes
+    #[cfg(test)]
+    pub fn new_for_testing() -> Self {
+        Self::new(EmailConfig::new_test_config())
+    }
+
+    /// Create EmailOtpProvider with test configuration and custom challenge duration
+    #[cfg(test)]
+    pub fn new_for_testing_with_duration(duration: Duration) -> Self {
+        let mut provider = Self::new(EmailConfig::new_test_config());
+        provider.challenge_duration = duration;
+        provider
     }
 
     /// Create EmailOtpProvider with configuration from environment variables
@@ -316,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_generate_otp_code() {
-        let provider = EmailOtpProvider::new_with_default_config();
+        let provider = EmailOtpProvider::new_for_testing();
         let code = provider.generate_otp_code();
 
         assert_eq!(code.len(), 6);
@@ -328,13 +355,32 @@ mod tests {
 
     #[test]
     fn test_challenge_expiry() {
-        let provider = EmailOtpProvider::new_with_default_config();
+        // Create a provider with very short expiry duration for testing
+        let provider = EmailOtpProvider::new_for_testing_with_duration(Duration::from_millis(10));
 
-        // Create a challenge that expires immediately
-        let mut provider_with_short_expiry = provider;
-        provider_with_short_expiry.challenge_duration = Duration::from_millis(1);
+        // Create a mock challenge directly for testing expiry logic
+        let challenge_id = Uuid::new_v4().to_string();
+        let now = SystemTime::now();
+        let challenge = OtpChallenge {
+            id: challenge_id.clone(),
+            user_email: "test@example.com".to_string(),
+            code: "123456".to_string(),
+            verified: false,
+            created_at: now,
+            expires_at: now + Duration::from_millis(10),
+        };
 
-        // This test would need to mock the email sending part
-        // For now, we'll test the logic separately
+        // Manually insert the challenge
+        {
+            let mut challenges = provider.challenges.lock().unwrap();
+            challenges.insert(challenge_id.clone(), challenge);
+        }
+
+        // Wait for the challenge to expire
+        std::thread::sleep(Duration::from_millis(20));
+
+        // Try to get the expired challenge
+        let result = provider.get_challenge(&challenge_id);
+        assert!(matches!(result, Err(MfaError::ChallengeExpired)));
     }
 }

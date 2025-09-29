@@ -17,7 +17,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: brokerx_test
+          POSTGRES_DB: brokerx
           POSTGRES_HOST_AUTH_METHOD: trust
         options: >-
           --health-cmd "pg_isready -U postgres"
@@ -44,22 +44,21 @@ jobs:
           echo "PostgreSQL is ready!"
       - name: Set up database
         run: |
+          echo "Testing PostgreSQL connection..."
           PGPASSWORD=postgres psql -h localhost -U postgres -c "SELECT version();"
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE IF NOT EXISTS brokerx_test;" || true
+          echo "Verifying database exists..."
+          PGPASSWORD=postgres psql -h localhost -U postgres -l
+          echo "Testing connection to test database..."
+          PGPASSWORD=postgres psql -h localhost -U postgres -d brokerx -c "SELECT 1;"
+
         env:
           PGPASSWORD: postgres
       - name: Run tests
         run: cargo test --all-features --workspace
         env: 
           CI: true
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brokerx_test
-          # MFA/Email configuration for tests
-          SMTP_SERVER: smtp.test.com
-          SMTP_PORT: 587
-          SMTP_USERNAME: test@example.com
-          SMTP_PASSWORD: test_password
-          SMTP_FROM_EMAIL: noreply@brokerx.test
-          SMTP_FROM_NAME: BrokerX Test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brokerx
+
 
   rustfmt:
     name: Rustfmt

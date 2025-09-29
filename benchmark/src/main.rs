@@ -104,16 +104,16 @@ impl BenchmarkMetrics {
         let p95_latency = self.get_p95_latency();
 
         println!("\n=== BROKERX MONOLITHIC BENCHMARK RESULTS ===");
-        println!("Test Duration: {:.2} seconds", elapsed);
-        println!("Orders Submitted: {}", submitted);
-        println!("Orders Acknowledged: {}", acknowledged);
-        println!("Orders Failed: {}", failed);
+        println!("Test Duration: {elapsed:.2} seconds");
+        println!("Orders Submitted: {submitted}");
+        println!("Orders Acknowledged: {acknowledged}");
+        println!("Orders Failed: {failed}");
         println!(
             "Success Rate: {:.2}%",
             (acknowledged as f64 / submitted as f64) * 100.0
         );
-        println!("Throughput: {:.2} orders/s", throughput);
-        println!("P95 Latency: {} ms", p95_latency);
+        println!("Throughput: {throughput:.2} orders/s");
+        println!("P95 Latency: {p95_latency} ms");
 
         println!("\n=== REQUIREMENTS CHECK ===");
 
@@ -175,10 +175,9 @@ impl BenchmarkMetrics {
 #[derive(Debug)]
 struct TestUser {
     id: UserId,
-    balance: f64,
 }
 
-async fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<TestUser>> {
+fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<TestUser>> {
     info!("Setting up {} test users...", num_users);
     let mut users = Vec::new();
 
@@ -189,14 +188,14 @@ async fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<
         .as_secs();
 
     for i in 0..num_users {
-        let email = format!("test_user_{}_{}@benchmark.test", timestamp, i);
+        let email = format!("test_user_{timestamp}_{i}@benchmark.test");
         let balance = 1_000_000_000.0;
 
         let user_id = user_repo
             .create_user(
                 email.clone(),
                 "password123".to_string(),
-                format!("User{}", i),
+                format!("User{i}"),
                 "Test".to_string(),
                 balance,
             )
@@ -207,10 +206,7 @@ async fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<
             .verify_user_email(&user_id)
             .map_err(|e| color_eyre::eyre::eyre!("Failed to verify user {}: {}", i, e))?;
 
-        users.push(TestUser {
-            id: user_id,
-            balance,
-        });
+        users.push(TestUser { id: user_id });
     }
 
     info!("Successfully created {} test users", users.len());
@@ -361,7 +357,7 @@ async fn run_benchmark(args: Args) -> Result<()> {
     broker.start_order_processing();
 
     // Setup test users
-    let users = Arc::new(setup_test_users(&mut broker, args.test_users).await?);
+    let users = Arc::new(setup_test_users(&mut broker, args.test_users)?);
     let broker = Arc::new(Mutex::new(broker));
 
     // Initialize metrics
