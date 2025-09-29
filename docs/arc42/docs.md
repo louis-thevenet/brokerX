@@ -70,9 +70,37 @@ Le système permet aux utilisateurs de :
 
 #### UC-01 — Inscription & Vérification d’identité
 
+Ce cas d'utilisation est le point d'entrée d'un nouvel utilisateur sur la plateforme BrokerX. L'inscription comprend les étapes suivantes :
+
+- Le client remplit un formulaire d'inscription avec des informations de base (email, mot de passe, etc).
+- Le système envoie un email de vérification avec un code à 6 chiffres.
+- Le client saisit le code pour vérifier son identité.
+- Le système active le compte utilisateur
+
+Si l'utilisateur tente de se connecter sans avoir vérifié son email, il est invité à compléter le processus de vérification. Ainsi, il ne peut effectuer aucune action avant d'avoir validé son identité.
+
 #### UC-03 — Approvisionnement du portefeuille (dépôt virtuel)
 
+Ce cas d'utilisation permet à un utilisateur de déposer des fonds sur son compte BrokerX. Le processus comprend les étapes suivantes :
+
+- L'utilisateur se connecte à son compte.
+- Il navigue vers la section "Approvisionnement".
+- Il saisit le montant à déposer .
+- Le système valide le montant (positif, limites).
+- Le système crédite le portefeuille de l'utilisateur avec le montant déposé. (dépôt virtuel)
+
 #### UC-05 — Placement d’un ordre (marché/limite) avec contrôles pré-trade
+
+Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de vente d'instruments financiers. Le processus comprend les étapes suivantes :
+
+- L'utilisateur se connecte à son compte.
+- Il navigue vers la section "Passer un ordre".
+- Il remplit le formulaire d'ordre avec les détails (type, quantité, prix, etc).
+- Le système valide le formulaire (champs obligatoires, formats).
+- Le système effectue des contrôles pré-trade (solvabilité, limites de risque).
+- L'utilisateur est redirigé vers son tableau de bord où l'ordre apparaît avec le statut "En attente".
+- Le traitement de l'ordre est effectué de manière asynchrone dans un pool de threads.
+- Son statut est mis à jour automatiquement (Exécuté, Rejeté, etc) dans le tableau de bord.
 
 ### Contexte technique
 
@@ -225,10 +253,9 @@ Ce diagramme de séquence illustre l'ensemble des interactions utilisateur dans 
 
 ## 10. Exigences qualité
 
-- **Disponibilité**
+Une crate Rust dédiée à l'analyse des performances a été développée.
 
-- **Performance**
-- **Observabilité**
+Les performances sont actuellement limitées par la base de données PostgreSQL.
 
 ## 11. Risques et dettes techniques
 
