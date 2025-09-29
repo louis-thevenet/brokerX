@@ -1,8 +1,12 @@
+# Arc42 Documentation
+
+See the [arc42](./docs/arc42/docs.md) file for detailed architecture documentation.
+
 # How to Run
 
 ## Database
 
-1. Create a `.env` file following indications from `.env.example`.
+1. Create a `.env` file following indications from `.env.example`. (One will be provided in the archive, **it contains sensitive information**)
 
 Run the following command to start a PostgreSQL container:
 `sudo docker run -d --name brokerx_postgres --env-file .env -p 5432:5432 postgres:16`
@@ -22,7 +26,7 @@ Test user:
 
 - username: `test@test.com`
 - password: `aaaaaa`
-- OTP code is always `000000`
+- OTP code is always `000000` for test user.
 
 # Benchmark
 
