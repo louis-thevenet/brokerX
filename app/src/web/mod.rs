@@ -3,9 +3,8 @@ pub mod jwt;
 pub mod templates;
 
 use axum::{
-    middleware,
+    Router, middleware,
     routing::{get, post},
-    Router,
 };
 use domain::core::BrokerX;
 use std::sync::{Arc, Mutex};

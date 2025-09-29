@@ -6,7 +6,7 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use domain::Repository;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, TokenData, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

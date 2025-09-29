@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
     extract::{Form, FromRequest, Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
 use serde::Deserialize;
@@ -10,12 +10,11 @@ use uuid::Uuid;
 
 use super::templates::{DepositTemplate, HoldingDisplayData, OrdersTemplate, PlaceOrderTemplate};
 use crate::web::{
-    jwt,
+    AppState, jwt,
     templates::{
         DashboardTemplate, LoginTemplate, MfaVerifyTemplate, RegisterTemplate,
         RegistrationVerifyTemplate,
     },
-    AppState,
 };
 use domain::Repository;
 

@@ -119,11 +119,7 @@ where
         let (pool, ()) = std::thread::scope(|s| {
             let handle = s.spawn(|| {
                 let rt = Runtime::new()?;
-                let pool = rt.block_on(async {
-                    PgPoolOptions::new()
-                        .connect(&db_url)
-                        .await
-                })?;
+                let pool = rt.block_on(async { PgPoolOptions::new().connect(&db_url).await })?;
 
                 // Ensure table exists
                 let query = format!(
