@@ -10,11 +10,12 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use tracing::debug;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::portfolio::Holding;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 pub struct User {
     pub id: Option<Uuid>,
     pub email: String,

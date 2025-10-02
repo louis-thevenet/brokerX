@@ -17,7 +17,6 @@ use handlers::{
     resend_mfa,
 };
 
-// App state type - simplified to only contain BrokerX
 pub type AppState = Arc<Mutex<BrokerX>>;
 
 pub fn create_app(state: AppState) -> Router {

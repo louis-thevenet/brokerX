@@ -57,6 +57,8 @@
               typstyle
 
               rust-toolchain
+
+              postman
             ];
           };
         };

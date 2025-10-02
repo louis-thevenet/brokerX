@@ -4,41 +4,43 @@ use database_adapter::db::PostgresRepo;
 use database_adapter::db::Repository;
 use serde::Deserialize;
 use serde::Serialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::user::UserId;
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 /// Represents the current status of an order
 pub enum OrderStatus {
-    /// Order has not yet been processed by the system
-    Queued,
-    /// The order has been sent to the exchange but hasn’t been executed yet.
-    Pending,
-    /// Order has been completely executed
-    Filled { date: NaiveDateTime },
-    /// Order is in the process of being cancelled
-    PendingCancel,
     /// Order has been cancelled by the user
     Cancelled,
     /// Order has been cancelled by the system
     Expired { date: NaiveDateTime },
+    /// Order has been completely executed
+    Filled { date: NaiveDateTime },
+    /// The order has been sent to the exchange but hasn’t been executed yet.
+    Pending,
+    /// Order is in the process of being cancelled
+    PendingCancel,
+    /// Order has not yet been processed by the system
+    Queued,
     /// Order has been rejected by the system
     Rejected { date: NaiveDateTime }, // TODO: reason?
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum OrderSide {
     Buy,
     Sell,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub enum OrderType {
     Market,
     Limit(f64),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Order {
+    #[schema(value_type = String, format = Uuid)]
     pub client_id: UserId,
     pub date: DateTime<Utc>,
     pub symbol: String,

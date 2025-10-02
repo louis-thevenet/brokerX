@@ -1,6 +1,6 @@
+mod api;
 mod config;
 mod logging;
-mod web;
 
 use color_eyre::Result;
 use domain::core::BrokerX;
@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     tracing::debug!("BrokerX initialized: {broker_x:#?}");
 
     let app_state = Arc::new(Mutex::new(broker_x));
-    let app = web::create_app(app_state);
+    let app = api::create_api(app_state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
     tracing::info!("Server running on http://127.0.0.1:3000");

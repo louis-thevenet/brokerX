@@ -1,14 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
 use crate::user::UserId;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Holding {
-    pub symbol: String,
-    pub quantity: u64,
-    pub average_cost: f64, // Average cost per share
+    pub average_cost: f64,
+    // Average cost per share
     pub last_updated: chrono::DateTime<chrono::Utc>,
+    pub quantity: u64,
+    pub symbol: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -170,7 +170,6 @@ impl Default for BrokerX {
 
 impl Drop for BrokerX {
     fn drop(&mut self) {
-        info!("BrokerX shutting down...");
         self.stop_order_processing();
     }
 }
