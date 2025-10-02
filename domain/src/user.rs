@@ -96,7 +96,13 @@ impl User {
         // For now, we'll use a simple hash for demonstration
         self.password_hash == Self::hash_password(password)
     }
-
+    pub fn update_password(&mut self, password: &str) -> Result<(), AuthError> {
+        if password.len() < 6 {
+            return Err(AuthError::WeakPassword);
+        }
+        self.password_hash = Self::hash_password(password);
+        Ok(())
+    }
     fn hash_password(password: &str) -> String {
         // Simple hash for demonstration - use bcrypt in production!
         format!("hash_{password}")

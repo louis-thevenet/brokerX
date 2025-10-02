@@ -1,4 +1,4 @@
-use axum::Json;
+use axum::{Json, extract::State};
 use domain::order::Order;
 use domain::user::User;
 use serde::Serialize;
@@ -6,14 +6,18 @@ use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
+use super::AppState;
+
 /// expose the Order OpenAPI to parent module
-pub fn router() -> OpenApiRouter {
-    OpenApiRouter::new().routes(routes!(get_order))
+pub fn router(state: AppState) -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .with_state(state)
+        .routes(routes!(get_order))
 }
 
 /// Get static order object
 #[utoipa::path(get, path = "", responses((status = OK, body = Order)), tag = super::ORDER_TAG)]
-async fn get_order() -> Json<Order> {
+async fn get_order(State(_state): State<AppState>) -> Json<Order> {
     Json(Order {
         client_id: todo!(),
         date: todo!(),

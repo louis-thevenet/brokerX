@@ -1,16 +1,10 @@
-use std::{
-    net::{Ipv4Addr, TcpListener},
-    sync::{Arc, Mutex},
-};
-
 use axum::Router;
-use domain::core::BrokerX;
-use utoipa::{OpenApi, openapi};
-use utoipa_axum::{
-    router::{self, OpenApiRouter},
-    routes,
-};
+use utoipa::OpenApi;
+use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_swagger_ui::SwaggerUi;
+
+use crate::services::BrokerHandle;
+
 mod order;
 mod user;
 
@@ -20,7 +14,7 @@ const ORDER_TAG: &str = "order";
 #[derive(OpenApi)]
 #[openapi(
     tags(
-        (name = USER_TAG, description = "Customer API endpoints"),
+        (name = USER_TAG, description = "User API endpoints"),
         (name = ORDER_TAG, description = "Order API endpoints")
     )
 )]
@@ -38,14 +32,16 @@ async fn health() -> &'static str {
     "ok"
 }
 
-pub type AppState = Arc<Mutex<BrokerX>>;
+pub type AppState = BrokerHandle;
 
 pub fn create_api(state: AppState) -> Router {
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(health))
-        .nest("/api/user", user::router())
-        .nest("/api/order", order::router())
+        .nest("/api/user", user::router(state.clone()))
+        .nest("/api/order", order::router(state.clone()))
         .split_for_parts();
 
-    router.merge(SwaggerUi::new("/swagger-ui").url("/apidoc/openapi.json", api))
+    router
+        .merge(SwaggerUi::new("/swagger-ui").url("/apidoc/openapi.json", api))
+        .with_state(state)
 }

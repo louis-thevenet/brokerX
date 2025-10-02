@@ -1,10 +1,11 @@
 mod api;
 mod config;
 mod logging;
+mod services;
 
 use color_eyre::Result;
 use domain::core::BrokerX;
-use std::sync::{Arc, Mutex};
+use services::BrokerHandle;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,7 +20,7 @@ async fn main() -> Result<()> {
     broker_x.start_order_processing();
     tracing::debug!("BrokerX initialized: {broker_x:#?}");
 
-    let app_state = Arc::new(Mutex::new(broker_x));
+    let app_state = BrokerHandle::new(broker_x);
     let app = api::create_api(app_state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;

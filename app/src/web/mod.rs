@@ -6,10 +6,9 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use domain::core::BrokerX;
-use std::sync::{Arc, Mutex};
 use tower_http::{services::ServeDir, trace::TraceLayer};
 
+use crate::services::BrokerHandle;
 use handlers::{
     dashboard, deposit_page, deposit_submit, home, login_page, login_submit, logout,
     mfa_verify_page, mfa_verify_submit, orders_page, place_order_page, place_order_submit,
@@ -17,7 +16,7 @@ use handlers::{
     resend_mfa,
 };
 
-pub type AppState = Arc<Mutex<BrokerX>>;
+pub type AppState = BrokerHandle;
 
 pub fn create_app(state: AppState) -> Router {
     // Public routes (no authentication required)
