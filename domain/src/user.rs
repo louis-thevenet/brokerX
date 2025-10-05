@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use color_eyre::Result;
 use database_adapter::db::DbError;
 use database_adapter::db::PostgresRepo;
@@ -203,7 +202,6 @@ pub type UserId = Uuid;
 
 pub type UserRepo = PostgresRepo<User, UserId>;
 
-#[async_trait]
 pub trait UserRepoExt {
     fn create_user(
         &mut self,
@@ -216,13 +214,13 @@ pub trait UserRepoExt {
 
     fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError>;
 
-    async fn initiate_mfa<P: MfaProvider>(
+    fn initiate_mfa<P: MfaProvider>(
         &self,
         email: &str,
         mfa_service: &MfaService<P>,
     ) -> Result<String, AuthError>;
 
-    async fn complete_mfa_authentication<P: MfaProvider>(
+    fn complete_mfa_authentication<P: MfaProvider>(
         &self,
         challenge_id: &str,
         code: &str,
@@ -243,7 +241,6 @@ pub trait UserRepoExt {
     fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError>;
 }
 
-#[async_trait]
 impl UserRepoExt for UserRepo {
     fn create_user(
         &mut self,
@@ -276,7 +273,7 @@ impl UserRepoExt for UserRepo {
         }
     }
 
-    async fn initiate_mfa<P: MfaProvider>(
+    fn initiate_mfa<P: MfaProvider>(
         &self,
         email: &str,
         mfa_service: &MfaService<P>,
@@ -286,13 +283,12 @@ impl UserRepoExt for UserRepo {
             None => return Err(AuthError::UserNotFound),
         };
 
-        mfa_service
-            .initiate_mfa(&user.email)
-            .await
+        tokio::runtime::Handle::current()
+            .block_on(mfa_service.initiate_mfa(&user.email))
             .map_err(AuthError::MfaFailed)
     }
 
-    async fn complete_mfa_authentication<P: MfaProvider>(
+    fn complete_mfa_authentication<P: MfaProvider>(
         &self,
         challenge_id: &str,
         code: &str,

@@ -10,7 +10,6 @@ database_adapter = { path = "../database_adapter" }
 mfa_adapter = { path = "../mfa_adapter" }
 rand = "0.9.2"
 uuid = {version="1.18.1", features=["v4"]}
-async-trait = "0.1"
 tracing = "0.1.41"
 serde = "1.0.228"
 serde_json = "1.0.145"
@@ -19,3 +18,4 @@ utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 validator = { version = "0.20.0", features = ["derive"] }
 utoipa-axum = "0.2.0"
+tokio = { version = "1.47.1", features = ["rt"] }

@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-async-trait = "0.1.89"
 dotenvy = "0.15.7"
 serde = "1.0.228"
 serde_json = "1.0.145"

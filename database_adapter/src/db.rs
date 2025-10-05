@@ -1,7 +1,8 @@
 use serde::{Serialize, de::DeserializeOwned};
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use std::fmt;
-use tokio::runtime::Runtime;
+
+use std::sync::LazyLock;
 
 #[derive(Debug)]
 pub enum DbError {
@@ -115,10 +116,10 @@ where
             .expect("DATABASE_URL must be set in .env file or environment");
         let table_name = table.to_string();
 
-        // Use a separate thread to avoid runtime conflicts
+        // Use the shared runtime to avoid creating multiple runtimes
         let (pool, ()) = std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 let pool = rt.block_on(async { PgPoolOptions::new().connect(&db_url).await })?;
 
                 // Ensure table exists
@@ -161,10 +162,10 @@ where
         let pool = self.pool.clone();
         let id_str = id.to_string();
 
-        // Always use a separate thread with its own runtime to avoid nested runtime issues
+        // Use the shared runtime to avoid creating multiple runtimes
         std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async {
                     sqlx::query(&query)
                         .bind(id_str)
@@ -189,7 +190,7 @@ where
 
         std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async {
                     sqlx::query(&query)
                         .bind(id_str)
@@ -213,7 +214,7 @@ where
 
         std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async { sqlx::query(&query).bind(id_str).execute(&pool).await })
             });
             handle
@@ -231,7 +232,7 @@ where
 
         let row: Option<serde_json::Value> = std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async {
                     sqlx::query_scalar(&query)
                         .bind(id_str)
@@ -253,7 +254,7 @@ where
 
         let (count,): (i64,) = std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async { sqlx::query_as(&query).fetch_one(&pool).await })
             });
             handle
@@ -274,7 +275,7 @@ where
 
         let row: Option<serde_json::Value> = std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async {
                     sqlx::query_scalar(&query)
                         .bind(field)
@@ -303,7 +304,7 @@ where
 
         let rows: Vec<(String, serde_json::Value)> = std::thread::scope(|s| {
             let handle = s.spawn(|| {
-                let rt = Runtime::new()?;
+                let rt = &*SHARED_RUNTIME;
                 rt.block_on(async {
                     sqlx::query_as(&query)
                         .bind(field)
@@ -331,3 +332,12 @@ where
         Ok(result)
     }
 }
+
+// Shared runtime for all database operations to avoid creating multiple runtimes
+static SHARED_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .expect("Failed to create shared runtime for database operations")
+});
