@@ -1,8 +1,5 @@
 use axum::{Json, extract::State};
 use domain::order::Order;
-use domain::user::User;
-use serde::Serialize;
-use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 

@@ -1,4 +1,4 @@
-use axum::{extract::Path, extract::State, http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, extract::Path, extract::State, http::StatusCode, response::IntoResponse};
 use domain::Repository;
 use domain::user::{User, UserRepoExt};
 use serde::{Deserialize, Serialize};
@@ -207,46 +207,48 @@ async fn post_user(
         }
     }
 
-            let Some(firstname) = payload.firstname else {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    "firstname is required for user creation",
-                )
-                    .into_response();
-            };
-            let Some(surname) = payload.surname else {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    "surname is required for user creation",
-                )
-                    .into_response();
-            };
-            let Some(email) = payload.email else {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    "email is required for user creation",
-                )
-                    .into_response();
-            };
-            let Some(password) = payload.password else {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    "password is required for user creation",
-                )
-                    .into_response();
-            };
-            let user_id = match user_repo.create_user(email, password, firstname, surname, 0.0) {
-                Ok(id) => id,
-                Err(e) => {
-                    return (StatusCode::BAD_REQUEST, format!("User creation error: {e}"))
-                        .into_response();
-                }
-            };
+    let Some(firstname) = payload.firstname else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "firstname is required for user creation",
+        )
+            .into_response();
+    };
+    let Some(surname) = payload.surname else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "surname is required for user creation",
+        )
+            .into_response();
+    };
+    let Some(email) = payload.email else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "email is required for user creation",
+        )
+            .into_response();
+    };
+    let Some(password) = payload.password else {
+        return (
+            StatusCode::BAD_REQUEST,
+            "password is required for user creation",
+        )
+            .into_response();
+    };
+    let user_id = match user_repo.create_user(email, password, firstname, surname, 0.0) {
+        Ok(id) => id,
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, format!("User creation error: {e}")).into_response();
+        }
+    };
 
-
-let Ok(Some(user)) = user_repo.get(&user_id) else {
-                return (StatusCode::INTERNAL_SERVER_ERROR, "User retrieval error after creation").into_response();
-            };
+    let Ok(Some(user)) = user_repo.get(&user_id) else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "User retrieval error after creation",
+        )
+            .into_response();
+    };
 
     (StatusCode::CREATED, Json(user)).into_response()
 }
