@@ -1,4 +1,4 @@
-use axum::{Json, extract::Path, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{extract::Path, extract::State, http::StatusCode, response::IntoResponse, Json};
 use domain::Repository;
 use domain::user::{User, UserRepoExt};
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,9 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use super::AppState;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Debug, Deserialize, Serialize, ToSchema)]
 pub struct UpdateUserRequest {
@@ -258,7 +261,7 @@ let Ok(Some(user)) = user_repo.get(&user_id) else {
         ("user_id" = Uuid, Path, description = "User UUID")
     ),
     responses(
-        (status = 200, description = "User found", body = User),
+        (status = 200, description = "Orders", body = User),
         (status = 500, description = "Database error"),
     ), 
     tag = super::USER_TAG
