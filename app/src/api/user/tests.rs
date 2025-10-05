@@ -7,19 +7,19 @@ mod tests {
     };
     use domain::user::{User, UserRepoExt};
     use serde_json::Value;
-    use tower::ServiceExt;
+    use tower::ServiceExt; // for `oneshot`
     use uuid::Uuid;
 
     use crate::services::BrokerHandle;
 
+    // Create test setup that is isolated and consistent
     fn create_test_setup() -> (Router, Uuid) {
         // Use a unique ID for this test to avoid conflicts
         let test_id = Uuid::new_v4();
         let test_id_str = test_id.to_string();
         let test_email = format!("test-{}@test.com", &test_id_str[..8]);
 
-        // Create broker with minimal setup to avoid database conflicts
-        let broker = domain::core::BrokerX::new();
+        let broker = domain::core::BrokerX::new_for_testing();
 
         let mut user_repo = broker.get_user_repo();
         let test_user_id = match user_repo.create_user(
@@ -48,13 +48,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_user_success() {
-        let (app, user_id) = create_test_setup();
+        let (app, test_user_id) = create_test_setup();
 
         let response = app
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(format!("/{user_id}"))
+                    .uri(format!("/{}", test_user_id))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -68,7 +68,7 @@ mod tests {
             .unwrap();
         let user: User = serde_json::from_slice(&body).unwrap();
 
-        assert_eq!(user.id, Some(user_id));
+        assert_eq!(user.id, Some(test_user_id));
         assert!(user.email.starts_with("test-") && user.email.ends_with("@test.com"));
         assert_eq!(user.firstname, "Test");
         assert_eq!(user.surname, "User");
@@ -85,7 +85,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(format!("/{non_existent_id}"))
+                    .uri(format!("/{}", non_existent_id))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -154,6 +154,7 @@ mod tests {
             .await
             .unwrap();
 
+        // This might return empty array or error depending on implementation
         assert_eq!(response.status(), StatusCode::OK);
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -236,11 +237,12 @@ mod tests {
         }
     }
 
-    // Integration test for the PUT endpoint
+    // Comprehensive integration test for the PUT endpoint
     #[tokio::test]
     async fn test_put_user_update_existing() {
         let (app, user_id) = create_test_setup();
 
+        // Test updating the user's first name
         let update_request = r#"{"firstname": "UpdatedName"}"#;
 
         let response = app
@@ -281,6 +283,7 @@ mod tests {
             Uuid::new_v4().simple().to_string()[..8].to_lowercase()
         );
 
+        // Test creating a new user with all required fields
         let create_request = format!(
             r#"{{
             "firstname": "NewUser", 
@@ -378,9 +381,10 @@ mod tests {
             r#"{{
             "firstname": "PostUser", 
             "surname": "Created",
-            "email": "{unique_email}",
+            "email": "{}",
             "password": "password123"
-        }}"#
+        }}"#,
+            unique_email
         );
 
         let response = app

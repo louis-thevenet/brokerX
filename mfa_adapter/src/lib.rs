@@ -92,8 +92,7 @@ impl EmailConfig {
     }
 
     /// Create a test configuration that doesn't require environment variables
-    #[cfg(test)]
-    fn new_test_config() -> Self {
+    pub fn new_test_config() -> Self {
         Self {
             smtp_server: "test.smtp.com".to_string(),
             smtp_port: 587,
@@ -171,7 +170,6 @@ impl EmailOtpProvider {
     }
 
     /// Create EmailOtpProvider with test configuration for testing purposes
-    #[cfg(test)]
     pub fn new_for_testing() -> Self {
         Self::new(EmailConfig::new_test_config())
     }

@@ -263,7 +263,7 @@ async fn post_user(
         ("user_id" = Uuid, Path, description = "User UUID")
     ),
     responses(
-        (status = 200, description = "Orders", body = User),
+        (status = 200, description = "User found", body = User),
         (status = 500, description = "Database error"),
     ), 
     tag = super::USER_TAG

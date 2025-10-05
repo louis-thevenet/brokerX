@@ -33,6 +33,24 @@ impl BrokerX {
             processing_pool: order_processing_pool,
         }
     }
+
+    /// Create a test-friendly BrokerX instance that doesn't require environment variables
+    /// and uses unique table names to avoid conflicts in parallel tests
+    #[must_use]
+    pub fn new_for_testing() -> Self {
+        Self::new_for_testing_with_thread_count(1)
+    }
+
+    /// Create a test-friendly BrokerX instance with specified thread count
+    #[must_use]
+    pub fn new_for_testing_with_thread_count(num_threads: usize) -> Self {
+        let order_processing_pool = ProcessingPool::new_for_testing(num_threads);
+        BrokerX {
+            mfa_service: MfaService::new(EmailOtpProvider::new_for_testing()),
+            pre_trade_validator: PreTradeValidator::with_default_config(),
+            processing_pool: order_processing_pool,
+        }
+    }
     #[must_use]
     pub fn get_user_repo(&self) -> UserRepo {
         self.processing_pool

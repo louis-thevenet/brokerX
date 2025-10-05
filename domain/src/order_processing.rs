@@ -89,6 +89,55 @@ impl ProcessingPool {
             should_stop,
         }
     }
+    /// Create `ProcessingPool` for testing with unique table names to avoid conflicts
+    pub fn new_for_testing(num_threads: usize) -> Self {
+        use uuid::Uuid;
+        let test_id = Uuid::new_v4().simple().to_string();
+        let orders_table = format!("orders_test_{}", &test_id[..8]);
+        let users_table = format!("users_test_{}", &test_id[..8]);
+
+        let shared_state = Arc::new(Mutex::new(SharedState {
+            order_repo: OrderRepo::new(&orders_table).expect("orders repo failed to load"),
+            user_repo: UserRepo::new(&users_table).expect("users repo failed to load"),
+            order_queue: VecDeque::new(),
+            is_running: false,
+        }));
+
+        // Skip loading existing orders for tests to keep them isolated
+        let work_available = Arc::new(Condvar::new());
+        let should_stop = Arc::new(Mutex::new(false));
+        let mut worker_handles = Vec::new();
+
+        // Spawn worker threads
+        for thread_id in 0..num_threads {
+            let shared_state_clone = Arc::clone(&shared_state);
+            let work_available_clone = Arc::clone(&work_available);
+            let should_stop_clone = Arc::clone(&should_stop);
+
+            let handle = thread::spawn(move || {
+                Self::worker_thread(
+                    thread_id,
+                    &shared_state_clone,
+                    &work_available_clone,
+                    &should_stop_clone,
+                );
+            });
+
+            worker_handles.push(handle);
+        }
+
+        info!(
+            "Started test order processing pool with {} threads",
+            num_threads
+        );
+
+        Self {
+            _worker_handles: worker_handles,
+            shared_state,
+            work_available,
+            should_stop,
+        }
+    }
 
     fn worker_thread(
         thread_id: usize,
