@@ -48,7 +48,8 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
     tag = super::USER_TAG
 )]
 async fn get_user(State(state): State<AppState>, Path(user_id): Path<Uuid>) -> impl IntoResponse {
-    match state.broker().get_user_repo().get(&user_id) {
+    let user_repo = state.broker().get_user_repo().await;
+    match user_repo.get(&user_id).await {
         Ok(Some(user)) => Json(user).into_response(),
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -80,7 +81,7 @@ async fn put_user(
     Json(payload): Json<UpdateUserRequest>,
 ) -> impl IntoResponse {
     let broker = state.broker();
-    let user_repo = broker.get_user_repo();
+    let user_repo = broker.get_user_repo().await;
 
     if let Some(ref email) = payload.email {
         if !email.contains('@') {
@@ -88,13 +89,14 @@ async fn put_user(
         }
         if user_repo
             .get_user_by_email(email)
+            .await
             .is_ok_and(|o| o.is_some_and(|u| u.id.is_some_and(|id| id != user_id)))
         {
             return (StatusCode::BAD_REQUEST, "Email already in use").into_response();
         }
     }
 
-    let (user, is_creation) = match user_repo.get(&user_id) {
+    let (user, is_creation) = match user_repo.get(&user_id).await {
         Ok(Some(user)) => {
             // Update existing user
             let mut updated_user = user;
@@ -154,7 +156,7 @@ async fn put_user(
             };
             new_user.id = Some(user_id);
 
-            match user_repo.insert(user_id, new_user.clone()) {
+            match user_repo.insert(user_id, new_user.clone()).await {
                 Ok(()) => (new_user, true),
 
                 Err(e) => {
@@ -193,7 +195,7 @@ async fn post_user(
     Json(payload): Json<UpdateUserRequest>,
 ) -> impl IntoResponse {
     let broker = state.broker();
-    let mut user_repo = broker.get_user_repo();
+    let user_repo = broker.get_user_repo().await;
 
     if let Some(ref email) = payload.email {
         if !email.contains('@') {
@@ -201,6 +203,7 @@ async fn post_user(
         }
         if user_repo
             .get_user_by_email(email)
+            .await
             .is_ok_and(|o| o.is_some())
         {
             return (StatusCode::BAD_REQUEST, "Email already in use").into_response();
@@ -235,14 +238,17 @@ async fn post_user(
         )
             .into_response();
     };
-    let user_id = match user_repo.create_user(email, password, firstname, surname, 0.0) {
+    let user_id = match user_repo
+        .create_user(email, password, firstname, surname, 0.0)
+        .await
+    {
         Ok(id) => id,
         Err(e) => {
             return (StatusCode::BAD_REQUEST, format!("User creation error: {e}")).into_response();
         }
     };
 
-    let Ok(Some(user)) = user_repo.get(&user_id) else {
+    let Ok(Some(user)) = user_repo.get(&user_id).await else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             "User retrieval error after creation",
@@ -272,7 +278,7 @@ async fn get_orders_from_user(
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match state.broker().get_orders_for_user(&user_id) {
+    match state.broker().get_orders_for_user(&user_id).await {
         Ok(orders) => Json(orders).into_response(),
         Err(_e) => StatusCode::INTERNAL_SERVER_ERROR.into_response(), // TODO: be finer here
     }

@@ -1,16 +1,17 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread;
+use std::sync::Arc;
 use std::time::Duration;
 
 use database_adapter::db::Repository;
 use rand::random;
+use tokio::sync::{Mutex, Notify};
+use tokio::time::sleep;
 use tracing::{debug, error, info};
 
 use crate::order::{Order, OrderId, OrderRepo, OrderSide, OrderStatus};
 use crate::user::{UserRepo, UserRepoExt};
 
-/// Shared state between main thread and order processing threads
+/// Shared state between main task and order processing tasks
 #[derive(Debug)]
 pub struct SharedState {
     pub order_repo: OrderRepo,
@@ -19,30 +20,40 @@ pub struct SharedState {
     pub is_running: bool,
 }
 
-/// Order processing thread pool
+/// Order processing task pool
 #[derive(Debug)]
 pub struct ProcessingPool {
-    _worker_handles: Vec<thread::JoinHandle<()>>,
+    _worker_handles: Vec<tokio::task::JoinHandle<()>>,
     pub shared_state: Arc<Mutex<SharedState>>,
-    work_available: Arc<Condvar>,
+    work_available: Arc<Notify>,
     should_stop: Arc<Mutex<bool>>,
 }
+
+#[derive(Debug)]
 enum ProcessingError {
     DbError,
 }
 impl ProcessingPool {
-    pub fn new(num_threads: usize) -> Self {
+    pub async fn new(num_threads: usize) -> Self {
         let shared_state = Arc::new(Mutex::new(SharedState {
-            order_repo: OrderRepo::new("orders").expect("orders repo failed to load"),
-            user_repo: UserRepo::new("users").expect("users repo failed to load"),
+            order_repo: OrderRepo::new("orders")
+                .await
+                .expect("orders repo failed to load"),
+            user_repo: UserRepo::new("users")
+                .await
+                .expect("users repo failed to load"),
             order_queue: VecDeque::new(),
             is_running: false,
         }));
 
         // Get all queued and pending orders from the database and add them to the queue
         {
-            let mut state = shared_state.lock().unwrap();
-            match state.order_repo.find_all_by_field("status", "Pending") {
+            let mut state = shared_state.lock().await;
+            match state
+                .order_repo
+                .find_all_by_field("status", "Pending")
+                .await
+            {
                 Ok(orders) => {
                     for (uuid, _order) in orders {
                         state.order_queue.push_back(uuid);
@@ -58,29 +69,30 @@ impl ProcessingPool {
             }
         }
 
-        let work_available = Arc::new(Condvar::new());
+        let work_available = Arc::new(Notify::new());
         let should_stop = Arc::new(Mutex::new(false));
         let mut worker_handles = Vec::new();
 
-        // Spawn worker threads
+        // Spawn worker tasks
         for thread_id in 0..num_threads {
             let shared_state_clone = Arc::clone(&shared_state);
             let work_available_clone = Arc::clone(&work_available);
             let should_stop_clone = Arc::clone(&should_stop);
 
-            let handle = thread::spawn(move || {
-                Self::worker_thread(
+            let handle = tokio::spawn(async move {
+                Self::worker_task(
                     thread_id,
-                    &shared_state_clone,
-                    &work_available_clone,
-                    &should_stop_clone,
-                );
+                    shared_state_clone,
+                    work_available_clone,
+                    should_stop_clone,
+                )
+                .await;
             });
 
             worker_handles.push(handle);
         }
 
-        info!("Started order processing pool with {} threads", num_threads);
+        info!("Started order processing pool with {} tasks", num_threads);
 
         Self {
             _worker_handles: worker_handles,
@@ -90,44 +102,49 @@ impl ProcessingPool {
         }
     }
     /// Create `ProcessingPool` for testing with unique table names to avoid conflicts
-    pub fn new_for_testing(num_threads: usize) -> Self {
+    pub async fn new_for_testing(num_threads: usize) -> Self {
         use uuid::Uuid;
         let test_id = Uuid::new_v4().simple().to_string();
         let orders_table = format!("orders_test_{}", &test_id[..8]);
         let users_table = format!("users_test_{}", &test_id[..8]);
 
         let shared_state = Arc::new(Mutex::new(SharedState {
-            order_repo: OrderRepo::new(&orders_table).expect("orders repo failed to load"),
-            user_repo: UserRepo::new(&users_table).expect("users repo failed to load"),
+            order_repo: OrderRepo::new(&orders_table)
+                .await
+                .expect("orders repo failed to load"),
+            user_repo: UserRepo::new(&users_table)
+                .await
+                .expect("users repo failed to load"),
             order_queue: VecDeque::new(),
             is_running: false,
         }));
 
         // Skip loading existing orders for tests to keep them isolated
-        let work_available = Arc::new(Condvar::new());
+        let work_available = Arc::new(Notify::new());
         let should_stop = Arc::new(Mutex::new(false));
         let mut worker_handles = Vec::new();
 
-        // Spawn worker threads
+        // Spawn worker tasks
         for thread_id in 0..num_threads {
             let shared_state_clone = Arc::clone(&shared_state);
             let work_available_clone = Arc::clone(&work_available);
             let should_stop_clone = Arc::clone(&should_stop);
 
-            let handle = thread::spawn(move || {
-                Self::worker_thread(
+            let handle = tokio::spawn(async move {
+                Self::worker_task(
                     thread_id,
-                    &shared_state_clone,
-                    &work_available_clone,
-                    &should_stop_clone,
-                );
+                    shared_state_clone,
+                    work_available_clone,
+                    should_stop_clone,
+                )
+                .await;
             });
 
             worker_handles.push(handle);
         }
 
         info!(
-            "Started test order processing pool with {} threads",
+            "Started test order processing pool with {} tasks",
             num_threads
         );
 
@@ -139,45 +156,48 @@ impl ProcessingPool {
         }
     }
 
-    fn worker_thread(
+    async fn worker_task(
         thread_id: usize,
-        shared_state: &Arc<Mutex<SharedState>>,
-        work_available: &Arc<Condvar>,
-        should_stop: &Arc<Mutex<bool>>,
+        shared_state: Arc<Mutex<SharedState>>,
+        work_available: Arc<Notify>,
+        should_stop: Arc<Mutex<bool>>,
     ) {
-        debug!("Order processing thread {} started", thread_id);
+        debug!("Order processing task {} started", thread_id);
 
         loop {
             // Check if we should stop
             {
-                let stop = should_stop.lock().unwrap();
+                let stop = should_stop.lock().await;
                 if *stop {
-                    debug!("Order processing thread {} stopping", thread_id);
+                    debug!("Order processing task {} stopping", thread_id);
                     break;
                 }
             }
 
             // Get next order to process
             let order_id = {
-                let mut state = shared_state.lock().unwrap();
+                let mut state = shared_state.lock().await;
 
                 // Wait for work if queue is empty
                 while state.order_queue.is_empty() && state.is_running {
-                    let stop = should_stop.lock().unwrap();
+                    let stop = should_stop.lock().await;
                     if *stop {
                         break;
                     }
                     drop(stop);
+                    drop(state);
 
-                    // Use wait_timeout with longer timeout to reduce CPU usage when idle
-                    let (inner_state, _timeout_result) = work_available
-                        .wait_timeout(state, Duration::from_millis(1000))
-                        .unwrap();
-                    state = inner_state;
+                    // Wait for notification or timeout
+                    tokio::select! {
+                        _ = work_available.notified() => {},
+                        _ = sleep(Duration::from_millis(1000)) => {},
+                    }
+
+                    state = shared_state.lock().await;
                 }
 
                 // Check again if we should stop
-                let stop = should_stop.lock().unwrap();
+                let stop = should_stop.lock().await;
                 if *stop {
                     break;
                 }
@@ -188,96 +208,98 @@ impl ProcessingPool {
 
             // Process the order if we got one
             if let Some(order_id) = order_id {
-                if let Ok(()) = Self::process_order(thread_id, order_id, shared_state) {
-                } else {
-                    error!("Thread {} failed to process order {}", thread_id, order_id);
+                if let Err(_) = Self::process_order(thread_id, order_id, &shared_state).await {
+                    error!("Task {} failed to process order {}", thread_id, order_id);
                 }
 
                 // Add a small delay after processing to prevent tight loops
                 // This is especially important for orders that get re-queued
-                thread::sleep(Duration::from_millis(10));
+                sleep(Duration::from_millis(10)).await;
             } else {
                 // No work available, sleep longer to reduce CPU usage when idle
-                thread::sleep(Duration::from_millis(100));
+                sleep(Duration::from_millis(100)).await;
             }
         }
 
-        debug!("Order processing thread {} terminated", thread_id);
+        debug!("Order processing task {} terminated", thread_id);
     }
 
-    fn process_order(
+    async fn process_order(
         thread_id: usize,
         order_id: OrderId,
         shared_state: &Arc<Mutex<SharedState>>,
     ) -> Result<(), ProcessingError> {
-        let mut state = shared_state.lock().unwrap();
+        let mut state = shared_state.lock().await;
 
         if let Some(mut order) = state
             .order_repo
             .get(&order_id)
+            .await
             .map_err(|_e| ProcessingError::DbError)?
         {
             let old_status = format!("{:?}", order.status);
 
             match &order.status {
                 OrderStatus::Queued => {
-                    debug!("Thread {} processing queued order {}", thread_id, order_id);
+                    debug!("Task {} processing queued order {}", thread_id, order_id);
                     // Move to pending status
                     order.status = OrderStatus::Pending;
                     // Re-queue for further processing
                     state.order_queue.push_back(order_id);
                 }
                 OrderStatus::Pending => {
-                    debug!("Thread {} executing pending order {}", thread_id, order_id);
+                    debug!("Task {} executing pending order {}", thread_id, order_id);
                     // Simulate order matching with randomization
                     match random::<u32>() % 4 {
                         0 => {
                             let execution_price = 100.0;
-                            if let Ok(()) = match order.order_side {
+
+                            let funds_result = match order.order_side {
                                 OrderSide::Buy => {
                                     // Deduct funds from user's account
-                                    state.user_repo.withdraw_from_user(
-                                        &order.client_id,
-                                        execution_price * order.quantity as f64,
-                                    )
+                                    state
+                                        .user_repo
+                                        .withdraw_from_user(
+                                            &order.client_id,
+                                            execution_price * order.quantity as f64,
+                                        )
+                                        .await
                                 }
                                 OrderSide::Sell => {
                                     // Add funds to user's account
-                                    state.user_repo.deposit_to_user(
-                                        &order.client_id,
-                                        execution_price * order.quantity as f64,
-                                    )
+                                    state
+                                        .user_repo
+                                        .deposit_to_user(
+                                            &order.client_id,
+                                            execution_price * order.quantity as f64,
+                                        )
+                                        .await
                                 }
-                            } {
-                                Self::update_portfolio_for_filled_order(
-                                    &mut state,
+                            };
+
+                            if funds_result.is_ok() {
+                                Self::update_portfolio_for_filled_order_async(
+                                    &state,
                                     &order,
                                     execution_price,
-                                );
+                                )
+                                .await;
                                 // Order filled completely
                                 order.status = OrderStatus::Filled {
                                     date: chrono::Utc::now().naive_local(),
                                 };
-                                info!("Thread {} filled order {} completely", thread_id, order_id);
+                                info!("Task {} filled order {} completely", thread_id, order_id);
                             } else {
                                 // Failed to update user funds, reject order
                                 order.status = OrderStatus::Rejected {
                                     date: chrono::Utc::now().naive_local(),
                                 };
                                 error!(
-                                    "Thread {} rejected order {} due to insufficient funds",
+                                    "Task {} rejected order {} due to insufficient funds",
                                     thread_id, order_id
                                 );
                             }
                         }
-
-                        // 2 => {
-                        //     // Order rejected
-                        //     order.status = OrderStatus::Rejected {
-                        //         date: chrono::Utc::now().naive_local(),
-                        //     };
-                        //     info!("Thread {} rejected order {}", thread_id, order_id);
-                        // }
                         _ => {
                             // Keep pending, re-queue
                             state.order_queue.push_back(order_id);
@@ -285,24 +307,26 @@ impl ProcessingPool {
                     }
                 }
                 OrderStatus::PendingCancel => {
-                    debug!("Thread {} cancelling order {}", thread_id, order_id);
+                    debug!("Task {} cancelling order {}", thread_id, order_id);
                     order.status = OrderStatus::Cancelled;
-                    info!("Thread {} cancelled order {}", thread_id, order_id);
+                    info!("Task {} cancelled order {}", thread_id, order_id);
                 }
                 _ => {
                     error!(
-                        "Thread {} encountered order {} in unexpected state: {}",
+                        "Task {} encountered order {} in unexpected state: {}",
                         thread_id, order_id, old_status
                     );
                 }
             }
+
             state
                 .order_repo
                 .update(order_id, order)
+                .await
                 .map_err(|_e| ProcessingError::DbError)?;
         } else {
             error!(
-                "Thread {} could not find order {} in repository",
+                "Task {} could not find order {} in repository",
                 thread_id, order_id
             );
         }
@@ -310,12 +334,12 @@ impl ProcessingPool {
     }
 
     /// Submit a new order for processing
-    pub fn submit_order(&self, order_id: OrderId) {
-        let mut state = self.shared_state.lock().unwrap();
+    pub async fn submit_order(&self, order_id: OrderId) {
+        let mut state = self.shared_state.lock().await;
         state.order_queue.push_back(order_id);
         state.is_running = true;
 
-        // Notify worker threads that work is available
+        // Notify worker tasks that work is available
         self.work_available.notify_one();
 
         debug!(
@@ -326,33 +350,33 @@ impl ProcessingPool {
     }
 
     /// Start processing orders
-    pub fn start(&self) {
-        let mut state = self.shared_state.lock().unwrap();
+    pub async fn start(&self) {
+        let mut state = self.shared_state.lock().await;
         state.is_running = true;
         info!("Order processing pool started");
     }
 
-    /// Stop processing new orders and signal threads to terminate
-    pub fn stop(&self) {
+    /// Stop processing new orders and signal tasks to terminate
+    pub async fn stop(&self) {
         {
-            let mut state = self.shared_state.lock().unwrap();
+            let mut state = self.shared_state.lock().await;
             state.is_running = false;
         }
 
         {
-            let mut stop = self.should_stop.lock().unwrap();
+            let mut stop = self.should_stop.lock().await;
             *stop = true;
         }
 
-        // Wake up all waiting threads
-        self.work_available.notify_all();
+        // Wake up all waiting tasks
+        self.work_available.notify_waiters();
 
         info!("Order processing pool stop signal sent");
     }
 
     /// Update portfolio when an order is filled
-    fn update_portfolio_for_filled_order(
-        state: &mut SharedState,
+    async fn update_portfolio_for_filled_order_async(
+        state: &SharedState,
         order: &Order,
         execution_price: f64,
     ) {
@@ -362,10 +386,10 @@ impl ProcessingPool {
         };
 
         // Update the user's holdings
-        match state.user_repo.get(&order.client_id) {
+        match state.user_repo.get(&order.client_id).await {
             Ok(Some(mut user)) => {
                 user.update_holding(&order.symbol, quantity_change, execution_price);
-                if let Err(e) = state.user_repo.update(order.client_id, user) {
+                if let Err(e) = state.user_repo.update(order.client_id, user).await {
                     error!(
                         "Failed to save updated user {} after order {}: {}",
                         order.client_id, order.symbol, e

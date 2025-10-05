@@ -15,17 +15,17 @@ async fn test_postgres_repo_crud() -> anyhow::Result<()> {
         uuid::Uuid::new_v4().to_string().replace('-', "")
     );
 
-    let repo = PostgresRepo::<User, String>::new(&table)?;
+    let repo = PostgresRepo::<User, String>::new(&table).await?;
 
     // Insert
     let user = User {
         name: "Alice".into(),
         email: "alice@example.com".into(),
     };
-    repo.insert("1".to_string(), user.clone())?;
+    repo.insert("1".to_string(), user.clone()).await?;
 
     // Get
-    let fetched = repo.get(&"1".to_string())?;
+    let fetched = repo.get(&"1".to_string()).await?;
     assert_eq!(fetched, Some(user.clone()));
 
     // Update
@@ -33,17 +33,17 @@ async fn test_postgres_repo_crud() -> anyhow::Result<()> {
         name: "Alice Updated".into(),
         email: "alice@newmail.com".into(),
     };
-    repo.update("1".to_string(), updated.clone())?;
-    let fetched2 = repo.get(&"1".to_string())?;
+    repo.update("1".to_string(), updated.clone()).await?;
+    let fetched2 = repo.get(&"1".to_string()).await?;
     assert_eq!(fetched2, Some(updated.clone()));
 
     // Len
-    let count = repo.len()?;
+    let count = repo.len().await?;
     assert_eq!(count, 1);
 
     // Remove
-    repo.remove("1".to_string())?;
-    let fetched3 = repo.get(&"1".to_string())?;
+    repo.remove("1".to_string()).await?;
+    let fetched3 = repo.get(&"1".to_string()).await?;
     assert!(fetched3.is_none());
 
     Ok(())

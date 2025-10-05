@@ -2,8 +2,6 @@ use serde::{Serialize, de::DeserializeOwned};
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use std::fmt;
 
-use std::sync::LazyLock;
-
 #[derive(Debug)]
 pub enum DbError {
     SqlxError(sqlx::Error),
@@ -41,42 +39,43 @@ impl From<std::io::Error> for DbError {
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait Repository<T, Id> {
     /// Insert a new item with the given ID
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn insert(&self, id: Id, item: T) -> Result<(), DbError>;
+    async fn insert(&self, id: Id, item: T) -> Result<(), DbError>;
     /// Update an existing item with the given ID
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn update(&self, id: Id, item: T) -> Result<(), DbError>;
+    async fn update(&self, id: Id, item: T) -> Result<(), DbError>;
     /// Remove an item with the given ID
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn remove(&self, id: Id) -> Result<(), DbError>;
+    async fn remove(&self, id: Id) -> Result<(), DbError>;
     /// Get an item by ID
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn get(&self, id: &Id) -> Result<Option<T>, DbError>;
+    async fn get(&self, id: &Id) -> Result<Option<T>, DbError>;
     /// Get the number of items in the repository
     /// # Errors
     /// - Returns `DbError` if the operation fails
     // TODO: remove
-    fn len(&self) -> Result<usize, DbError>;
+    async fn len(&self) -> Result<usize, DbError>;
     /// Check if the repository is empty
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn is_empty(&self) -> Result<bool, DbError> {
-        Ok(self.len()? == 0)
+    async fn is_empty(&self) -> Result<bool, DbError> {
+        Ok(self.len().await? == 0)
     }
     /// Find an item by a specific field and value
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn find_by_field(&self, field: &str, value: &str) -> Result<Option<T>, DbError>;
+    async fn find_by_field(&self, field: &str, value: &str) -> Result<Option<T>, DbError>;
     /// Find all items by a specific field and value
     /// # Errors
     /// - Returns `DbError` if the operation fails
-    fn find_all_by_field(&self, field: &str, value: &str) -> Result<Vec<(Id, T)>, DbError>;
+    async fn find_all_by_field(&self, field: &str, value: &str) -> Result<Vec<(Id, T)>, DbError>;
 }
 
 /// Generic Postgres repository, stores T as JSON
@@ -110,33 +109,22 @@ where
     /// - Returns `DbError` if the operation fails
     /// # Panics
     /// - Panics if `DATABASE_URL` is not set in the environment or .env file
-    pub fn new(table: &str) -> Result<Self, DbError> {
+    pub async fn new(table: &str) -> Result<Self, DbError> {
         dotenvy::dotenv().ok();
         let db_url = std::env::var("DATABASE_URL")
             .expect("DATABASE_URL must be set in .env file or environment");
         let table_name = table.to_string();
 
-        // Use the shared runtime to avoid creating multiple runtimes
-        let (pool, ()) = std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                let pool = rt.block_on(async { PgPoolOptions::new().connect(&db_url).await })?;
+        let pool = PgPoolOptions::new().connect(&db_url).await?;
 
-                // Ensure table exists
-                let query = format!(
-                    "CREATE TABLE IF NOT EXISTS {table_name} (
-                        id   TEXT PRIMARY KEY,
-                        data JSONB NOT NULL
-                    )"
-                );
-                rt.block_on(async { sqlx::query(&query).execute(&pool).await })?;
-
-                Ok::<_, DbError>((pool, ()))
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-        })?;
+        // Ensure table exists
+        let query = format!(
+            "CREATE TABLE IF NOT EXISTS {table_name} (
+                id   TEXT PRIMARY KEY,
+                data JSONB NOT NULL
+            )"
+        );
+        sqlx::query(&query).execute(&pool).await?;
 
         Ok(Self {
             pool,
@@ -156,168 +144,101 @@ where
         + Send
         + Sync,
 {
-    fn insert(&self, id: Id, item: T) -> Result<(), DbError> {
+    async fn insert(&self, id: Id, item: T) -> Result<(), DbError> {
         let data = serde_json::to_value(item)?;
         let query = format!("INSERT INTO {} (id, data) VALUES ($1, $2)", self.table);
-        let pool = self.pool.clone();
         let id_str = id.to_string();
 
-        // Use the shared runtime to avoid creating multiple runtimes
-        std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async {
-                    sqlx::query(&query)
-                        .bind(id_str)
-                        .bind(data)
-                        .execute(&pool)
-                        .await
-                })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        sqlx::query(&query)
+            .bind(id_str)
+            .bind(data)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::from)?;
+
         Ok(())
     }
 
-    fn update(&self, id: Id, item: T) -> Result<(), DbError> {
+    async fn update(&self, id: Id, item: T) -> Result<(), DbError> {
         let data = serde_json::to_value(item)?;
         let query = format!("UPDATE {} SET data = $2 WHERE id = $1", self.table);
-        let pool = self.pool.clone();
         let id_str = id.to_string();
 
-        std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async {
-                    sqlx::query(&query)
-                        .bind(id_str)
-                        .bind(data)
-                        .execute(&pool)
-                        .await
-                })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        sqlx::query(&query)
+            .bind(id_str)
+            .bind(data)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::from)?;
+
         Ok(())
     }
 
-    fn remove(&self, id: Id) -> Result<(), DbError> {
+    async fn remove(&self, id: Id) -> Result<(), DbError> {
         let query = format!("DELETE FROM {} WHERE id = $1", self.table);
-        let pool = self.pool.clone();
         let id_str = id.to_string();
 
-        std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async { sqlx::query(&query).bind(id_str).execute(&pool).await })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        sqlx::query(&query)
+            .bind(id_str)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::from)?;
+
         Ok(())
     }
 
-    fn get(&self, id: &Id) -> Result<Option<T>, DbError> {
+    async fn get(&self, id: &Id) -> Result<Option<T>, DbError> {
         let query = format!("SELECT data FROM {} WHERE id = $1", self.table);
-        let pool = self.pool.clone();
         let id_str = id.to_string();
 
-        let row: Option<serde_json::Value> = std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async {
-                    sqlx::query_scalar(&query)
-                        .bind(id_str)
-                        .fetch_optional(&pool)
-                        .await
-                })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        let row: Option<serde_json::Value> = sqlx::query_scalar(&query)
+            .bind(id_str)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::from)?;
+
         Ok(row.map(|val| serde_json::from_value(val).unwrap()))
     }
 
-    fn len(&self) -> Result<usize, DbError> {
+    async fn len(&self) -> Result<usize, DbError> {
         let query = format!("SELECT COUNT(*) FROM {}", self.table);
-        let pool = self.pool.clone();
 
-        let (count,): (i64,) = std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async { sqlx::query_as(&query).fetch_one(&pool).await })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        let (count,): (i64,) = sqlx::query_as(&query)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(DbError::from)?;
+
         Ok(count.saturating_abs() as usize)
     }
-    fn find_by_field(&self, field: &str, value: &str) -> Result<Option<T>, DbError> {
+
+    async fn find_by_field(&self, field: &str, value: &str) -> Result<Option<T>, DbError> {
         let query = format!(
             "SELECT data FROM {} WHERE data->>$1 = $2 LIMIT 1",
             self.table
         );
-        let pool = self.pool.clone();
-        let field = field.to_string();
-        let value = value.to_string();
 
-        let row: Option<serde_json::Value> = std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async {
-                    sqlx::query_scalar(&query)
-                        .bind(field)
-                        .bind(value)
-                        .fetch_optional(&pool)
-                        .await
-                })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        let row: Option<serde_json::Value> = sqlx::query_scalar(&query)
+            .bind(field)
+            .bind(value)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::from)?;
 
         Ok(row.map(|val| serde_json::from_value(val).unwrap()))
     }
 
-    fn find_all_by_field(&self, field: &str, value: &str) -> Result<Vec<(Id, T)>, DbError> {
+    async fn find_all_by_field(&self, field: &str, value: &str) -> Result<Vec<(Id, T)>, DbError> {
         let query = format!(
             "SELECT id, data FROM {} WHERE data->>$1 = $2 ORDER BY data->>'date' DESC",
             self.table
         );
-        let pool = self.pool.clone();
-        let field = field.to_string();
-        let value = value.to_string();
 
-        let rows: Vec<(String, serde_json::Value)> = std::thread::scope(|s| {
-            let handle = s.spawn(|| {
-                let rt = &*SHARED_RUNTIME;
-                rt.block_on(async {
-                    sqlx::query_as(&query)
-                        .bind(field)
-                        .bind(value)
-                        .fetch_all(&pool)
-                        .await
-                })
-            });
-            handle
-                .join()
-                .map_err(|_| DbError::TokioError(std::io::Error::other("Thread panicked")))?
-                .map_err(DbError::from)
-        })?;
+        let rows: Vec<(String, serde_json::Value)> = sqlx::query_as(&query)
+            .bind(field)
+            .bind(value)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::from)?;
 
         let result = rows
             .into_iter()
@@ -332,12 +253,3 @@ where
         Ok(result)
     }
 }
-
-// Shared runtime for all database operations to avoid creating multiple runtimes
-static SHARED_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()
-        .expect("Failed to create shared runtime for database operations")
-});

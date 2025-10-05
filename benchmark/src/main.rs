@@ -8,6 +8,7 @@ use rand::Rng;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
 use tracing::{info, warn};
 
@@ -173,11 +174,11 @@ struct TestUser {
     id: UserId,
 }
 
-fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<TestUser>> {
+async fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<TestUser>> {
     info!("Setting up {} test users...", num_users);
     let mut users = Vec::new();
 
-    let mut user_repo = broker.get_user_repo();
+    let user_repo = broker.get_user_repo().await;
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -195,11 +196,13 @@ fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<TestUs
                 "Test".to_string(),
                 balance,
             )
+            .await
             .map_err(|e| color_eyre::eyre::eyre!("Failed to create user {}: {}", i, e))?;
 
         // Verify email to activate user
         user_repo
             .verify_user_email(&user_id)
+            .await
             .map_err(|e| color_eyre::eyre::eyre!("Failed to verify user {}: {}", i, e))?;
 
         users.push(TestUser { id: user_id });
@@ -211,7 +214,7 @@ fn setup_test_users(broker: &mut BrokerX, num_users: usize) -> Result<Vec<TestUs
 
 async fn benchmark_worker(
     worker_id: usize,
-    broker: Arc<Mutex<BrokerX>>,
+    broker: Arc<AsyncMutex<BrokerX>>,
     users: Arc<Vec<TestUser>>,
     metrics: Arc<BenchmarkMetrics>,
     should_stop: Arc<AtomicUsize>,
@@ -275,13 +278,15 @@ async fn benchmark_worker(
         };
 
         // Submit order with minimal lock time
-        let result = {
-            // Minimize lock scope
-            let mut broker_guard = broker.lock().unwrap();
-            broker_guard.create_order(user_id, symbol.clone(), quantity, side, order_type)
-        };
-
         metrics.record_submission();
+
+        // Use async mutex properly to avoid runtime issues
+        let result = {
+            let broker_guard = broker.lock().await;
+            broker_guard
+                .create_order(user_id, symbol.clone(), quantity, side, order_type)
+                .await
+        };
 
         match result {
             Ok(_order_id) => {
@@ -316,12 +321,12 @@ async fn run_benchmark(args: Args) -> Result<()> {
     );
 
     // Initialize BrokerX with optimal settings
-    let mut broker = BrokerX::with_thread_count(args.processing_threads);
-    broker.start_order_processing();
+    let mut broker = BrokerX::with_thread_count(args.processing_threads).await;
+    broker.start_order_processing().await;
 
     // Setup test users
-    let users = Arc::new(setup_test_users(&mut broker, args.test_users)?);
-    let broker = Arc::new(Mutex::new(broker));
+    let users = Arc::new(setup_test_users(&mut broker, args.test_users).await?);
+    let broker = Arc::new(AsyncMutex::new(broker));
 
     // Initialize metrics
     let metrics = Arc::new(BenchmarkMetrics::new());

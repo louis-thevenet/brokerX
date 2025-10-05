@@ -13,26 +13,29 @@ mod tests {
     use crate::services::BrokerHandle;
 
     // Create test setup that is isolated and consistent
-    fn create_test_setup() -> (Router, Uuid) {
+    async fn create_test_setup() -> (Router, Uuid) {
         // Use a unique ID for this test to avoid conflicts
         let test_id = Uuid::new_v4();
         let test_id_str = test_id.to_string();
         let test_email = format!("test-{}@test.com", &test_id_str[..8]);
 
-        let broker = domain::core::BrokerX::new_for_testing();
+        let broker = domain::core::BrokerX::new_for_testing().await;
 
-        let mut user_repo = broker.get_user_repo();
-        let test_user_id = match user_repo.create_user(
-            test_email.clone(),
-            "password123".to_string(),
-            "Test".to_string(),
-            "User".to_string(),
-            1000.0,
-        ) {
+        let user_repo = broker.get_user_repo().await;
+        let test_user_id = match user_repo
+            .create_user(
+                test_email.clone(),
+                "password123".to_string(),
+                "Test".to_string(),
+                "User".to_string(),
+                1000.0,
+            )
+            .await
+        {
             Ok(id) => {
                 // Verify the user if creation succeeded
-                let mut user_repo_mut = broker.get_user_repo();
-                let _ = user_repo_mut.verify_user_email(&id);
+                let user_repo_mut = broker.get_user_repo().await;
+                let _ = user_repo_mut.verify_user_email(&id).await;
                 id
             }
             Err(_) => {
@@ -46,9 +49,9 @@ mod tests {
         (router.with_state(handle), test_user_id)
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_user_success() {
-        let (app, test_user_id) = create_test_setup();
+        let (app, test_user_id) = create_test_setup().await;
 
         let response = app
             .oneshot(
@@ -76,9 +79,9 @@ mod tests {
         assert!(user.is_verified);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_user_not_found() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
         let non_existent_id = Uuid::new_v4();
 
         let response = app
@@ -95,9 +98,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_user_invalid_uuid() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
 
         let response = app
             .oneshot(
@@ -114,9 +117,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_orders_from_user_empty() {
-        let (app, user_id) = create_test_setup();
+        let (app, user_id) = create_test_setup().await;
 
         let response = app
             .oneshot(
@@ -138,9 +141,9 @@ mod tests {
         assert!(orders.is_empty(), "New user should have no orders");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_orders_from_nonexistent_user() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
         let non_existent_id = Uuid::new_v4();
 
         let response = app
@@ -163,9 +166,9 @@ mod tests {
         assert!(orders.is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_orders_from_user_invalid_uuid() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
 
         let response = app
             .oneshot(
@@ -182,9 +185,9 @@ mod tests {
     }
 
     // Integration test with actual order creation
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_get_orders_from_user_with_orders() {
-        let (app, user_id) = create_test_setup();
+        let (app, user_id) = create_test_setup().await;
 
         let response = app
             .oneshot(
@@ -207,9 +210,9 @@ mod tests {
     }
 
     // Test error handling for database errors
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_error_handling() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
 
         // Test various UUID formats
         let test_cases = vec![
@@ -238,9 +241,9 @@ mod tests {
     }
 
     // Comprehensive integration test for the PUT endpoint
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_put_user_update_existing() {
-        let (app, user_id) = create_test_setup();
+        let (app, user_id) = create_test_setup().await;
 
         // Test updating the user's first name
         let update_request = r#"{"firstname": "UpdatedName"}"#;
@@ -272,9 +275,9 @@ mod tests {
         ); // Should remain unchanged
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_put_user_create_new() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
         let new_user_id = Uuid::new_v4();
 
         // Generate a unique email to avoid conflicts
@@ -320,9 +323,9 @@ mod tests {
         assert!(!created_user.is_verified); // Should not be verified initially
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_put_user_validation_errors() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
         let new_user_id = Uuid::new_v4();
 
         // Test creating user with invalid email
@@ -366,9 +369,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_post_user_create() {
-        let (app, _) = create_test_setup();
+        let (app, _) = create_test_setup().await;
 
         // Generate a unique email to avoid conflicts
         let unique_email = format!(

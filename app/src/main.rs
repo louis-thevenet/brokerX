@@ -15,9 +15,9 @@ async fn main() -> Result<()> {
     logging::init()?;
     tracing::info!("Starting BrokerX application");
 
-    let mut broker_x = BrokerX::new();
-    broker_x.debug_populate();
-    broker_x.start_order_processing();
+    let broker_x = BrokerX::new().await;
+    broker_x.debug_populate().await;
+    broker_x.start_order_processing().await;
     tracing::debug!("BrokerX initialized: {broker_x:#?}");
 
     let app_state = BrokerHandle::new(broker_x);

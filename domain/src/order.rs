@@ -54,19 +54,25 @@ pub type OrderId = Uuid;
 
 pub type OrderRepo = PostgresRepo<Order, OrderId>;
 
+#[allow(async_fn_in_trait)]
 pub trait OrderRepoExt {
-    fn create_order(&mut self, order: Order) -> Result<OrderId, DbError>;
-    fn get_orders_for_user(&self, user_id: &UserId) -> Result<Vec<(OrderId, Order)>, DbError>;
+    async fn create_order(&self, order: Order) -> Result<OrderId, DbError>;
+    async fn get_orders_for_user(&self, user_id: &UserId)
+    -> Result<Vec<(OrderId, Order)>, DbError>;
 }
 
 impl OrderRepoExt for OrderRepo {
-    fn create_order(&mut self, order: Order) -> Result<OrderId, DbError> {
+    async fn create_order(&self, order: Order) -> Result<OrderId, DbError> {
         let id = Uuid::new_v4();
-        self.insert(id, order)?;
+        self.insert(id, order).await?;
         Ok(id)
     }
 
-    fn get_orders_for_user(&self, user_id: &UserId) -> Result<Vec<(OrderId, Order)>, DbError> {
+    async fn get_orders_for_user(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Vec<(OrderId, Order)>, DbError> {
         self.find_all_by_field("client_id", &user_id.to_string())
+            .await
     }
 }

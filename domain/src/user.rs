@@ -202,9 +202,10 @@ pub type UserId = Uuid;
 
 pub type UserRepo = PostgresRepo<User, UserId>;
 
+#[allow(async_fn_in_trait)]
 pub trait UserRepoExt {
-    fn create_user(
-        &mut self,
+    async fn create_user(
+        &self,
         email: String,
         password: String,
         firstname: String,
@@ -212,9 +213,9 @@ pub trait UserRepoExt {
         initial_balance: f64,
     ) -> Result<UserId, AuthError>;
 
-    fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError>;
+    async fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError>;
 
-    fn initiate_mfa<P: MfaProvider>(
+    async fn initiate_mfa<P: MfaProvider>(
         &self,
         email: &str,
         mfa_service: &MfaService<P>,
@@ -227,23 +228,23 @@ pub trait UserRepoExt {
         mfa_service: &MfaService<P>,
     ) -> Result<bool, AuthError>;
 
-    fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError>;
-    fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError>;
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError>;
+    async fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError>;
 
-    fn email_exists(&self, email: &str) -> Result<bool, AuthError>;
-    fn is_verified(&self, email: &str) -> Result<bool, AuthError>;
+    async fn email_exists(&self, email: &str) -> Result<bool, AuthError>;
+    async fn is_verified(&self, email: &str) -> Result<bool, AuthError>;
 
-    fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError>;
-    fn withdraw_from_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError>;
-    fn get_user_balance(&self, user_id: &UserId) -> Result<f64, AuthError>;
+    async fn deposit_to_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError>;
+    async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError>;
+    async fn get_user_balance(&self, user_id: &UserId) -> Result<f64, AuthError>;
 
-    fn verify_user_email(&mut self, user_id: &UserId) -> Result<(), AuthError>;
-    fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError>;
+    async fn verify_user_email(&self, user_id: &UserId) -> Result<(), AuthError>;
+    async fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError>;
 }
 
 impl UserRepoExt for UserRepo {
-    fn create_user(
-        &mut self,
+    async fn create_user(
+        &self,
         email: String,
         password: String,
         firstname: String,
@@ -251,18 +252,20 @@ impl UserRepoExt for UserRepo {
         initial_balance: f64,
     ) -> Result<UserId, AuthError> {
         // Check if email already exists
-        if self.email_exists(&email)? {
+        if self.email_exists(&email).await? {
             return Err(AuthError::UserAlreadyExists);
         }
 
         let mut user = User::new(email, password, firstname, surname, initial_balance)?;
         let user_id = Uuid::new_v4();
         user.id = Some(user_id);
-        self.insert(user_id, user).map_err(AuthError::UserRepo)?;
+        self.insert(user_id, user)
+            .await
+            .map_err(AuthError::UserRepo)?;
         Ok(user_id)
     }
-    fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError> {
-        if let Some(user) = self.get_user_by_email(email)? {
+    async fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError> {
+        if let Some(user) = self.get_user_by_email(email).await? {
             if !user.is_verified {
                 debug!("User {} not verified", email);
                 return Err(AuthError::NotVerified(user.id.unwrap_or_default()));
@@ -273,18 +276,19 @@ impl UserRepoExt for UserRepo {
         }
     }
 
-    fn initiate_mfa<P: MfaProvider>(
+    async fn initiate_mfa<P: MfaProvider>(
         &self,
         email: &str,
         mfa_service: &MfaService<P>,
     ) -> Result<String, AuthError> {
-        let user = match self.get_user_by_email(email)? {
+        let user = match self.get_user_by_email(email).await? {
             Some(u) => u,
             None => return Err(AuthError::UserNotFound),
         };
 
-        tokio::runtime::Handle::current()
-            .block_on(mfa_service.initiate_mfa(&user.email))
+        mfa_service
+            .initiate_mfa(&user.email)
+            .await
             .map_err(AuthError::MfaFailed)
     }
 
@@ -299,67 +303,80 @@ impl UserRepoExt for UserRepo {
             .map_err(AuthError::MfaFailed)
     }
 
-    fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
+    async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
         self.find_by_field("email", email)
+            .await
             .map_err(AuthError::UserRepo)
     }
 
-    fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError> {
-        self.get(user_id).map_err(AuthError::UserRepo)
+    async fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError> {
+        self.get(user_id).await.map_err(AuthError::UserRepo)
     }
 
-    fn email_exists(&self, email: &str) -> Result<bool, AuthError> {
-        let user = self.get_user_by_email(email)?;
+    async fn email_exists(&self, email: &str) -> Result<bool, AuthError> {
+        let user = self.get_user_by_email(email).await?;
         Ok(user.is_some())
     }
 
-    fn is_verified(&self, email: &str) -> Result<bool, AuthError> {
+    async fn is_verified(&self, email: &str) -> Result<bool, AuthError> {
         let user = self
-            .get_user_by_email(email)?
+            .get_user_by_email(email)
+            .await?
             .ok_or(AuthError::UserNotFound)?;
         Ok(user.is_verified)
     }
 
-    fn deposit_to_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
+    async fn deposit_to_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
         let mut user = self
             .get(user_id)
+            .await
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.deposit(amount);
-        self.update(*user_id, user).map_err(AuthError::UserRepo)?;
+        self.update(*user_id, user)
+            .await
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
-    fn withdraw_from_user(&mut self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
+    async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
         let mut user = self
             .get(user_id)
+            .await
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.withdraw(amount)
             .map_err(|_e| AuthError::NotEnoughMoneyError)?;
-        self.update(*user_id, user).map_err(AuthError::UserRepo)?;
+        self.update(*user_id, user)
+            .await
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
 
-    fn get_user_balance(&self, user_id: &UserId) -> Result<f64, AuthError> {
+    async fn get_user_balance(&self, user_id: &UserId) -> Result<f64, AuthError> {
         let user = self
             .get(user_id)
+            .await
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         Ok(user.get_balance())
     }
 
-    fn verify_user_email(&mut self, user_id: &UserId) -> Result<(), AuthError> {
+    async fn verify_user_email(&self, user_id: &UserId) -> Result<(), AuthError> {
         let mut user = self
             .get(user_id)
+            .await
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         user.verify_email();
-        self.update(*user_id, user).map_err(AuthError::UserRepo)?;
+        self.update(*user_id, user)
+            .await
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
-    fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError> {
+    async fn is_user_verified(&self, user_id: &UserId) -> Result<bool, AuthError> {
         let user = self
             .get(user_id)
+            .await
             .map_err(AuthError::UserRepo)?
             .ok_or(AuthError::UserNotFound)?;
         Ok(user.is_verified)
