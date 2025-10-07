@@ -3,7 +3,7 @@ use mfa_adapter::{EmailConfig, EmailOtpProvider, mfa::MfaService};
 use tracing::info;
 
 use crate::{
-    order::{Order, OrderId, OrderRepoExt, OrderSide, OrderStatus, OrderType},
+    order::{Order, OrderId, OrderRepo, OrderRepoExt, OrderSide, OrderStatus, OrderType},
     order_processing::ProcessingPool,
     pre_trade::{PreTradeError, PreTradeValidator},
     user::{UserId, UserRepo, UserRepoExt},
@@ -54,6 +54,15 @@ impl BrokerX {
             .lock()
             .await
             .user_repo
+            .clone()
+    }
+    #[must_use]
+    pub async fn get_order_repo(&self) -> OrderRepo {
+        self.processing_pool
+            .shared_state
+            .lock()
+            .await
+            .order_repo
             .clone()
     }
     pub async fn start_order_processing(&self) {

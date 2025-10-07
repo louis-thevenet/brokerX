@@ -35,8 +35,8 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
 ///
 /// Get a specific user by their UUID
 #[utoipa::path(
-    get, 
-    path = "/{user_id}", 
+    get,
+    path = "/{user_id}",
     params(
         ("user_id" = Uuid, Path, description = "User UUID")
     ),
@@ -44,7 +44,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         (status = 200, description = "User found", body = User),
         (status = 404, description = "User not found"),
         (status = 400, description = "Invalid UUID format")
-    ), 
+    ),
     tag = super::USER_TAG
 )]
 async fn get_user(State(state): State<AppState>, Path(user_id): Path<Uuid>) -> impl IntoResponse {
@@ -61,8 +61,8 @@ async fn get_user(State(state): State<AppState>, Path(user_id): Path<Uuid>) -> i
 /// For creation, all fields (firstname, surname, email, password) are required.
 /// For updates, all fields are optional and only provided fields will be updated.
 #[utoipa::path(
-    put, 
-    path = "/{user_id}", 
+    put,
+    path = "/{user_id}",
     params(
         ("user_id" = Uuid, Path, description = "User UUID")
     ),
@@ -72,7 +72,7 @@ async fn get_user(State(state): State<AppState>, Path(user_id): Path<Uuid>) -> i
         (status = 201, description = "User created successfully", body = User),
         (status = 400, description = "Invalid request data or missing required fields for creation"),
         (status = 500, description = "Internal server error")
-    ), 
+    ),
     tag = super::USER_TAG
 )]
 async fn put_user(
@@ -180,14 +180,14 @@ async fn put_user(
 ///
 /// Create a new user. All fields (firstname, surname, email, password) are required.
 #[utoipa::path(
-    post, 
-    path = "/", 
+    post,
+    path = "/",
     request_body = UpdateUserRequest,
     responses(
         (status = 201, description = "User created successfully", body = User),
         (status = 400, description = "Invalid request data or missing required fields for creation"),
         (status = 500, description = "Internal server error")
-    ), 
+    ),
     tag = super::USER_TAG
 )]
 async fn post_user(
@@ -263,15 +263,15 @@ async fn post_user(
 ///
 /// Get orders from a specific user by their UUID
 #[utoipa::path(
-    get, 
-    path = "/{user_id}/orders", 
+    get,
+    path = "/{user_id}/orders",
     params(
         ("user_id" = Uuid, Path, description = "User UUID")
     ),
     responses(
         (status = 200, description = "User found", body = User),
         (status = 500, description = "Database error"),
-    ), 
+    ),
     tag = super::USER_TAG
 )]
 async fn get_orders_from_user(

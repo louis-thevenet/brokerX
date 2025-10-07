@@ -13,6 +13,16 @@ const ORDER_TAG: &str = "order";
 
 #[derive(OpenApi)]
 #[openapi(
+    paths(
+        health,
+    ),
+    components(
+        schemas(
+            order::CreateOrderRequest,
+            order::UpdateOrderRequest,
+            user::UpdateUserRequest
+        )
+    ),
     tags(
         (name = USER_TAG, description = "User API endpoints"),
         (name = ORDER_TAG, description = "Order API endpoints")
