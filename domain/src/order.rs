@@ -7,7 +7,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::user::UserId;
+pub type UserId = Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 /// Represents the current status of an order
 pub enum OrderStatus {

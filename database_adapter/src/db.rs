@@ -132,6 +132,30 @@ where
             _phantom: std::marker::PhantomData,
         })
     }
+
+    /// Create a new Postgres repository with a specific database URL
+    /// # Errors
+    /// - Returns `DbError` if the operation fails
+    pub async fn new_with_url(table: &str, db_url: &str) -> Result<Self, DbError> {
+        let table_name = table.to_string();
+
+        let pool = PgPoolOptions::new().connect(db_url).await?;
+
+        // Ensure table exists
+        let query = format!(
+            "CREATE TABLE IF NOT EXISTS {table_name} (
+                id   TEXT PRIMARY KEY,
+                data JSONB NOT NULL
+            )"
+        );
+        sqlx::query(&query).execute(&pool).await?;
+
+        Ok(Self {
+            pool,
+            table: table_name,
+            _phantom: std::marker::PhantomData,
+        })
+    }
 }
 
 impl<T, Id> Repository<T, Id> for PostgresRepo<T, Id>

@@ -1,5 +1,11 @@
 [workspace]
-members = [ "app", "database_adapter","domain", "in_memory_adapter", "mfa_adapter", "benchmark" ]
+members = [ 
+    "database_adapter",
+    "domain", 
+    "mfa_adapter", 
+    "user-service",
+    "order-service"
+, "api_gateway"]
 resolver = "3"
 
 [workspace.package]

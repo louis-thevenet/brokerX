@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # User Service Database
+  user-db:
+    image: postgres:15
+    container_name: brokerx-user-db
+    environment:
+      POSTGRES_DB: brokerx_users
+      POSTGRES_USER: brokerx_user
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5432:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+      - ./docker/init-user-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - brokerx-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brokerx_user -d brokerx_users"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Order Service Database
+  order-db:
+    image: postgres:15
+    container_name: brokerx-order-db
+    environment:
+      POSTGRES_DB: brokerx_orders
+      POSTGRES_USER: brokerx_user
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+      - ./docker/init-order-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - brokerx-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brokerx_user -d brokerx_orders"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: PostgreSQL Admin Interface
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: brokerx-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@brokerx.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "8080:80"
+    networks:
+      - brokerx-network
+    depends_on:
+      - user-db
+      - order-db
+
+volumes:
+  user_db_data:
+  order_db_data:
+
+networks:
+  brokerx-network:
+    driver: bridge
