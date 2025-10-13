@@ -119,12 +119,6 @@ async function register(event) {
   }
 }
 
-function shouldRequireMfa(email) {
-  // MFA is mandatory for all users in this professional trading application
-  // This ensures compliance with financial security regulations
-  return true;
-}
-
 function logout() {
   currentToken = null;
   currentUser = null;
@@ -202,16 +196,6 @@ async function updateProfile(event) {
     showMessage('profile-message', 'Network error occurred', true);
     console.error('Update error:', err);
   }
-}
-
-async function verifyEmail(event) {
-  event.preventDefault();
-
-  // In the new flow, email verification happens during login
-  // If user is already logged in but not verified, they need to logout and login again
-  showMessage('profile-message', 
-    'Email verification must be completed during login. Please logout and login again to verify your email.', 
-    true);
 }
 
 async function depositFunds(event) {

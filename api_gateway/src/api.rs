@@ -85,7 +85,7 @@ pub async fn health_check() -> impl IntoResponse {
 }
 
 /// Register a new user
-/// 
+///
 /// Creates a new user account and automatically initiates email verification.
 /// The user must complete MFA verification before they can log in.
 #[utoipa::path(
@@ -130,7 +130,7 @@ pub async fn register(
 }
 
 /// Login and get JWT token
-/// 
+///
 /// MFA is required for all login attempts. A challenge ID will be returned
 /// that must be verified with /auth/verify-login to complete authentication.
 #[utoipa::path(
@@ -149,7 +149,7 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<impl IntoResponse> {
     info!("Login attempt for {}", request.email);
-    
+
     // Authenticate user credentials
     let user_id = state
         .user_client
@@ -162,11 +162,11 @@ pub async fn login(
 
     // Get user info
     let user = state.user_client.get_user(user_id).await?;
-    
+
     // ALWAYS send MFA challenge for all users (maximum security)
     info!("Initiating MFA challenge for user {}", user_id);
     let challenge_id = state.mfa_service.initiate_challenge(&user.email).await?;
-    
+
     Ok(Json(LoginResponse {
         user_id,
         challenge_id,
@@ -175,7 +175,7 @@ pub async fn login(
 }
 
 /// Verify login MFA challenge
-/// 
+///
 /// Complete the login process by verifying the MFA code sent to the user's email.
 /// All login attempts require MFA verification for maximum security.
 #[utoipa::path(
@@ -193,7 +193,10 @@ pub async fn verify_login_mfa(
     State(state): State<AppState>,
     Json(verify_request): Json<VerifyMfaRequest>,
 ) -> ApiResult<impl IntoResponse> {
-    info!("Verifying MFA for challenge: {}", verify_request.challenge_id);
+    info!(
+        "Verifying MFA for challenge: {}",
+        verify_request.challenge_id
+    );
 
     if verify_request.challenge_id.is_empty() {
         return Err(ApiError::BadRequest("Challenge ID is required".to_string()));
@@ -207,10 +210,10 @@ pub async fn verify_login_mfa(
 
     // Get user by email
     let user_id = state.user_client.get_user_id_by_email(&user_email).await?;
-    
+
     // Check if user is already verified
     let user = state.user_client.get_user(user_id).await?;
-    
+
     // Mark as verified if this is their first successful MFA (prevents re-verification)
     if !user.is_verified {
         state.user_client.verify_email(user_id).await?;
@@ -232,7 +235,7 @@ pub async fn verify_login_mfa(
 }
 
 /// Logout
-/// 
+///
 /// Client-side logout. The client should delete its token.
 /// In a production system with token blacklisting, this would invalidate the token server-side.
 #[utoipa::path(
@@ -319,7 +322,15 @@ pub async fn deposit_funds(
     AuthenticatedUser(user_id): AuthenticatedUser,
     Json(deposit_request): Json<DepositRequest>,
 ) -> ApiResult<impl IntoResponse> {
+    info!(
+        "User {} depositing amount: {}",
+        user_id, deposit_request.amount
+    );
     if deposit_request.amount <= 0.0 {
+        error!(
+            "Invalid deposit amount: {} for user {}",
+            deposit_request.amount, user_id
+        );
         return Err(ApiError::BadRequest(
             "Deposit amount must be positive".to_string(),
         ));
@@ -329,6 +340,7 @@ pub async fn deposit_funds(
         .user_client
         .deposit_funds(user_id, deposit_request.amount)
         .await?;
+    info!("Deposit successful for user {}", user_id);
     Ok(Json(user))
 }
 
@@ -364,7 +376,8 @@ pub async fn create_order(
     }
 
     // For limit orders, price is required
-    if matches!(order_request.order_type, OrderType::Limit { .. }) && order_request.price.is_none() {
+    if matches!(order_request.order_type, OrderType::Limit { .. }) && order_request.price.is_none()
+    {
         return Err(ApiError::BadRequest(
             "Price is required for limit orders".to_string(),
         ));

@@ -33,6 +33,11 @@ pub struct UpdateUserRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct DepositRequest {
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AuthenticateRequest {
     pub email: String,
     pub password: String,
@@ -218,6 +223,54 @@ pub async fn update_user(
     }
 }
 
+/// Deposit funds into user account
+#[utoipa::path(
+    post,
+    path = "/users/{id}/deposit",
+    request_body = UpdateUserRequest,
+    responses(
+        (status = 200, description = "User balance updated successfully", body = User),
+        (status = 404, description = "User not found"),
+        (status = 400, description = "Invalid request data"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    tag = "users"
+)]
+pub async fn deposit_funds(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<DepositRequest>,
+) -> impl IntoResponse {
+    info!("Depositing funds to user ID: {}", user_id);
+    if payload.amount <= 0.0 {
+        return (StatusCode::BAD_REQUEST, "Deposit amount must be positive").into_response();
+    }
+    match state
+        .user_service
+        .deposit_to_user(&user_id, payload.amount)
+        .await
+    {
+        Ok(()) => {
+            info!("Deposited {} to user {}", payload.amount, user_id);
+            let user = state.user_service.get_user(&user_id).await;
+            match user {
+                Ok(Some(user)) => Json(user).into_response(),
+                Ok(None) => StatusCode::NOT_FOUND.into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+        Err(e) => {
+            info!("Error depositing funds to user {}: {}", user_id, e);
+            match e {
+                AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
+                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+    }
+}
 /// Get user by email
 #[utoipa::path(
     get,

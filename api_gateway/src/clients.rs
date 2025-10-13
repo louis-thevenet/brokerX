@@ -62,8 +62,9 @@ impl UserClient {
         if response.status().is_success() {
             let auth_response: AuthenticateResponse = response.json().await?;
             if auth_response.authenticated {
-                auth_response.user_id
-                    .ok_or(ApiError::InternalServerError("User ID missing in authentication response".to_string()))
+                auth_response.user_id.ok_or(ApiError::InternalServerError(
+                    "User ID missing in authentication response".to_string(),
+                ))
             } else {
                 error!("Authentication failed: {}", auth_response.message);
                 Err(ApiError::Unauthorized)
@@ -97,7 +98,11 @@ impl UserClient {
         }
     }
 
-    pub async fn update_user(&self, user_id: Uuid, request: &UpdateUserRequest) -> ApiResult<UserResponse> {
+    pub async fn update_user(
+        &self,
+        user_id: Uuid,
+        request: &UpdateUserRequest,
+    ) -> ApiResult<UserResponse> {
         let response = self
             .client
             .put(&format!("{}/users/{}", self.base_url, user_id))
@@ -140,24 +145,27 @@ impl UserClient {
     }
 
     pub async fn deposit_funds(&self, user_id: Uuid, amount: f64) -> ApiResult<UserResponse> {
-        // This would depend on how the user service implements fund deposits
-        // For now, assuming it's a simple balance update
+        debug!("Depositing {} to user ID {}", amount, user_id);
         let response = self
             .client
-            .post(&format!("{}/users/{}/deposit", self.base_url, user_id))
+            .post(format!("{}/users/{}/deposit", self.base_url, user_id))
             .json(&json!({ "amount": amount }))
             .send()
             .await?;
 
         if response.status().is_success() {
             let user: UserServiceResponse = response.json().await?;
+            info!("Deposited funds. New balance: {}", user.balance);
             Ok(user.into())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("User not found for deposit");
+            Err(ApiError::NotFound)
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
+            error!("Error depositing funds: {}", error_text);
             Err(ApiError::ServiceUnavailable(format!(
-                "User service error {}: {}",
-                status, error_text
+                "User service error {status}: {error_text}"
             )))
         }
     }
@@ -286,13 +294,13 @@ impl OrderClient {
             // since we don't have access to the order service's exact response format
             // This is a simplified version - the actual implementation may vary
             let orders: Vec<OrderServiceResponse> = response.json().await?;
-            
+
             // Generate IDs for orders (this is a limitation - ideally the service should return IDs)
             let order_responses: Vec<OrderResponse> = orders
                 .into_iter()
                 .map(|o| o.into_response(Uuid::new_v4())) // TODO: Get actual IDs from service
                 .collect();
-            
+
             Ok(PaginatedResponse {
                 data: order_responses,
                 pagination: PaginationInfo {
