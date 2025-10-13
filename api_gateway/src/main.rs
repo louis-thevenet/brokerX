@@ -26,6 +26,7 @@ pub struct AppState {
     pub user_client: Arc<clients::UserClient>,
     pub order_client: Arc<clients::OrderClient>,
     pub market_data_client: Arc<clients::MarketDataClient>,
+    pub market_data_execution_client: Arc<clients::MarketDataExecutionClient>,
     pub mfa_service: mfa_service::MfaService,
 }
 
@@ -50,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
     let market_data_client = Arc::new(clients::MarketDataClient::new(
         &config.market_data_service_url,
     ));
+    let market_data_execution_client = Arc::new(clients::MarketDataExecutionClient::new(
+        &config.market_data_service_url,
+    ));
 
     // Initialize MFA provider with environment configuration
     let mfa_provider = Arc::new(
@@ -63,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
         user_client,
         order_client,
         market_data_client,
+        market_data_execution_client,
         mfa_service,
     };
 

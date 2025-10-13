@@ -230,6 +230,142 @@ async function depositFunds(event) {
 }
 
 // ============================================================================
+// Holdings Functions
+// ============================================================================
+
+async function loadHoldings() {
+  if (!currentUser || !currentUser.id) {
+    showMessage('holdings-message', 'User not loaded', true);
+    return;
+  }
+
+  try {
+    const response = await makeApiCall(`/users/${currentUser.id}/holdings`);
+
+    if (response.ok) {
+      const holdings = await response.json();
+      console.log('Holdings loaded:', holdings);
+      displayHoldings(holdings);
+    } else if (response.status === 404) {
+      // No holdings found
+      displayHoldings([]);
+    } else {
+      showMessage('holdings-message', 'Failed to load holdings', true);
+    }
+  } catch (err) {
+    showMessage('holdings-message', 'Network error occurred', true);
+    console.error('Holdings load error:', err);
+  }
+}
+
+function displayHoldings(holdings) {
+  const summaryDiv = document.getElementById('holdings-summary');
+  const tableDiv = document.getElementById('holdings-table');
+
+  if (!holdings || holdings.length === 0) {
+    summaryDiv.innerHTML = '<p style="text-align: center; color: #666;">No holdings yet. Start trading to build your portfolio!</p>';
+    tableDiv.innerHTML = '';
+    return;
+  }
+
+  // Calculate portfolio summary
+  let totalValue = 0;
+  let totalCost = 0;
+  let totalShares = 0;
+
+  holdings.forEach(holding => {
+    const currentPrice = marketDataCache[holding.symbol]?.price || 0;
+    const value = holding.quantity * currentPrice;
+    const cost = holding.quantity * holding.average_cost;
+    totalValue += value;
+    totalCost += cost;
+    totalShares += holding.quantity;
+  });
+
+  const totalProfit = totalValue - totalCost;
+  const profitPercentage = totalCost > 0 ? (totalProfit / totalCost * 100) : 0;
+
+  // Display summary cards
+  summaryDiv.innerHTML = `
+    <div class="holdings-summary">
+      <div class="summary-card">
+        <h4>Total Value</h4>
+        <p class="value">$${totalValue.toFixed(2)}</p>
+      </div>
+      <div class="summary-card">
+        <h4>Total Cost</h4>
+        <p class="value">$${totalCost.toFixed(2)}</p>
+      </div>
+      <div class="summary-card">
+        <h4>Profit/Loss</h4>
+        <p class="value ${totalProfit >= 0 ? 'profit-positive' : 'profit-negative'}">
+          ${totalProfit >= 0 ? '+' : ''}$${totalProfit.toFixed(2)}
+          <span style="font-size: 0.8rem;">(${profitPercentage >= 0 ? '+' : ''}${profitPercentage.toFixed(2)}%)</span>
+        </p>
+      </div>
+      <div class="summary-card">
+        <h4>Total Shares</h4>
+        <p class="value">${totalShares}</p>
+      </div>
+    </div>
+  `;
+
+  // Display holdings table
+  let tableHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Quantity</th>
+          <th>Avg Cost</th>
+          <th>Current Price</th>
+          <th>Market Value</th>
+          <th>Total Cost</th>
+          <th>Profit/Loss</th>
+          <th>Return %</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  holdings.forEach(holding => {
+    const currentPrice = marketDataCache[holding.symbol]?.price || 0;
+    const marketValue = holding.quantity * currentPrice;
+    const totalCost = holding.quantity * holding.average_cost;
+    const profitLoss = marketValue - totalCost;
+    const returnPct = totalCost > 0 ? (profitLoss / totalCost * 100) : 0;
+
+    const profitClass = profitLoss >= 0 ? 'profit-positive' : 'profit-negative';
+
+    tableHTML += `
+      <tr>
+        <td class="symbol-cell">${holding.symbol}</td>
+        <td>${holding.quantity}</td>
+        <td>$${holding.average_cost.toFixed(2)}</td>
+        <td class="${currentPrice > holding.average_cost ? 'price-up' : currentPrice < holding.average_cost ? 'price-down' : 'price-neutral'}">
+          $${currentPrice.toFixed(2)}
+        </td>
+        <td>$${marketValue.toFixed(2)}</td>
+        <td>$${totalCost.toFixed(2)}</td>
+        <td class="${profitClass}">
+          ${profitLoss >= 0 ? '+' : ''}$${profitLoss.toFixed(2)}
+        </td>
+        <td class="${profitClass}">
+          ${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(2)}%
+        </td>
+      </tr>
+    `;
+  });
+
+  tableHTML += `
+      </tbody>
+    </table>
+  `;
+
+  tableDiv.innerHTML = tableHTML;
+}
+
+// ============================================================================
 // Trading Functions - Order Placement
 // ============================================================================
 // The order API uses a RESTful structure with tagged enums for order_type and status:
@@ -288,10 +424,13 @@ async function placeOrder(event) {
       document.getElementById('order-price').value = '';
       document.getElementById('order-price').classList.add('hidden');
 
-      // Refresh orders and profile
+      // Refresh orders, profile, and holdings
       await loadUserProfile();
       if (!document.getElementById('orders-section').classList.contains('hidden')) {
         await loadOrders();
+      }
+      if (!document.getElementById('holdings-section').classList.contains('hidden')) {
+        await loadHoldings();
       }
     } else {
       const responseText = await response.text();
@@ -735,6 +874,16 @@ function displayMarketPrices(prices) {
 
   html += '</tbody></table>';
   tableContainer.innerHTML = html;
+  
+  // Refresh holdings display if holdings section is visible
+  if (currentUser && !document.getElementById('holdings-section').classList.contains('hidden')) {
+    // Just re-render with updated cache prices
+    const holdingsTable = document.getElementById('holdings-table');
+    if (holdingsTable && holdingsTable.innerHTML) {
+      // Holdings are already loaded, just refresh the display
+      loadHoldings();
+    }
+  }
 }
 
 function quickBuy(symbol, price) {
@@ -956,6 +1105,10 @@ function startMarketDataRefresh() {
   marketDataRefreshInterval = setInterval(() => {
     if (!document.getElementById('market-data-section').classList.contains('hidden')) {
       loadMarketData();
+      // Also refresh holdings to update with new prices
+      if (!document.getElementById('holdings-section').classList.contains('hidden')) {
+        loadHoldings();
+      }
     }
   }, 30000); // 30 seconds
 }
@@ -1074,12 +1227,14 @@ function showDashboard() {
   document.getElementById('dashboard-section').classList.remove('hidden');
   document.getElementById('profile-section').classList.remove('hidden');
   document.getElementById('market-data-section').classList.remove('hidden');
+  document.getElementById('holdings-section').classList.remove('hidden');
   document.getElementById('trading-section').classList.remove('hidden');
   document.getElementById('orders-section').classList.remove('hidden');
 
   // Load data when showing dashboard
   loadOrders();
   loadMarketData();
+  loadHoldings();
   startMarketDataRefresh();
 }
 

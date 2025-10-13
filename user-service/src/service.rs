@@ -76,6 +76,19 @@ impl UserService {
         self.user_repo.deposit_to_user(user_id, amount).await
     }
 
+    /// Update user holdings after order execution
+    pub async fn update_user_holding(
+        &self,
+        user_id: &UserId,
+        symbol: &str,
+        quantity_change: i64,
+        execution_price: f64,
+    ) -> Result<(), AuthError> {
+        self.user_repo
+            .update_user_holding(user_id, symbol, quantity_change, execution_price)
+            .await
+    }
+
     /// Update user details
     pub async fn update_user(&self, user_id: &UserId, updated_user: User) -> Result<(), AuthError> {
         self.user_repo

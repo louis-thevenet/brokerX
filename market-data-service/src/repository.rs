@@ -193,4 +193,117 @@ impl MarketDataRepository {
 
         Ok(symbols)
     }
+
+    /// Get or create market simulation state for a symbol
+    pub async fn get_or_create_market_state(
+        &self,
+        symbol: &str,
+        current_price: f64,
+    ) -> Result<crate::models::MarketSimulationState> {
+        // Try to get existing state
+        let state = sqlx::query_as::<_, crate::models::MarketSimulationState>(
+            r#"
+            SELECT symbol, current_volatility, trend_direction, 
+                   last_execution_price, last_execution_time, 
+                   daily_volume, execution_count
+            FROM market_simulation_state
+            WHERE symbol = $1
+            "#,
+        )
+        .bind(symbol)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(state) = state {
+            return Ok(state);
+        }
+
+        // Create new state with defaults
+        let new_state = crate::models::MarketSimulationState {
+            symbol: symbol.to_string(),
+            current_volatility: 0.02,     // 2% default volatility
+            trend_direction: 0.0,          // Neutral trend
+            last_execution_price: Some(current_price),
+            last_execution_time: Some(Utc::now()),
+            daily_volume: 1_000_000,      // Default 1M shares
+            execution_count: 0,
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO market_simulation_state 
+            (symbol, current_volatility, trend_direction, last_execution_price, 
+             last_execution_time, daily_volume, execution_count)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (symbol) DO NOTHING
+            "#,
+        )
+        .bind(&new_state.symbol)
+        .bind(new_state.current_volatility)
+        .bind(new_state.trend_direction)
+        .bind(new_state.last_execution_price)
+        .bind(new_state.last_execution_time)
+        .bind(new_state.daily_volume)
+        .bind(new_state.execution_count)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(new_state)
+    }
+
+    /// Update market simulation state after an execution
+    pub async fn update_market_state(
+        &self,
+        symbol: &str,
+        execution_price: f64,
+        volume: i64,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE market_simulation_state
+            SET last_execution_price = $2,
+                last_execution_time = $3,
+                daily_volume = daily_volume + $4,
+                execution_count = execution_count + 1
+            WHERE symbol = $1
+            "#,
+        )
+        .bind(symbol)
+        .bind(execution_price)
+        .bind(Utc::now())
+        .bind(volume)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Insert a new price record based on execution
+    pub async fn insert_execution_price(
+        &self,
+        symbol: &str,
+        price: f64,
+        volume: i64,
+    ) -> Result<Uuid> {
+        let id = Uuid::new_v4();
+        let timestamp = Utc::now();
+
+        // Create price record with execution data
+        // For simplicity, use price for all OHLC values
+        sqlx::query(
+            r#"
+            INSERT INTO market_prices (id, symbol, price, open, high, low, volume, timestamp)
+            VALUES ($1, $2, $3, $3, $3, $3, $4, $5)
+            "#,
+        )
+        .bind(id)
+        .bind(symbol)
+        .bind(price)
+        .bind(volume)
+        .bind(timestamp)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(id)
+    }
 }

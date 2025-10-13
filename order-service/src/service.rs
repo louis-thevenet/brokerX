@@ -1,23 +1,28 @@
 use crate::models::{Order, OrderError, OrderId, OrderStatus, UserId};
-use crate::repository::{OrderRepo, OrderRepoExt};
+use crate::repository::OrderRepository;
 use crate::user_client::UserClient;
 use database_adapter::config::DatabaseConfig;
-use database_adapter::db::Repository;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tracing::{debug, error};
 
 pub struct OrderService {
-    order_repo: OrderRepo,
+    order_repo: OrderRepository,
     user_client: Arc<UserClient>,
 }
 
 impl OrderService {
     pub async fn new_with_config(
-        table_name: &str,
+        _table_name: &str,
         db_config: &DatabaseConfig,
         user_service_url: String,
     ) -> color_eyre::Result<Self> {
-        let order_repo = OrderRepo::new_with_url(table_name, &db_config.database_url).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&db_config.database_url)
+            .await?;
+        
+        let order_repo = OrderRepository::new(pool);
         let user_client = Arc::new(UserClient::new(&user_service_url));
 
         Ok(Self {
@@ -49,9 +54,8 @@ impl OrderService {
     ) -> Result<Option<(OrderId, Order)>, OrderError> {
         let order = self
             .order_repo
-            .get(order_id)
-            .await
-            .map_err(OrderError::Repository)?;
+            .get_order_by_id(order_id)
+            .await?;
 
         Ok(order.map(|o| (*order_id, o)))
     }
@@ -124,10 +128,21 @@ impl OrderService {
 
         // Save updated order
         self.order_repo
-            .update_order(order_id, order.clone())
+            .update_order(*order_id, order.clone())
             .await?;
 
         Ok(order)
+    }
+
+    pub async fn update_order_with_execution(
+        &self,
+        order_id: &OrderId,
+        order: Order,
+    ) -> Result<(), OrderError> {
+        self.order_repo
+            .update_order(*order_id, order)
+            .await?;
+        Ok(())
     }
 
     pub async fn cancel_order(

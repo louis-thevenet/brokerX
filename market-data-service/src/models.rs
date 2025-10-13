@@ -100,3 +100,79 @@ impl From<MarketPrice> for MarketPriceResponse {
         }
     }
 }
+
+/// Order execution request from API Gateway
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ExecuteOrderRequest {
+    /// Order ID from order service
+    #[schema(value_type = String)]
+    pub order_id: Uuid,
+    /// Asset symbol
+    #[schema(example = "AAPL")]
+    pub symbol: String,
+    /// Order side (buy or sell)
+    pub side: OrderSide,
+    /// Order type (market or limit)
+    pub order_type: OrderType,
+    /// Quantity of shares
+    #[schema(example = 100)]
+    pub quantity: u64,
+}
+
+/// Order side enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum OrderSide {
+    Buy,
+    Sell,
+}
+
+/// Order type enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum OrderType {
+    Market,
+    Limit { price: f64 },
+}
+
+/// Order execution response to API Gateway
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ExecuteOrderResponse {
+    /// Order ID that was executed
+    #[schema(value_type = String)]
+    pub order_id: Uuid,
+    /// Execution status
+    pub status: ExecutionStatus,
+    /// Number of shares filled
+    #[schema(example = 100)]
+    pub filled_quantity: u64,
+    /// Average execution price (if filled)
+    #[schema(example = 175.50)]
+    pub average_price: Option<f64>,
+    /// Additional information about execution
+    pub message: Option<String>,
+    /// Execution timestamp
+    #[schema(value_type = String)]
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Execution status enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionStatus {
+    FullyFilled,
+    PartiallyFilled,
+    Rejected,
+}
+
+/// Market simulation state for realistic execution
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct MarketSimulationState {
+    pub symbol: String,
+    pub current_volatility: f64,
+    pub trend_direction: f64,
+    pub last_execution_price: Option<f64>,
+    pub last_execution_time: Option<DateTime<Utc>>,
+    pub daily_volume: i64,
+    pub execution_count: i32,
+}

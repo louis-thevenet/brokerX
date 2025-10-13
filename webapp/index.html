@@ -35,6 +35,33 @@
             50% { opacity: 0.5; }
         }
         
+        /* Holdings styles */
+        .holdings-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .summary-card h4 {
+            margin: 0 0 10px 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        .summary-card .value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin: 0;
+        }
+        .profit-positive { color: #4caf50; }
+        .profit-negative { color: #f44336; }
+        
         /* MFA specific styles */
         .info-box { background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
         
@@ -265,6 +292,20 @@
             <div id="market-prices-table"></div>
             
             <div id="market-message"></div>
+        </div>
+        
+        <!-- Holdings Section -->
+        <div id="holdings-section" class="section hidden">
+            <h2>💼 My Holdings</h2>
+            <button onclick="loadHoldings()" style="margin-bottom: 15px;">🔄 Refresh Holdings</button>
+            
+            <!-- Holdings Summary -->
+            <div id="holdings-summary" style="margin-bottom: 20px;"></div>
+            
+            <!-- Holdings Table -->
+            <div id="holdings-table"></div>
+            
+            <div id="holdings-message"></div>
         </div>
         
         <!-- Trading Section -->

@@ -1,8 +1,9 @@
 use crate::error::{ApiError, ApiResult};
 use crate::models::{
-    AuthenticateResponse, CreateOrderRequest, OrderResponse, OrderServicePaginatedResponse,
-    OrderServiceResponse, PaginatedResponse, PaginationQuery, RegisterRequest, UpdateOrderRequest,
-    UpdateUserRequest, UserResponse, UserServiceResponse,
+    AuthenticateResponse, CreateOrderRequest, ExecuteOrderRequest, ExecuteOrderResponse,
+    OrderResponse, OrderServicePaginatedResponse, OrderServiceResponse, PaginatedResponse,
+    PaginationQuery, RegisterRequest, UpdateOrderRequest, UpdateUserRequest, UserResponse,
+    UserServiceResponse,
 };
 use reqwest::Client;
 use serde_json::json;
@@ -196,6 +197,47 @@ impl UserClient {
             )))
         }
     }
+
+    /// Update user holdings after order execution
+    pub async fn update_holdings(
+        &self,
+        user_id: Uuid,
+        symbol: &str,
+        quantity_change: i64,
+        execution_price: f64,
+    ) -> ApiResult<()> {
+        debug!(
+            "Updating holdings for user {}: {} {} @ {}",
+            user_id, quantity_change, symbol, execution_price
+        );
+
+        let response = self
+            .client
+            .post(format!("{}/users/{}/holdings", self.base_url, user_id))
+            .json(&json!({
+                "symbol": symbol,
+                "quantity_change": quantity_change,
+                "execution_price": execution_price
+            }))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            info!("Holdings updated successfully for user {}", user_id);
+            Ok(())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("User not found for holdings update");
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Error updating holdings: {}", error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
 }
 
 pub struct OrderClient {
@@ -375,6 +417,60 @@ impl OrderClient {
             )))
         }
     }
+
+    /// Update order with execution results from market data service
+    pub async fn update_order_execution(
+        &self,
+        order_id: Uuid,
+        execution_status: crate::models::ExecutionStatus,
+        filled_quantity: u64,
+        filled_price: Option<f64>,
+    ) -> ApiResult<OrderResponse> {
+        debug!(
+            "Updating order {} execution: status={:?}, filled={}, price={:?}",
+            order_id, execution_status, filled_quantity, filled_price
+        );
+
+        // Map execution status to order status
+        let order_status = match execution_status {
+            crate::models::ExecutionStatus::FullyFilled => {
+                json!({"status": "filled", "date": chrono::Utc::now()})
+            }
+            crate::models::ExecutionStatus::PartiallyFilled => {
+                json!({"status": "partially_filled", "filled_quantity": filled_quantity})
+            }
+            crate::models::ExecutionStatus::Rejected => {
+                json!({"status": "rejected", "date": chrono::Utc::now()})
+            }
+        };
+
+        let response = self
+            .client
+            .patch(format!("{}/orders/{}/execution", self.base_url, order_id))
+            .json(&json!({
+                "status": order_status,
+                "filled_price": filled_price
+            }))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let order: OrderServiceResponse = response.json().await?;
+            info!("Order {} execution updated successfully", order_id);
+            Ok(order.into_response())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("Order {} not found for execution update", order_id);
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Error updating order execution: {}", error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "Order service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
 }
 
 // ============================================================================
@@ -514,6 +610,64 @@ impl MarketDataClient {
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "Market data service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
+}
+
+// ============================================================================
+// Market Data Client (for Order Execution)
+// ============================================================================
+
+pub struct MarketDataExecutionClient {
+    base_url: String,
+    client: Client,
+}
+
+impl MarketDataExecutionClient {
+    pub fn new(base_url: &str) -> Self {
+        Self {
+            base_url: base_url.to_string(),
+            client: Client::new(),
+        }
+    }
+
+    /// Execute an order through the market data service
+    pub async fn execute_order(
+        &self,
+        request: crate::models::ExecuteOrderRequest,
+    ) -> ApiResult<crate::models::ExecuteOrderResponse> {
+        info!(
+            "Executing order {} for {:?} {} shares of {}",
+            request.order_id, request.side, request.quantity, request.symbol
+        );
+
+        let response = self
+            .client
+            .post(format!("{}/api/v1/execute", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let execution: crate::models::ExecuteOrderResponse = response.json().await?;
+            info!(
+                "Order {} execution result: {:?}, filled: {}, price: {:?}",
+                execution.order_id, execution.status, execution.filled_quantity, execution.average_price
+            );
+            Ok(execution)
+        } else if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            // Order was rejected
+            let execution: crate::models::ExecuteOrderResponse = response.json().await?;
+            info!("Order {} rejected: {:?}", execution.order_id, execution.message);
+            Ok(execution)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Market data execution error {}: {}", status, error_text);
             Err(ApiError::ServiceUnavailable(format!(
                 "Market data service error {}: {}",
                 status, error_text

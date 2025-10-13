@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod execution_simulator;
 mod models;
 mod repository;
 mod service;
@@ -13,7 +14,7 @@ use repository::MarketDataRepository;
 use service::MarketDataService;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{info, debug, error};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -28,12 +29,18 @@ use utoipa_swagger_ui::SwaggerUi;
         api::get_available_symbols,
         api::initialize_market_data,
         api::simulate_price_update,
+        api::execute_order,
     ),
     components(schemas(
         models::MarketPriceResponse,
         models::MarketPricesResponse,
         models::HistoricalPricesResponse,
         models::HistoricalPricesQuery,
+        models::ExecuteOrderRequest,
+        models::ExecuteOrderResponse,
+        models::OrderSide,
+        models::OrderType,
+        models::ExecutionStatus,
         api::HealthResponse,
         api::MessageResponse,
         api::SymbolsResponse,
@@ -43,6 +50,7 @@ use utoipa_swagger_ui::SwaggerUi;
         (name = "prices", description = "Market price operations"),
         (name = "symbols", description = "Symbol management"),
         (name = "admin", description = "Administrative operations"),
+        (name = "execution", description = "Order execution simulation"),
         (name = "health", description = "Health check operations")
     )
 )]
@@ -67,13 +75,17 @@ async fn main() -> color_eyre::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("Either MARKET_DATA_DATABASE_URL or DATABASE_URL must be set");
 
-    info!("Starting Market Data Service on port {}", config.port);
+    info!("Starting Market Data Service");
+    info!("Port: {}", config.port);
+    info!("Database: {}", market_data_db_url.split('@').last().unwrap_or("***"));
 
     // Initialize database connection using sqlx
+    info!("Connecting to database...");
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
         .connect(&market_data_db_url)
         .await?;
+    info!("Database connection established");
 
     // Run migrations
     info!("Running database migrations...");
@@ -81,11 +93,16 @@ async fn main() -> color_eyre::Result<()> {
         .run(&pool)
         .await
         .expect("Failed to run migrations");
+    info!("Migrations completed successfully");
 
     let repository = MarketDataRepository::new(pool);
-    let market_data_service = Arc::new(MarketDataService::new(repository));
+    let market_data_service = Arc::new(MarketDataService::new(repository.clone()));
+    let execution_simulator = Arc::new(execution_simulator::ExecutionSimulator::new(repository));
+
+    info!("Services initialized");
 
     // Start background task for periodic price simulation
+    info!("Starting background price simulation task (30s interval)");
     let simulation_service = market_data_service.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
@@ -93,14 +110,14 @@ async fn main() -> color_eyre::Result<()> {
         
         loop {
             interval.tick().await;
-            info!("🔄 Running scheduled price simulation...");
+            debug!("[SCHEDULED] Running price simulation");
             
             match simulation_service.simulate_price_update().await {
                 Ok(count) => {
-                    info!("✅ Simulated price update for {} symbols", count);
+                    debug!("[SIMULATION] Updated {} symbols", count);
                 }
                 Err(e) => {
-                    tracing::error!("❌ Price simulation failed: {}", e);
+                    error!("[SIMULATION] Error: {}", e);
                 }
             }
         }
@@ -108,6 +125,7 @@ async fn main() -> color_eyre::Result<()> {
 
     let app_state = AppState {
         market_data_service,
+        execution_simulator,
     };
     
     // Build the router
@@ -124,6 +142,8 @@ async fn main() -> color_eyre::Result<()> {
         .route("/api/v1/symbols", get(api::get_available_symbols))
         .route("/api/v1/initialize", post(api::initialize_market_data))
         .route("/api/v1/simulate", post(api::simulate_price_update))
+        // Order execution endpoint
+        .route("/api/v1/execute", post(api::execute_order))
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Add state and middleware
@@ -133,11 +153,8 @@ async fn main() -> color_eyre::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;
 
-    info!(
-        "Market Data Service listening on {}",
-        listener.local_addr()?
-    );
-    info!("📊 Periodic price simulation enabled (every 30 seconds)");
+    info!("Market Data Service listening on {}", listener.local_addr()?);
+    info!("Swagger UI available at http://localhost:{}/swagger-ui", config.port);
 
     axum::serve(listener, app).await?;
 

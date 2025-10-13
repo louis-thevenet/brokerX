@@ -393,6 +393,7 @@ pub async fn create_order(
         ));
     }
 
+    // Step 1: Create order in Order Service with Pending status
     let order = match state
         .order_client
         .create_order(user_id, &order_request)
@@ -404,9 +405,93 @@ pub async fn create_order(
             return Err(e);
         }
     };
+    info!("Order {} created with status Pending", order.id);
 
-    info!("Order created with ID: {}", order.id);
-    Ok((StatusCode::CREATED, Json(order)))
+    // Step 2: Execute order with Market Data Service
+    let execution_request = crate::models::ExecuteOrderRequest {
+        order_id: order.id,
+        symbol: order_request.symbol.clone(),
+        side: order_request.order_side.clone(),
+        order_type: order_request.order_type.clone(),
+        quantity: order_request.quantity,
+    };
+
+    let execution_result = match state
+        .market_data_execution_client
+        .execute_order(execution_request)
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Order {} execution failed: {}", order.id, e);
+            // Order exists but execution failed - it remains Pending
+            // Return the order with pending status
+            return Ok((StatusCode::CREATED, Json(order)));
+        }
+    };
+
+    info!(
+        "Order {} execution result: {:?}, filled: {}/{}, price: {:?}",
+        order.id,
+        execution_result.status,
+        execution_result.filled_quantity,
+        order.quantity,
+        execution_result.average_price
+    );
+
+    // Step 3: Update order with execution results
+    let updated_order = match state
+        .order_client
+        .update_order_execution(
+            order.id,
+            execution_result.status.clone(),
+            execution_result.filled_quantity,
+            execution_result.average_price,
+        )
+        .await
+    {
+        Ok(updated) => updated,
+        Err(e) => {
+            error!("Failed to update order {} with execution results: {}", order.id, e);
+            // Return original order if update fails
+            return Ok((StatusCode::CREATED, Json(order)));
+        }
+    };
+
+    // Step 4: Update user holdings if order was filled (fully or partially)
+    if matches!(
+        execution_result.status,
+        crate::models::ExecutionStatus::FullyFilled
+            | crate::models::ExecutionStatus::PartiallyFilled
+    ) {
+        if let Some(exec_price) = execution_result.average_price {
+            let quantity_change = match order_request.order_side {
+                OrderSide::Buy => execution_result.filled_quantity as i64,
+                OrderSide::Sell => -(execution_result.filled_quantity as i64),
+            };
+
+            if let Err(e) = state
+                .user_client
+                .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
+                .await
+            {
+                error!(
+                    "Failed to update holdings for user {} after order {}: {}",
+                    user_id, order.id, e
+                );
+                // Note: Order is executed but holdings update failed
+                // In production, this would need compensation logic
+            } else {
+                info!(
+                    "Updated holdings for user {}: {} {} shares @ ${}",
+                    user_id, quantity_change, order_request.symbol, exec_price
+                );
+            }
+        }
+    }
+
+    info!("Order {} completed successfully", updated_order.id);
+    Ok((StatusCode::CREATED, Json(updated_order)))
 }
 
 /// Get user's orders with pagination and filtering

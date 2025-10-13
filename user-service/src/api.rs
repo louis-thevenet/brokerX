@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -35,6 +35,13 @@ pub struct UpdateUserRequest {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct DepositRequest {
     pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateHoldingsRequest {
+    pub symbol: String,
+    pub quantity_change: i64,
+    pub execution_price: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -271,6 +278,62 @@ pub async fn deposit_funds(
         }
     }
 }
+
+/// Update user holdings after order execution
+#[utoipa::path(
+    post,
+    path = "/users/{id}/holdings",
+    request_body = UpdateHoldingsRequest,
+    responses(
+        (status = 200, description = "Holdings updated successfully"),
+        (status = 404, description = "User not found"),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    tag = "users"
+)]
+pub async fn update_holdings(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<UpdateHoldingsRequest>,
+) -> impl IntoResponse {
+    info!(
+        "Updating holdings for user {}: {} {} @ {}",
+        user_id, payload.quantity_change, payload.symbol, payload.execution_price
+    );
+
+    if payload.execution_price <= 0.0 {
+        return (StatusCode::BAD_REQUEST, "Execution price must be positive").into_response();
+    }
+
+    match state
+        .user_service
+        .update_user_holding(&user_id, &payload.symbol, payload.quantity_change, payload.execution_price)
+        .await
+    {
+        Ok(()) => {
+            info!(
+                "Updated holdings for user {}: {} {}",
+                user_id, payload.quantity_change, payload.symbol
+            );
+            StatusCode::OK.into_response()
+        }
+        Err(e) => {
+            error!("Error updating holdings for user {}: {}", user_id, e);
+            match e {
+                AuthError::UserNotFound => (StatusCode::NOT_FOUND, "User not found").into_response(),
+                AuthError::NotEnoughMoneyError => {
+                    (StatusCode::BAD_REQUEST, "Insufficient shares to sell").into_response()
+                }
+                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+    }
+}
+
 /// Get user by email
 #[utoipa::path(
     get,

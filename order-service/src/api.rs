@@ -28,6 +28,12 @@ pub struct UpdateOrderRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateOrderExecutionRequest {
+    pub status: Option<OrderStatus>,
+    pub filled_price: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct OrderResponse {
     pub id: Uuid,
     pub client_id: Uuid,
@@ -182,15 +188,22 @@ pub async fn create_order(
     };
 
     match state.order_service.create_order(order).await {
-        Ok((order_id, order)) => (
-            StatusCode::CREATED,
-            Json(OrderResponse::from((order_id, order))),
-        )
-            .into_response(),
+        Ok((order_id, order)) => {
+            info!("Order created successfully: {}", order_id);
+            (
+                StatusCode::CREATED,
+                Json(OrderResponse::from((order_id, order))),
+            )
+                .into_response()
+        }
         Err(OrderError::UserValidationFailed) => {
+            error!("User validation failed for client_id: {}", payload.client_id);
             (StatusCode::NOT_FOUND, "User not found").into_response()
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => {
+            error!("Error creating order: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 
@@ -210,6 +223,9 @@ pub async fn get_orders(
     State(state): State<AppState>,
     Query(query): Query<GetOrdersQuery>,
 ) -> impl IntoResponse {
+    info!("Getting orders with query: client_id={:?}, page={}, limit={}", 
+          query.client_id, query.page, query.limit);
+    
     // Validate pagination
     if query.limit > 100 {
         return (StatusCode::BAD_REQUEST, "Limit cannot exceed 100").into_response();
@@ -231,6 +247,7 @@ pub async fn get_orders(
         .await
     {
         Ok((orders, total)) => {
+            info!("Found {} orders for user {}, total: {}", orders.len(), client_id, total);
             let order_responses: Vec<OrderResponse> =
                 orders.into_iter().map(OrderResponse::from).collect();
             let total_pages = ((total as f64) / (query.limit as f64)).ceil() as u32;
@@ -246,7 +263,10 @@ pub async fn get_orders(
             })
             .into_response()
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => {
+            error!("Error getting orders: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }
 
@@ -366,5 +386,69 @@ pub async fn cancel_order(
             (StatusCode::CONFLICT, "Order cannot be cancelled").into_response()
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+/// Update order with execution results from market data service
+#[utoipa::path(
+    patch,
+    path = "/orders/{id}/execution",
+    request_body = UpdateOrderExecutionRequest,
+    responses(
+        (status = 200, description = "Order execution updated", body = OrderResponse),
+        (status = 404, description = "Order not found"),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Order ID")
+    ),
+    tag = "orders"
+)]
+pub async fn update_order_execution(
+    State(state): State<AppState>,
+    Path(order_id_str): Path<String>,
+    Json(payload): Json<UpdateOrderExecutionRequest>,
+) -> impl IntoResponse {
+    info!("Updating execution for order: {}", order_id_str);
+    
+    let order_id = if let Ok(id) = Uuid::parse_str(&order_id_str) {
+        id
+    } else {
+        error!("Invalid UUID format for order ID: {}", order_id_str);
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    // Get the order first
+    let (_, mut order) = match state.order_service.get_order(&order_id).await {
+        Ok(Some(order)) => order,
+        Ok(None) => {
+            error!("Order not found: {}", order_id);
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        Err(e) => {
+            error!("Error retrieving order {}: {:?}", order_id, e);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    // Update order with execution results
+    order.filled_price = payload.filled_price;
+    
+    // Update status based on execution result
+    if let Some(status) = payload.status {
+        order.status = status;
+    }
+
+    // Save updated order using the service method
+    match state.order_service.update_order_with_execution(&order_id, order.clone()).await {
+        Ok(()) => {
+            info!("Order {} execution updated successfully", order_id);
+            Json(OrderResponse::from((order_id, order))).into_response()
+        }
+        Err(e) => {
+            error!("Error updating order {} execution: {:?}", order_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
     }
 }

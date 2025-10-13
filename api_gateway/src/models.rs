@@ -298,6 +298,40 @@ pub struct SymbolsResponse {
 }
 
 // ============================================================================
+// Order Execution Models (for Market Data Service communication)
+// ============================================================================
+
+/// Request to market data service for order execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteOrderRequest {
+    pub order_id: Uuid,
+    pub symbol: String,
+    pub side: OrderSide,
+    pub order_type: OrderType,
+    pub quantity: u64,
+}
+
+/// Response from market data service after execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecuteOrderResponse {
+    pub order_id: Uuid,
+    pub status: ExecutionStatus,
+    pub filled_quantity: u64,
+    pub average_price: Option<f64>,
+    pub message: Option<String>,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Execution status from market data service
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionStatus {
+    FullyFilled,
+    PartiallyFilled,
+    Rejected,
+}
+
+// ============================================================================
 // Internal service communication DTOs
 // These mirror the service models but are independent
 // ============================================================================

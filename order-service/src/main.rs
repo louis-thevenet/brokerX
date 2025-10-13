@@ -36,6 +36,7 @@ pub struct AppState {
         api::get_orders,
         api::update_order,
         api::cancel_order,
+        api::update_order_execution,
     ),
     components(schemas(
         models::Order,
@@ -44,6 +45,7 @@ pub struct AppState {
         models::OrderType,
         api::CreateOrderRequest,
         api::UpdateOrderRequest,
+        api::UpdateOrderExecutionRequest,
         api::OrderResponse,
         api::PaginatedOrdersResponse,
         api::PaginationInfo,
@@ -96,6 +98,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/orders/{id}", get(api::get_order))
         .route("/orders/{id}", put(api::update_order))
         .route("/orders/{id}", delete(api::cancel_order))
+        .route("/orders/{id}/execution", axum::routing::patch(api::update_order_execution))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
