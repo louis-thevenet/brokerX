@@ -11,11 +11,6 @@ pub struct UserService {
 }
 
 impl UserService {
-    pub async fn new(table_name: &str) -> Result<Self, DbError> {
-        let user_repo = PostgresRepo::new(table_name).await?;
-        Ok(Self { user_repo })
-    }
-
     /// Create `UserService` with dedicated user database
     pub async fn new_with_config(
         table_name: &str,
@@ -25,12 +20,12 @@ impl UserService {
         Ok(Self { user_repo })
     }
 
-    /// Get user by ID - API endpoint
+    /// Get user by ID
     pub async fn get_user(&self, user_id: &UserId) -> Result<Option<User>, DbError> {
         self.user_repo.get(user_id).await
     }
 
-    /// Create a new user - API endpoint
+    /// Create a new user
     pub async fn create_user(
         &self,
         email: String,
@@ -44,7 +39,7 @@ impl UserService {
             .await
     }
 
-    /// Authenticate user - API endpoint
+    /// Authenticate user
     pub async fn authenticate_user(
         &self,
         email: &str,
@@ -53,12 +48,12 @@ impl UserService {
         self.user_repo.authenticate_user(email, password).await
     }
 
-    /// Get user by email - API endpoint
+    /// Get user by email
     pub async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
         self.user_repo.get_user_by_email(email).await
     }
 
-    /// Verify user email - API endpoint
+    /// Verify user email
     pub async fn verify_user_email(&self, user_id: &UserId) -> Result<(), AuthError> {
         let mut user = self
             .user_repo
@@ -76,29 +71,12 @@ impl UserService {
         Ok(())
     }
 
-    /// Update user balance - API endpoint for order processing
-    pub async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        self.user_repo.withdraw_from_user(user_id, amount).await
-    }
-
-    /// Add funds to user account - API endpoint for order processing  
+    /// Add funds to user account
     pub async fn deposit_to_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
         self.user_repo.deposit_to_user(user_id, amount).await
     }
 
-    /// Update user holdings - API endpoint for portfolio updates
-    pub async fn update_user_holding(
-        &self,
-        user_id: &UserId,
-        symbol: &str,
-        quantity_change: i64,
-        execution_price: f64,
-    ) -> Result<(), AuthError> {
-        self.user_repo
-            .update_user_holding(user_id, symbol, quantity_change, execution_price)
-            .await
-    }
-
+    /// Update user details
     pub async fn update_user(&self, user_id: &UserId, updated_user: User) -> Result<(), AuthError> {
         self.user_repo
             .update(*user_id, updated_user)

@@ -14,6 +14,7 @@ use axum::{
 };
 use database_adapter::config::DatabaseConfig;
 use service::OrderService;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing::info;
@@ -54,11 +55,10 @@ async fn main() -> color_eyre::Result<()> {
 
     // Load environment variables from .env file
     dotenvy::dotenv().ok();
-
     // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .compact()
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_default())
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
     // Load configuration

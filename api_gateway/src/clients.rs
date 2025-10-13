@@ -1,5 +1,9 @@
 use crate::error::{ApiError, ApiResult};
-use crate::models::*;
+use crate::models::{
+    AuthenticateResponse, CreateOrderRequest, OrderResponse, OrderServiceResponse,
+    PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest, UpdateOrderRequest,
+    UpdateUserRequest, UserResponse, UserServiceResponse,
+};
 use reqwest::Client;
 use serde_json::json;
 use tracing::{debug, error, info};
@@ -79,7 +83,7 @@ impl UserClient {
     pub async fn get_user(&self, user_id: Uuid) -> ApiResult<UserResponse> {
         let response = self
             .client
-            .get(&format!("{}/users/{}", self.base_url, user_id))
+            .get(format!("{}/users/{}", self.base_url, user_id))
             .send()
             .await?;
 
@@ -92,8 +96,7 @@ impl UserClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "User service error {}: {}",
-                status, error_text
+                "User service error {status}: {error_text}"
             )))
         }
     }
@@ -105,7 +108,7 @@ impl UserClient {
     ) -> ApiResult<UserResponse> {
         let response = self
             .client
-            .put(&format!("{}/users/{}", self.base_url, user_id))
+            .put(format!("{}/users/{}", self.base_url, user_id))
             .json(request)
             .send()
             .await?;
@@ -119,8 +122,7 @@ impl UserClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "User service error {}: {}",
-                status, error_text
+                "User service error {status}: {error_text}"
             )))
         }
     }
@@ -128,7 +130,7 @@ impl UserClient {
     pub async fn verify_email(&self, user_id: Uuid) -> ApiResult<()> {
         let response = self
             .client
-            .post(&format!("{}/users/{}/verify", self.base_url, user_id))
+            .post(format!("{}/users/{}/verify", self.base_url, user_id))
             .send()
             .await?;
 
@@ -138,8 +140,7 @@ impl UserClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "User service error {}: {}",
-                status, error_text
+                "User service error {status}: {error_text}"
             )))
         }
     }
@@ -217,7 +218,7 @@ impl OrderClient {
     ) -> ApiResult<OrderResponse> {
         let response = self
             .client
-            .post(&format!("{}/orders", self.base_url))
+            .post(format!("{}/orders", self.base_url))
             .json(&json!({
                 "client_id": user_id,
                 "symbol": request.symbol,
@@ -238,8 +239,7 @@ impl OrderClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Order service error {}: {}",
-                status, error_text
+                "Order service error {status}: {error_text}"
             )))
         }
     }
@@ -247,7 +247,7 @@ impl OrderClient {
     pub async fn get_order(&self, user_id: Uuid, order_id: Uuid) -> ApiResult<OrderResponse> {
         let response = self
             .client
-            .get(&format!("{}/orders/{}", self.base_url, order_id))
+            .get(format!("{}/orders/{}", self.base_url, order_id))
             .send()
             .await?;
 
@@ -265,8 +265,7 @@ impl OrderClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Order service error {}: {}",
-                status, error_text
+                "Order service error {status}: {error_text}"
             )))
         }
     }

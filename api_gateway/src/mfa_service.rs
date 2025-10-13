@@ -1,8 +1,7 @@
 /// Centralized MFA Service
-/// 
+///
 /// This module provides a clean, professional API for MFA operations in the API Gateway.
 /// It encapsulates all MFA logic and provides clear, REST-compliant methods.
-
 use crate::error::{ApiError, ApiResult};
 use mfa_adapter::{EmailOtpProvider, MfaError, MfaProvider};
 use std::sync::Arc;
@@ -19,7 +18,7 @@ impl MfaService {
     }
 
     /// Initiate an MFA challenge by sending an OTP to the user's email
-    /// 
+    ///
     /// # Returns
     /// The challenge ID that must be used to verify the OTP
     pub async fn initiate_challenge(&self, email: &str) -> ApiResult<String> {
@@ -30,7 +29,7 @@ impl MfaService {
     }
 
     /// Verify an MFA challenge with the provided code
-    /// 
+    ///
     /// # Returns
     /// - Ok(user_email) if verification is successful
     /// - Err if the code is invalid, challenge not found, or expired
@@ -72,12 +71,10 @@ impl MfaService {
             MfaError::ChallengeNotFound => {
                 ApiError::BadRequest("MFA challenge not found".to_string())
             }
-            MfaError::ChallengeExpired => {
-                ApiError::BadRequest("MFA challenge has expired. Please request a new code.".to_string())
-            }
-            MfaError::InvalidCode => {
-                ApiError::BadRequest("Invalid verification code".to_string())
-            }
+            MfaError::ChallengeExpired => ApiError::BadRequest(
+                "MFA challenge has expired. Please request a new code.".to_string(),
+            ),
+            MfaError::InvalidCode => ApiError::BadRequest("Invalid verification code".to_string()),
             MfaError::SendingFailed(msg) => {
                 ApiError::InternalServerError(format!("Failed to send verification code: {}", msg))
             }

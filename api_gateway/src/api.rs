@@ -2,7 +2,13 @@ use crate::AppState;
 use crate::auth::JwtService;
 use crate::error::{ApiError, ApiResult};
 use crate::middleware::AuthenticatedUser;
-use crate::models::*;
+use crate::models::{
+    CreateOrderRequest, DepositRequest, ErrorResponse, HealthResponse, HoldingResponse,
+    LoginRequest, LoginResponse, LogoutRequest, MessageResponse, MfaChallengeResponse,
+    OrderResponse, OrderSide, OrderStatus, OrderType, PaginatedResponse, PaginationInfo,
+    PaginationQuery, RegisterRequest, RegisterResponse, UpdateOrderRequest, UpdateUserRequest,
+    UserResponse, VerifyMfaRequest, VerifyMfaResponse,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -208,18 +214,14 @@ pub async fn verify_login_mfa(
         .verify_challenge(&verify_request.challenge_id, &verify_request.code)
         .await?;
 
-    // Get user by email
     let user_id = state.user_client.get_user_id_by_email(&user_email).await?;
-
-    // Check if user is already verified
     let user = state.user_client.get_user(user_id).await?;
 
-    // Mark as verified if this is their first successful MFA (prevents re-verification)
-    if !user.is_verified {
+    if user.is_verified {
+        info!("User {} completed MFA (already verified)", user_id);
+    } else {
         state.user_client.verify_email(user_id).await?;
         info!("User {} marked as verified (first login)", user_id);
-    } else {
-        info!("User {} completed MFA (already verified)", user_id);
     }
 
     // Issue JWT token
@@ -237,7 +239,6 @@ pub async fn verify_login_mfa(
 /// Logout
 ///
 /// Client-side logout. The client should delete its token.
-/// In a production system with token blacklisting, this would invalidate the token server-side.
 #[utoipa::path(
     post,
     path = "/auth/logout",
