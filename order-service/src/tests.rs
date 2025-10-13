@@ -56,11 +56,10 @@ mod tests {
         let app = Router::new()
             .route("/health", axum::routing::get(crate::api::health_check))
             .route("/orders", axum::routing::post(crate::api::create_order))
+            .route("/orders", axum::routing::get(crate::api::get_orders))
             .route("/orders/{id}", axum::routing::get(crate::api::get_order))
-            .route(
-                "/orders/user/{user_id}",
-                axum::routing::get(crate::api::get_orders_for_user),
-            )
+            .route("/orders/{id}", axum::routing::put(crate::api::update_order))
+            .route("/orders/{id}", axum::routing::delete(crate::api::cancel_order))
             .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
             .layer(CorsLayer::permissive())
             .with_state(app_state);
@@ -131,7 +130,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/orders/user/{}", user_id))
+                    .uri(&format!("/orders?client_id={}", user_id))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -143,7 +142,8 @@ mod tests {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
-        let orders: Vec<Value> = serde_json::from_slice(&body).unwrap();
+        let response_data: Value = serde_json::from_slice(&body).unwrap();
+        let orders = response_data.get("data").unwrap().as_array().unwrap();
         assert!(orders.is_empty(), "New user should have no orders");
     }
 
@@ -156,7 +156,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/orders/user/{}", non_existent_id))
+                    .uri(&format!("/orders?client_id={}", non_existent_id))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -167,7 +167,8 @@ mod tests {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
-        let orders: Vec<Value> = serde_json::from_slice(&body).unwrap();
+        let response_data: Value = serde_json::from_slice(&body).unwrap();
+        let orders = response_data.get("data").unwrap().as_array().unwrap();
         assert!(orders.is_empty());
     }
 
@@ -179,7 +180,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri("/orders/user/invalid-uuid")
+                    .uri("/orders?client_id=invalid-uuid")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -267,7 +268,7 @@ mod tests {
             symbol: "GOOGL".to_string(),
             quantity: 5,
             order_side: OrderSide::Sell,
-            order_type: OrderType::Limit(150.0),
+            order_type: OrderType::Limit { price: 150.0 },
         };
 
         let request_body = serde_json::to_string(&create_request).unwrap();
@@ -349,13 +350,15 @@ mod tests {
     async fn test_order_type_serialization() {
         // Test that our order types serialize/deserialize correctly
         let market_order = OrderType::Market;
-        let limit_order = OrderType::Limit(100.0);
+        let limit_order = OrderType::Limit { price: 100.0 };
 
         let market_json = serde_json::to_string(&market_order).unwrap();
         let limit_json = serde_json::to_string(&limit_order).unwrap();
 
-        assert_eq!(market_json, "\"Market\"");
-        assert!(limit_json.contains("Limit") && limit_json.contains("100"));
+        // Market order serializes as tagged enum: {"type":"market"}
+        assert!(market_json.contains("market"));
+        // Limit order serializes as tagged enum with price: {"type":"limit","price":100.0}
+        assert!(limit_json.contains("limit") && limit_json.contains("100"));
 
         // Test deserialization
         let deserialized_market: OrderType = serde_json::from_str(&market_json).unwrap();
@@ -367,7 +370,7 @@ mod tests {
         }
 
         match deserialized_limit {
-            OrderType::Limit(price) => assert_eq!(price, 100.0),
+            OrderType::Limit { price } => assert_eq!(price, 100.0),
             _ => panic!("Expected Limit order type"),
         }
     }
@@ -380,7 +383,7 @@ mod tests {
         let buy_json = serde_json::to_string(&buy).unwrap();
         let sell_json = serde_json::to_string(&sell).unwrap();
 
-        assert_eq!(buy_json, "\"Buy\"");
-        assert_eq!(sell_json, "\"Sell\"");
+        assert_eq!(buy_json, "\"buy\"");
+        assert_eq!(sell_json, "\"sell\"");
     }
 }
