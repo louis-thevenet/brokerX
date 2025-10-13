@@ -37,6 +37,7 @@ pub struct AuthenticateRequest {
 pub struct AuthenticateResponse {
     pub authenticated: bool,
     pub message: String,
+    pub user_id: Option<Uuid>,
 }
 
 impl UserClient {

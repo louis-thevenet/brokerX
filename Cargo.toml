@@ -4,8 +4,9 @@ members = [
     "domain", 
     "mfa_adapter", 
     "user-service",
-    "order-service"
-, "api_gateway"]
+    "order-service",
+    "api_gateway"
+]
 resolver = "3"
 
 [workspace.package]

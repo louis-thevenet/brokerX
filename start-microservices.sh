@@ -29,10 +29,10 @@ cargo build --release -p order-service
 cargo run --release -p order-service &
 ORDER_PID=$!
 
-echo "🌐 Starting API Gateway on port ${API_GATEWAY_PORT:-8080}..."
-cargo build --release -p api_gateway
-cargo run --release -p api_gateway &
-GATEWAY_PID=$!
+# echo "🌐 Starting API Gateway on port ${API_GATEWAY_PORT:-8080}..."
+# cargo build --release -p api_gateway
+# cargo run --release -p api_gateway &
+# GATEWAY_PID=$!
 
 
 echo ""

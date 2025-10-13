@@ -13,5 +13,10 @@ echo "1️⃣  Starting databases..."
 sudo ./start-databases.sh
 
 echo ""
-echo "2️⃣  Starting microservices..."
+echo "2️⃣  Starting web application..."
+./webapp/start-webapp.sh &
+
+echo ""
+echo "3️⃣2️⃣ Starting microservices..."
 ./start-microservices.sh
+

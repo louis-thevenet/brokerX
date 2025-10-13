@@ -8,6 +8,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
+use tracing::{debug, error, info};
 use utoipa::OpenApi;
 use uuid::Uuid;
 
@@ -17,37 +18,43 @@ use uuid::Uuid;
         health_check,
         register,
         login,
+        verify_login_mfa,
+        logout,
         get_me,
         update_me,
-        verify_email,
         deposit_funds,
         create_order,
         get_my_orders,
         get_order,
         update_order,
-        cancel_order
+        cancel_order,
     ),
     components(
         schemas(
             HealthResponse,
             RegisterRequest,
+            RegisterResponse,
             LoginRequest,
             LoginResponse,
             LogoutRequest,
-            User,
+            UserResponse,
+            HoldingResponse,
             UpdateUserRequest,
-            VerifyEmailRequest,
             DepositRequest,
             CreateOrderRequest,
             UpdateOrderRequest,
-            Order,
+            OrderResponse,
             OrderSide,
             OrderType,
             OrderStatus,
             PaginationQuery,
-            PaginatedResponse<Order>,
+            PaginatedResponse<OrderResponse>,
             PaginationInfo,
-            MessageResponse
+            MessageResponse,
+            MfaChallengeResponse,
+            VerifyMfaRequest,
+            VerifyMfaResponse,
+            ErrorResponse
         )
     ),
     tags(
@@ -78,12 +85,15 @@ pub async fn health_check() -> impl IntoResponse {
 }
 
 /// Register a new user
+/// 
+/// Creates a new user account and automatically initiates email verification.
+/// The user must complete MFA verification before they can log in.
 #[utoipa::path(
     post,
     path = "/auth/register",
     request_body = RegisterRequest,
     responses(
-        (status = 201, description = "User registered successfully", body = MessageResponse),
+        (status = 201, description = "User registered successfully", body = RegisterResponse),
         (status = 400, description = "Invalid request"),
         (status = 409, description = "User already exists")
     ),
@@ -93,6 +103,8 @@ pub async fn register(
     State(state): State<AppState>,
     Json(request): Json<RegisterRequest>,
 ) -> ApiResult<impl IntoResponse> {
+    debug!("Register attempt for email: {}", request.email);
+
     // Validate request
     if request.email.is_empty() || request.password.is_empty() {
         return Err(ApiError::BadRequest(
@@ -100,30 +112,35 @@ pub async fn register(
         ));
     }
 
-    if request.initial_balance < 0.0 {
-        return Err(ApiError::BadRequest(
-            "Initial balance cannot be negative".to_string(),
-        ));
-    }
-
+    // Create user in user service
+    info!("Creating user for {}", request.email);
     let user_id = state.user_client.create_user(&request).await?;
+    info!("User created with ID: {}", user_id);
 
+    // MFA challenge will be sent when user attempts to login
     Ok((
         StatusCode::CREATED,
-        Json(MessageResponse {
-            message: format!("User registered successfully with ID: {}", user_id),
+        Json(RegisterResponse {
+            user_id: user_id.to_string(),
+            message: "Registration successful. Please login to verify your email and complete the process."
+                .to_string(),
+            requires_verification: true,
         }),
     ))
 }
 
 /// Login and get JWT token
+/// 
+/// MFA is required for all login attempts. A challenge ID will be returned
+/// that must be verified with /auth/verify-login to complete authentication.
 #[utoipa::path(
     post,
     path = "/auth/login",
     request_body = LoginRequest,
     responses(
-        (status = 200, description = "Login successful", body = LoginResponse),
-        (status = 401, description = "Invalid credentials")
+        (status = 200, description = "MFA challenge sent", body = LoginResponse),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
     ),
     tag = "auth"
 )]
@@ -131,22 +148,93 @@ pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<impl IntoResponse> {
+    info!("Login attempt for {}", request.email);
+    
+    // Authenticate user credentials
     let user_id = state
         .user_client
         .authenticate_user(&request.email, &request.password)
-        .await?;
+        .await
+        .map_err(|e| {
+            error!("Authentication failed for {}: {}", request.email, e);
+            e
+        })?;
 
-    let jwt_service = JwtService::new(&state.config.jwt_secret, state.config.jwt_expiry_hours);
-    let (token, expires_at) = jwt_service.create_token(user_id)?;
-
+    // Get user info
+    let user = state.user_client.get_user(user_id).await?;
+    
+    // ALWAYS send MFA challenge for all users (maximum security)
+    info!("Initiating MFA challenge for user {}", user_id);
+    let challenge_id = state.mfa_service.initiate_challenge(&user.email).await?;
+    
     Ok(Json(LoginResponse {
-        token,
         user_id,
-        expires_at,
+        challenge_id,
+        message: "Multi-factor authentication required. Please check your email for the verification code.".to_string(),
     }))
 }
 
-/// Logout (invalidate token)
+/// Verify login MFA challenge
+/// 
+/// Complete the login process by verifying the MFA code sent to the user's email.
+/// All login attempts require MFA verification for maximum security.
+#[utoipa::path(
+    post,
+    path = "/auth/verify-login",
+    request_body = VerifyMfaRequest,
+    responses(
+        (status = 200, description = "MFA verification successful, token issued", body = VerifyMfaResponse),
+        (status = 400, description = "Invalid verification code or challenge"),
+        (status = 404, description = "Challenge not found or expired")
+    ),
+    tag = "auth"
+)]
+pub async fn verify_login_mfa(
+    State(state): State<AppState>,
+    Json(verify_request): Json<VerifyMfaRequest>,
+) -> ApiResult<impl IntoResponse> {
+    info!("Verifying MFA for challenge: {}", verify_request.challenge_id);
+
+    if verify_request.challenge_id.is_empty() {
+        return Err(ApiError::BadRequest("Challenge ID is required".to_string()));
+    }
+
+    // Verify the MFA challenge
+    let user_email = state
+        .mfa_service
+        .verify_challenge(&verify_request.challenge_id, &verify_request.code)
+        .await?;
+
+    // Get user by email
+    let user_id = state.user_client.get_user_id_by_email(&user_email).await?;
+    
+    // Check if user is already verified
+    let user = state.user_client.get_user(user_id).await?;
+    
+    // Mark as verified if this is their first successful MFA (prevents re-verification)
+    if !user.is_verified {
+        state.user_client.verify_email(user_id).await?;
+        info!("User {} marked as verified (first login)", user_id);
+    } else {
+        info!("User {} completed MFA (already verified)", user_id);
+    }
+
+    // Issue JWT token
+    let jwt_service = JwtService::new(&state.config.jwt_secret, state.config.jwt_expiry_hours);
+    let (token, expires_at) = jwt_service.create_token(user_id)?;
+
+    Ok(Json(VerifyMfaResponse {
+        token,
+        user_id,
+        expires_at,
+        message: "Authentication successful. You are now logged in.".to_string(),
+    }))
+}
+
+/// Logout
+/// 
+/// Client-side logout. The client should delete its token.
+/// In a production system with token blacklisting, this would invalidate the token server-side.
 #[utoipa::path(
     post,
     path = "/auth/logout",
@@ -157,8 +245,6 @@ pub async fn login(
     tag = "auth"
 )]
 pub async fn logout() -> ApiResult<impl IntoResponse> {
-    // In a stateless JWT system, logout is typically handled client-side
-    // For more security, you could implement a token blacklist
     Ok(Json(MessageResponse {
         message: "Logout successful".to_string(),
     }))
@@ -169,7 +255,7 @@ pub async fn logout() -> ApiResult<impl IntoResponse> {
     get,
     path = "/me",
     responses(
-        (status = 200, description = "User profile", body = User),
+        (status = 200, description = "User profile", body = UserResponse),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "User not found")
     ),
@@ -192,7 +278,7 @@ pub async fn get_me(
     path = "/me",
     request_body = UpdateUserRequest,
     responses(
-        (status = 200, description = "User updated successfully", body = User),
+        (status = 200, description = "User updated successfully", body = UserResponse),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "User not found")
     ),
@@ -213,40 +299,13 @@ pub async fn update_me(
     Ok(Json(user))
 }
 
-/// Verify email address
-#[utoipa::path(
-    post,
-    path = "/me/verify-email",
-    request_body = VerifyEmailRequest,
-    responses(
-        (status = 200, description = "Email verified successfully", body = MessageResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 400, description = "Invalid verification code")
-    ),
-    security(
-        ("bearer_auth" = [])
-    ),
-    tag = "user"
-)]
-pub async fn verify_email(
-    State(state): State<AppState>,
-    AuthenticatedUser(user_id): AuthenticatedUser,
-    Json(_verify_request): Json<VerifyEmailRequest>,
-) -> ApiResult<impl IntoResponse> {
-    state.user_client.verify_email(user_id).await?;
-
-    Ok(Json(MessageResponse {
-        message: "Email verified successfully".to_string(),
-    }))
-}
-
 /// Deposit funds to user account
 #[utoipa::path(
     post,
     path = "/me/deposit",
     request_body = DepositRequest,
     responses(
-        (status = 200, description = "Funds deposited successfully", body = User),
+        (status = 200, description = "Funds deposited successfully", body = UserResponse),
         (status = 401, description = "Unauthorized"),
         (status = 400, description = "Invalid deposit amount")
     ),
@@ -279,7 +338,7 @@ pub async fn deposit_funds(
     path = "/orders",
     request_body = CreateOrderRequest,
     responses(
-        (status = 201, description = "Order created successfully", body = Order),
+        (status = 201, description = "Order created successfully", body = OrderResponse),
         (status = 401, description = "Unauthorized"),
         (status = 400, description = "Invalid order request")
     ),
@@ -305,7 +364,7 @@ pub async fn create_order(
     }
 
     // For limit orders, price is required
-    if matches!(order_request.order_type, OrderType::Limit) && order_request.price.is_none() {
+    if matches!(order_request.order_type, OrderType::Limit { .. }) && order_request.price.is_none() {
         return Err(ApiError::BadRequest(
             "Price is required for limit orders".to_string(),
         ));
@@ -325,7 +384,7 @@ pub async fn create_order(
     path = "/orders",
     params(PaginationQuery),
     responses(
-        (status = 200, description = "List of user orders", body = PaginatedResponse<Order>),
+        (status = 200, description = "List of user orders", body = PaginatedResponse<OrderResponse>),
         (status = 401, description = "Unauthorized")
     ),
     security(
@@ -365,7 +424,7 @@ pub async fn get_my_orders(
         ("id" = Uuid, Path, description = "Order ID")
     ),
     responses(
-        (status = 200, description = "Order details", body = Order),
+        (status = 200, description = "Order details", body = OrderResponse),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden - order belongs to another user"),
         (status = 404, description = "Order not found")
@@ -393,7 +452,7 @@ pub async fn get_order(
     ),
     request_body = UpdateOrderRequest,
     responses(
-        (status = 200, description = "Order updated successfully", body = Order),
+        (status = 200, description = "Order updated successfully", body = OrderResponse),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden - order belongs to another user"),
         (status = 404, description = "Order not found")

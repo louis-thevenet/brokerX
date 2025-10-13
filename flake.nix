@@ -59,6 +59,7 @@
               rust-toolchain
 
               postman
+              python3
             ];
           };
         };

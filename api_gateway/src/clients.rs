@@ -2,6 +2,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::models::*;
 use reqwest::Client;
 use serde_json::json;
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 pub struct UserClient {
@@ -18,15 +19,16 @@ impl UserClient {
     }
 
     pub async fn create_user(&self, request: &RegisterRequest) -> ApiResult<Uuid> {
+        debug!("Creating user: {:?}", request);
         let response = self
             .client
-            .post(&format!("{}/users", self.base_url))
+            .post(format!("{}/users", self.base_url))
             .json(&json!({
                 "email": request.email,
                 "password": request.password,
                 "firstname": request.firstname,
                 "surname": request.surname,
-                "initial_balance": request.initial_balance
+                "initial_balance": 0
             }))
             .send()
             .await?;
@@ -38,17 +40,18 @@ impl UserClient {
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
+            error!("User could not be created: {error_text}");
             Err(ApiError::ServiceUnavailable(format!(
-                "User service error {}: {}",
-                status, error_text
+                "User service error {status}: {error_text}"
             )))
         }
     }
 
     pub async fn authenticate_user(&self, email: &str, password: &str) -> ApiResult<Uuid> {
+        debug!("Authenticating user with email: {}", email);
         let response = self
             .client
-            .post(&format!("{}/auth/login", self.base_url))
+            .post(format!("{}/auth/login", self.base_url))
             .json(&json!({
                 "email": email,
                 "password": password
@@ -57,16 +60,22 @@ impl UserClient {
             .await?;
 
         if response.status().is_success() {
-            // Assuming the user service returns user info on successful auth
-            let user: User = response.json().await?;
-            user.id
-                .ok_or(ApiError::InternalServerError("User ID missing".to_string()))
+            let auth_response: AuthenticateResponse = response.json().await?;
+            if auth_response.authenticated {
+                auth_response.user_id
+                    .ok_or(ApiError::InternalServerError("User ID missing in authentication response".to_string()))
+            } else {
+                error!("Authentication failed: {}", auth_response.message);
+                Err(ApiError::Unauthorized)
+            }
         } else {
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Authentication failed: {error_text}");
             Err(ApiError::Unauthorized)
         }
     }
 
-    pub async fn get_user(&self, user_id: Uuid) -> ApiResult<User> {
+    pub async fn get_user(&self, user_id: Uuid) -> ApiResult<UserResponse> {
         let response = self
             .client
             .get(&format!("{}/users/{}", self.base_url, user_id))
@@ -74,7 +83,8 @@ impl UserClient {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            let user: UserServiceResponse = response.json().await?;
+            Ok(user.into())
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
             Err(ApiError::NotFound)
         } else {
@@ -87,7 +97,7 @@ impl UserClient {
         }
     }
 
-    pub async fn update_user(&self, user_id: Uuid, request: &UpdateUserRequest) -> ApiResult<User> {
+    pub async fn update_user(&self, user_id: Uuid, request: &UpdateUserRequest) -> ApiResult<UserResponse> {
         let response = self
             .client
             .put(&format!("{}/users/{}", self.base_url, user_id))
@@ -96,7 +106,8 @@ impl UserClient {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            let user: UserServiceResponse = response.json().await?;
+            Ok(user.into())
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
             Err(ApiError::NotFound)
         } else {
@@ -128,7 +139,7 @@ impl UserClient {
         }
     }
 
-    pub async fn deposit_funds(&self, user_id: Uuid, amount: f64) -> ApiResult<User> {
+    pub async fn deposit_funds(&self, user_id: Uuid, amount: f64) -> ApiResult<UserResponse> {
         // This would depend on how the user service implements fund deposits
         // For now, assuming it's a simple balance update
         let response = self
@@ -139,13 +150,40 @@ impl UserClient {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            let user: UserServiceResponse = response.json().await?;
+            Ok(user.into())
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
                 "User service error {}: {}",
                 status, error_text
+            )))
+        }
+    }
+
+    pub async fn get_user_id_by_email(&self, email: &str) -> ApiResult<Uuid> {
+        debug!("Fetching user ID for email: {}", email);
+        let response = self
+            .client
+            .get(format!("{}/users/by-email/{}", self.base_url, email))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let user: UserServiceResponse = response.json().await?;
+            info!("Fetched user: {}", user.email);
+            user.id
+                .ok_or(ApiError::InternalServerError("User ID missing".to_string()))
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("User not found");
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Error fetching user ID by email: {}", error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
             )))
         }
     }
@@ -168,7 +206,7 @@ impl OrderClient {
         &self,
         user_id: Uuid,
         request: &CreateOrderRequest,
-    ) -> ApiResult<Order> {
+    ) -> ApiResult<OrderResponse> {
         let response = self
             .client
             .post(&format!("{}/orders", self.base_url))
@@ -184,7 +222,10 @@ impl OrderClient {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            // The order service returns just a UUID on creation
+            let order_id: Uuid = response.json().await?;
+            // We need to fetch the complete order to return it
+            self.get_order(user_id, order_id).await
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
@@ -195,7 +236,7 @@ impl OrderClient {
         }
     }
 
-    pub async fn get_order(&self, user_id: Uuid, order_id: Uuid) -> ApiResult<Order> {
+    pub async fn get_order(&self, user_id: Uuid, order_id: Uuid) -> ApiResult<OrderResponse> {
         let response = self
             .client
             .get(&format!("{}/orders/{}", self.base_url, order_id))
@@ -203,10 +244,10 @@ impl OrderClient {
             .await?;
 
         if response.status().is_success() {
-            let order: Order = response.json().await?;
+            let order: OrderServiceResponse = response.json().await?;
             // Verify the order belongs to the requesting user
             if order.client_id == user_id {
-                Ok(order)
+                Ok(order.into_response(order_id))
             } else {
                 Err(ApiError::Forbidden)
             }
@@ -226,20 +267,12 @@ impl OrderClient {
         &self,
         user_id: Uuid,
         pagination: &PaginationQuery,
-    ) -> ApiResult<PaginatedResponse<Order>> {
-        let mut query_params = vec![
+    ) -> ApiResult<PaginatedResponse<OrderResponse>> {
+        let query_params = vec![
             ("client_id", user_id.to_string()),
             ("page", pagination.page.to_string()),
             ("limit", pagination.limit.to_string()),
         ];
-
-        if let Some(status) = &pagination.status {
-            query_params.push(("status", format!("{:?}", status)));
-        }
-
-        if let Some(symbol) = &pagination.symbol {
-            query_params.push(("symbol", symbol.clone()));
-        }
 
         let response = self
             .client
@@ -249,7 +282,26 @@ impl OrderClient {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            // For now, we'll need to handle the pagination differently
+            // since we don't have access to the order service's exact response format
+            // This is a simplified version - the actual implementation may vary
+            let orders: Vec<OrderServiceResponse> = response.json().await?;
+            
+            // Generate IDs for orders (this is a limitation - ideally the service should return IDs)
+            let order_responses: Vec<OrderResponse> = orders
+                .into_iter()
+                .map(|o| o.into_response(Uuid::new_v4())) // TODO: Get actual IDs from service
+                .collect();
+            
+            Ok(PaginatedResponse {
+                data: order_responses,
+                pagination: PaginationInfo {
+                    page: pagination.page,
+                    limit: pagination.limit,
+                    total_items: 0, // TODO: Get from service
+                    total_pages: 0, // TODO: Calculate
+                },
+            })
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
@@ -265,7 +317,7 @@ impl OrderClient {
         user_id: Uuid,
         order_id: Uuid,
         request: &UpdateOrderRequest,
-    ) -> ApiResult<Order> {
+    ) -> ApiResult<OrderResponse> {
         // First verify the order belongs to the user
         let existing_order = self.get_order(user_id, order_id).await?;
 
@@ -281,7 +333,8 @@ impl OrderClient {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            let order: OrderServiceResponse = response.json().await?;
+            Ok(order.into_response(order_id))
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();

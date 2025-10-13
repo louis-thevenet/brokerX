@@ -37,6 +37,7 @@ pub struct AppState {
     ),
     components(schemas(
         models::User,
+        models::Holding,
         api::CreateUserRequest,
         api::UpdateUserRequest,
         api::AuthenticateRequest,

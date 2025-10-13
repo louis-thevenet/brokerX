@@ -1,10 +1,11 @@
-use crate::models::{AuthError, User};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 use serde::{Deserialize, Serialize};
+use crate::models::{User, AuthError};
+use tracing::info;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -41,6 +42,8 @@ pub struct AuthenticateRequest {
 pub struct AuthenticateResponse {
     pub authenticated: bool,
     pub message: String,
+    #[schema(value_type = Option<String>, format = Uuid)]
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -91,7 +94,7 @@ pub async fn get_user(
     };
 
     match state.user_service.get_user(&user_id).await {
-        Ok(Some(user)) => Json(user).into_response(),
+        Ok(Some(user)) => Json::<User>(user).into_response(),
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -202,8 +205,9 @@ pub async fn get_user_by_email(
     State(state): State<AppState>,
     Path(email): Path<String>,
 ) -> impl IntoResponse {
+    info!("Fetching user by email: {}", email);
     match state.user_service.get_user_by_email(&email).await {
-        Ok(Some(user)) => Json(user).into_response(),
+        Ok(Some(user)) => Json::<User>(user).into_response(),
         Ok(None) => StatusCode::NOT_FOUND.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -250,26 +254,36 @@ pub async fn authenticate_user(
     State(state): State<AppState>,
     Json(payload): Json<AuthenticateRequest>,
 ) -> impl IntoResponse {
+    info!("Login attempt for {}", payload.email);
     match state
         .user_service
         .authenticate_user(&payload.email, &payload.password)
         .await
     {
-        Ok(authenticated) => {
+        Ok(user_id_opt) => {
+            let (authenticated, message, user_id) = if let Some(user_id) = user_id_opt {
+                (true, "Authentication successful".to_string(), Some(user_id))
+            } else {
+                (false, "Invalid credentials".to_string(), None)
+            };
+            
             let response = AuthenticateResponse {
                 authenticated,
-                message: if authenticated {
-                    "Authentication successful".to_string()
-                } else {
-                    "Invalid credentials".to_string()
-                },
+                message: message.clone(),
+                user_id,
             };
+            info!(
+                "Authentication result for {}: {}",
+                payload.email, message
+            );
             Json(response).into_response()
         }
-        Err(_) => {
+        Err(e) => {
+            info!("Authentication error for {}: {}", payload.email, e);
             let response = AuthenticateResponse {
                 authenticated: false,
-                message: "Authentication error".to_string(),
+                message: e.to_string(),
+                user_id: None,
             };
             (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
         }

@@ -1,7 +1,7 @@
 use crate::error::{ApiError, ApiResult};
 use crate::models::Claims;
 use chrono::{Duration, Utc};
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use uuid::Uuid;
 
 pub struct JwtService {

@@ -1,5 +1,5 @@
-use crate::models::{AuthError, User, UserId};
 use crate::repository::{UserRepo, UserRepoExt};
+use crate::models::{User, UserId, AuthError};
 use color_eyre::Result;
 use database_adapter::config::DatabaseConfig;
 use database_adapter::db::{DbError, PostgresRepo, Repository};
@@ -16,7 +16,7 @@ impl UserService {
         Ok(Self { user_repo })
     }
 
-    /// Create UserService with dedicated user database
+    /// Create `UserService` with dedicated user database
     pub async fn new_with_config(
         table_name: &str,
         db_config: &DatabaseConfig,
@@ -45,7 +45,7 @@ impl UserService {
     }
 
     /// Authenticate user - API endpoint
-    pub async fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError> {
+    pub async fn authenticate_user(&self, email: &str, password: &str) -> Result<Option<UserId>, AuthError> {
         self.user_repo.authenticate_user(email, password).await
     }
 

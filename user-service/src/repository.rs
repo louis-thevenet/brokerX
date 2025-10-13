@@ -3,7 +3,7 @@ use color_eyre::Result;
 use database_adapter::db::{PostgresRepo, Repository};
 use mfa_adapter::MfaProvider;
 use std::collections::HashMap;
-use tracing::debug;
+use tracing::{debug, error};
 
 pub type UserRepo = PostgresRepo<User, UserId>;
 
@@ -18,7 +18,7 @@ pub trait UserRepoExt {
         initial_balance: f64,
     ) -> Result<UserId, AuthError>;
 
-    async fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError>;
+    async fn authenticate_user(&self, email: &str, password: &str) -> Result<Option<UserId>, AuthError>;
 
     async fn initiate_mfa<P: MfaProvider>(
         &self,
@@ -70,7 +70,7 @@ impl UserRepoExt for UserRepo {
         let mut user = User {
             id: None,
             email,
-            password_hash: format!("hash_{}", password), // TODO: proper hashing
+            password_hash: format!("hash_{password}"), // TODO: proper hashing
             firstname,
             surname,
             balance: initial_balance,
@@ -87,23 +87,23 @@ impl UserRepoExt for UserRepo {
         Ok(user_id)
     }
 
-    async fn authenticate_user(&self, email: &str, password: &str) -> Result<bool, AuthError> {
+    async fn authenticate_user(&self, email: &str, password: &str) -> Result<Option<UserId>, AuthError> {
         let user = self
             .get_user_by_email(email)
             .await?
             .ok_or(AuthError::UserNotFound)?;
 
         // Simple password check (TODO: proper verification)
-        let expected_hash = format!("hash_{}", password);
+        let expected_hash = format!("hash_{password}");
         if user.password_hash != expected_hash {
-            return Ok(false);
+            return Ok(None);
         }
 
-        if !user.is_verified {
-            return Err(AuthError::NotVerified(user.id.unwrap()));
-        }
+        // Note: We no longer check is_verified here
+        // The API Gateway will handle MFA verification enforcement
+        // This allows the gateway to send MFA challenges to unverified users
 
-        Ok(true)
+        Ok(user.id)
     }
 
     async fn initiate_mfa<P: MfaProvider>(
@@ -133,14 +133,13 @@ impl UserRepoExt for UserRepo {
     }
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
-        // In a real implementation, this would be a more efficient database query
-        // For now, we'll implement this as a simple scan (not efficient for large datasets)
-        // TODO: Implement proper email-based lookup in the database adapter
-        debug!("Looking up user by email: {}", email);
-
-        // Since we don't have a list() method, we'll return None for now
-        // This should be implemented with a proper database query by email
-        Ok(None)
+        match self.find_by_field("email", email).await {
+            Ok(res) => Ok(res),
+            Err(e) => {
+                error!("Error fetching user by email {}: {:?}", email, e);
+                Err(AuthError::UserRepo(e))
+            }
+        }
     }
 
     async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {

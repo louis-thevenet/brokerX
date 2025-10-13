@@ -67,7 +67,6 @@ fn extract_token_from_headers(headers: &HeaderMap) -> Result<String, ApiError> {
 #[derive(Clone)]
 pub struct AuthenticatedUser(pub Uuid);
 
-#[axum::async_trait]
 impl<S> axum::extract::FromRequestParts<S> for AuthenticatedUser
 where
     S: Send + Sync,
