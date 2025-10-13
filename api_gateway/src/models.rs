@@ -260,6 +260,40 @@ pub struct UpdateOrderRequest {
 }
 
 // ============================================================================
+// Market Data Models
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct MarketPriceResponse {
+    #[schema(example = "AAPL")]
+    pub symbol: String,
+    #[schema(example = 175.50)]
+    pub price: f64,
+    #[schema(example = 174.20)]
+    pub open: f64,
+    #[schema(example = 176.80)]
+    pub high: f64,
+    #[schema(example = 173.90)]
+    pub low: f64,
+    #[schema(example = 1000000)]
+    pub volume: u64,
+    #[schema(value_type = String)]
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct MarketPricesResponse {
+    pub prices: Vec<MarketPriceResponse>,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SymbolsResponse {
+    pub symbols: Vec<String>,
+    pub count: usize,
+}
+
+// ============================================================================
 // Internal service communication DTOs
 // These mirror the service models but are independent
 // ============================================================================

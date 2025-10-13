@@ -34,6 +34,10 @@ use uuid::Uuid;
         get_order,
         update_order,
         cancel_order,
+        get_market_price,
+        get_market_prices,
+        get_market_symbols,
+        get_market_history,
     ),
     components(
         schemas(
@@ -67,7 +71,8 @@ use uuid::Uuid;
         (name = "health", description = "Health check endpoints"),
         (name = "auth", description = "Authentication endpoints"),
         (name = "user", description = "User management endpoints"),
-        (name = "orders", description = "Order management endpoints")
+        (name = "orders", description = "Order management endpoints"),
+        (name = "market", description = "Market data endpoints")
     )
 )]
 pub struct ApiDoc;
@@ -517,4 +522,131 @@ pub async fn cancel_order(
     Ok(Json(MessageResponse {
         message: "Order cancelled successfully".to_string(),
     }))
+}
+
+// ============================================================================
+// Market Data Endpoints
+// ============================================================================
+
+/// Get current price for a specific symbol
+///
+/// Returns the current market price and OHLCV data for the requested symbol.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/api/v1/market/prices/{symbol}",
+    params(
+        ("symbol" = String, Path, description = "Stock symbol (e.g., AAPL, GOOGL)")
+    ),
+    responses(
+        (status = 200, description = "Current price data"),
+        (status = 404, description = "Symbol not found"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_price(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+) -> ApiResult<impl IntoResponse> {
+    info!("Fetching market price for symbol: {}", symbol);
+    let price = state.market_data_client.get_price(&symbol).await?;
+    info!("Price for {}: {:?}", symbol, price);
+    Ok(Json(price))
+}
+
+/// Get current prices for multiple symbols
+///
+/// Returns current market prices for multiple symbols in a single request.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/api/v1/market/prices",
+    params(
+        ("symbols" = String, Query, description = "Comma-separated list of symbols (e.g., AAPL,GOOGL,MSFT)")
+    ),
+    responses(
+        (status = 200, description = "List of current prices"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_prices(
+    State(state): State<AppState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<impl IntoResponse> {
+    if let Some(symbols_str) = params.get("symbols") {
+        // If symbols are specified, fetch only those
+        let symbols: Vec<String> = symbols_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if !symbols.is_empty() {
+            info!("Fetching market prices for {} specific symbols", symbols.len());
+            let prices = state.market_data_client.get_prices(&symbols).await?;
+            return Ok(Json(prices));
+        }
+    }
+    
+    // No symbols specified or empty list - fetch all prices
+    info!("Fetching all market prices");
+    let prices = state.market_data_client.get_all_prices().await?;
+    Ok(Json(prices))
+}
+
+/// Get list of available trading symbols
+///
+/// Returns all symbols available for trading.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/api/v1/market/symbols",
+    responses(
+        (status = 200, description = "List of available symbols"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_symbols(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
+    info!("Fetching available market symbols");
+    let symbols = state.market_data_client.get_symbols().await?;
+    Ok(Json(symbols))
+}
+
+/// Get historical prices for a symbol
+///
+/// Returns historical price data for charting and analysis.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/api/v1/market/prices/{symbol}/history",
+    params(
+        ("symbol" = String, Path, description = "Stock symbol (e.g., AAPL)"),
+        ("limit" = Option<i64>, Query, description = "Maximum number of historical records (default: 100)")
+    ),
+    responses(
+        (status = 200, description = "Historical price data"),
+        (status = 404, description = "Symbol not found"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_history(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<impl IntoResponse> {
+    let limit = params.get("limit").and_then(|s| s.parse().ok());
+
+    info!(
+        "Fetching historical prices for symbol: {} (limit: {:?})",
+        symbol, limit
+    );
+    let history = state
+        .market_data_client
+        .get_historical_prices(&symbol, limit)
+        .await?;
+    Ok(Json(history))
 }

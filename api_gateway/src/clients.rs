@@ -378,3 +378,148 @@ impl OrderClient {
         }
     }
 }
+
+// ============================================================================
+// Market Data Client
+// ============================================================================
+
+pub struct MarketDataClient {
+    base_url: String,
+    client: Client,
+}
+
+impl MarketDataClient {
+    pub fn new(base_url: &str) -> Self {
+        Self {
+            base_url: base_url.to_string(),
+            client: Client::new(),
+        }
+    }
+
+    /// Get current price for a specific symbol
+    pub async fn get_price(&self, symbol: &str) -> ApiResult<serde_json::Value> {
+        debug!("Fetching price for symbol: {}", symbol);
+        let response = self
+            .client
+            .get(format!("{}/api/v1/prices/{}", self.base_url, symbol))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            info!("Price data retrieved successfully for symbol: {}", symbol);
+            let price = response.json().await?;
+            Ok(price)
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("Symbol not found: {}", symbol);
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Error fetching price for symbol {}: {}", symbol, error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "Market data service error {status}: {error_text}"
+            )))
+        }
+    }
+
+    /// Get current prices for multiple symbols
+    pub async fn get_prices(&self, symbols: &[String]) -> ApiResult<serde_json::Value> {
+        debug!("Fetching prices for symbols: {:?}", symbols);
+        let symbols_param = symbols.join(",");
+        let response = self
+            .client
+            .get(format!("{}/api/v1/prices", self.base_url))
+            .query(&[("symbols", symbols_param)])
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let prices = response.json().await?;
+            Ok(prices)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "Market data service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
+
+    /// Get all current prices (no symbol filter)
+    pub async fn get_all_prices(&self) -> ApiResult<serde_json::Value> {
+        debug!("Fetching all available prices");
+        let response = self
+            .client
+            .get(format!("{}/api/v1/prices", self.base_url))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let prices = response.json().await?;
+            Ok(prices)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "Market data service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
+
+    /// Get list of available symbols
+    pub async fn get_symbols(&self) -> ApiResult<serde_json::Value> {
+        debug!("Fetching available symbols");
+        let response = self
+            .client
+            .get(format!("{}/api/v1/symbols", self.base_url))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let symbols = response.json().await?;
+            Ok(symbols)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "Market data service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
+
+    /// Get historical prices for a symbol
+    pub async fn get_historical_prices(
+        &self,
+        symbol: &str,
+        limit: Option<i64>,
+    ) -> ApiResult<serde_json::Value> {
+        debug!("Fetching historical prices for symbol: {}", symbol);
+        let mut req = self.client.get(format!(
+            "{}/api/v1/prices/{}/history",
+            self.base_url, symbol
+        ));
+
+        if let Some(limit) = limit {
+            req = req.query(&[("limit", limit.to_string())]);
+        }
+
+        let response = req.send().await?;
+
+        if response.status().is_success() {
+            let history = response.json().await?;
+            Ok(history)
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "Market data service error {}: {}",
+                status, error_text
+            )))
+        }
+    }
+}

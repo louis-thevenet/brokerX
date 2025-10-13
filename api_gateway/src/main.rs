@@ -25,6 +25,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub user_client: Arc<clients::UserClient>,
     pub order_client: Arc<clients::OrderClient>,
+    pub market_data_client: Arc<clients::MarketDataClient>,
     pub mfa_service: mfa_service::MfaService,
 }
 
@@ -46,6 +47,9 @@ async fn main() -> anyhow::Result<()> {
     // Initialize service clients
     let user_client = Arc::new(clients::UserClient::new(&config.user_service_url));
     let order_client = Arc::new(clients::OrderClient::new(&config.order_service_url));
+    let market_data_client = Arc::new(clients::MarketDataClient::new(
+        &config.market_data_service_url,
+    ));
 
     // Initialize MFA provider with environment configuration
     let mfa_provider = Arc::new(
@@ -58,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
         user_client,
         order_client,
+        market_data_client,
         mfa_service,
     };
 
@@ -79,7 +84,15 @@ fn create_router(app_state: AppState) -> Router {
         .route("/auth/register", post(api::register))
         .route("/auth/login", post(api::login))
         .route("/auth/verify-login", post(api::verify_login_mfa))
-        .route("/auth/logout", post(api::logout));
+        .route("/auth/logout", post(api::logout))
+        // Market data public endpoints
+        .route("/api/v1/market/prices/{symbol}", get(api::get_market_price))
+        .route("/api/v1/market/prices", get(api::get_market_prices))
+        .route("/api/v1/market/symbols", get(api::get_market_symbols))
+        .route(
+            "/api/v1/market/prices/{symbol}/history",
+            get(api::get_market_history),
+        );
 
     // Protected routes (authentication required)
     let protected_routes = Router::new()

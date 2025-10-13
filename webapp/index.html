@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BrokerX</title>
     <style>
@@ -18,6 +19,21 @@
         table { border-collapse: collapse; width: 100%; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
+        
+        /* Market data styles */
+        .price-up { color: #4caf50; font-weight: bold; }
+        .price-down { color: #f44336; font-weight: bold; }
+        .price-neutral { color: #666; }
+        .symbol-cell { font-weight: bold; font-family: 'Courier New', monospace; }
+        .refresh-indicator { 
+            display: inline-block; 
+            animation: pulse 1s infinite; 
+            margin-left: 8px;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
         
         /* MFA specific styles */
         .info-box { background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
@@ -68,6 +84,69 @@
         .btn-secondary:hover { background: #d32f2f; }
         .btn-info { background: #2196f3; }
         .btn-info:hover { background: #1976d2; }
+        
+        /* Chart modal styles */
+        .chart-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s;
+        }
+        
+        .chart-modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #007cba;
+        }
+        
+        .chart-close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        
+        .chart-close:hover {
+            color: #000;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -177,6 +256,17 @@
             <div id="profile-message"></div>
         </div>
         
+        <!-- Market Data Section -->
+        <div id="market-data-section" class="section hidden">
+            <h2>📊 Market Data</h2>
+            <button onclick="loadMarketData()" style="margin-bottom: 15px;">🔄 Refresh Prices</button>
+            
+            <!-- Market Prices Table -->
+            <div id="market-prices-table"></div>
+            
+            <div id="market-message"></div>
+        </div>
+        
         <!-- Trading Section -->
         <div id="trading-section" class="section hidden">
             <h2>Trading</h2>
@@ -185,7 +275,8 @@
             <div>
                 <h3>Place Order</h3>
                 <form onsubmit="placeOrder(event)">
-                    <input type="text" id="order-symbol" placeholder="Symbol (e.g., AAPL)" required>
+                    <input type="text" id="order-symbol" placeholder="Symbol (e.g., AAPL)" list="available-symbols" required>
+                    <datalist id="available-symbols"></datalist>
                     <input type="number" id="order-quantity" placeholder="Quantity" min="1" required>
                     <select id="order-side" required>
                         <option value="">Select Side</option>
@@ -215,8 +306,23 @@
             
             <div id="orders-message"></div>
         </div>
+        
+        <!-- Price History Chart Modal -->
+        <div id="chart-modal" class="chart-modal">
+            <div class="chart-modal-content">
+                <div class="chart-header">
+                    <h2 id="chart-title">Price History</h2>
+                    <span class="chart-close" onclick="closeChartModal()">&times;</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="price-chart"></canvas>
+                </div>
+                <div id="chart-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;"></div>
+            </div>
+        </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

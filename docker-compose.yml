@@ -43,6 +43,27 @@ services:
       timeout: 5s
       retries: 5
 
+  # Market Data Service Database
+  market-data-db:
+    image: postgres:15
+    container_name: brokerx-market-data-db
+    environment:
+      POSTGRES_DB: brokerx_market_data
+      POSTGRES_USER: brokerx_user
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5434:5432"  # Different port to avoid conflicts
+    volumes:
+      - market_data_db_data:/var/lib/postgresql/data
+      - ./docker/init-market-data-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - brokerx-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brokerx_user -d brokerx_market_data"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Optional: PostgreSQL Admin Interface
   pgadmin:
     image: dpage/pgadmin4
@@ -57,10 +78,12 @@ services:
     depends_on:
       - user-db
       - order-db
+      - market-data-db
 
 volumes:
   user_db_data:
   order_db_data:
+  market_data_db_data:
 
 networks:
   brokerx-network:

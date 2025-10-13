@@ -7,6 +7,10 @@ let currentUser = null;
 let pendingMfaChallenge = null;
 let mfaStep = null; // 'registration' or 'login'
 
+// Market data cache
+let marketDataCache = {};
+let marketDataRefreshInterval = null;
+
 // Initialize app on load
 document.addEventListener('DOMContentLoaded', function() {
   if (currentToken) {
@@ -123,6 +127,8 @@ function logout() {
   currentToken = null;
   currentUser = null;
   localStorage.removeItem('brokerx_token');
+  stopMarketDataRefresh();
+  marketDataCache = {};
   showAuthSection();
   showMessage('auth-message', 'Logged out successfully');
 }
@@ -381,6 +387,364 @@ async function cancelOrder(orderId) {
   }
 }
 
+// Market Data Functions
+async function loadMarketData() {
+  try {
+    // First, load available symbols
+    const symbolsResponse = await makeApiCall('/api/v1/market/symbols');
+    
+    if (!symbolsResponse.ok) {
+      const error = await symbolsResponse.json().catch(() => ({ message: 'Failed to load market data' }));
+      showMessage('market-message', error.message || 'Failed to load market data', true);
+      return;
+    }
+
+    const symbolsData = await symbolsResponse.json();
+    console.log('Symbols response:', symbolsData);
+    
+    // The API returns { symbols: [...], count: N }
+    const symbols = symbolsData.symbols || symbolsData.data || [];
+    
+    if (!symbols || symbols.length === 0) {
+      document.getElementById('market-prices-table').innerHTML = '<p>No market data available.</p>';
+      return;
+    }
+
+    console.log('Available symbols:', symbols);
+    
+    // Update the datalist for order form
+    updateSymbolDatalist(symbols);
+
+    // Fetch prices for all symbols
+    const pricesResponse = await makeApiCall('/api/v1/market/prices');
+    
+    if (pricesResponse.ok) {
+      const pricesData = await pricesResponse.json();
+      console.log('Prices response:', pricesData);
+      
+      // The API returns { prices: [...] }
+      const prices = pricesData.prices || pricesData.data || [];
+      console.log('Extracted prices array:', prices);
+      
+      displayMarketPrices(prices);
+    } else {
+      showMessage('market-message', 'Failed to load current prices', true);
+    }
+  } catch (err) {
+    showMessage('market-message', 'Network error occurred', true);
+    console.error('Market data load error:', err);
+  }
+}
+
+function updateSymbolDatalist(symbols) {
+  const datalist = document.getElementById('available-symbols');
+  if (!datalist) return;
+  
+  datalist.innerHTML = symbols.map(symbol => `<option value="${symbol}">`).join('');
+}
+
+function displayMarketPrices(prices) {
+  const tableContainer = document.getElementById('market-prices-table');
+
+  if (!prices || prices.length === 0) {
+    tableContainer.innerHTML = '<p>No prices available.</p>';
+    return;
+  }
+
+  // Debug: Log the first price object to see its structure
+  console.log('Sample price data:', prices[0]);
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Current Price</th>
+          <th>Open</th>
+          <th>High/Low</th>
+          <th>Volume</th>
+          <th>Last Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  prices.forEach(priceData => {
+    // Ensure we have a symbol
+    if (!priceData.symbol) {
+      console.warn('Price data missing symbol:', priceData);
+      return;
+    }
+
+    // Calculate price change if we have previous data
+    const previousPrice = marketDataCache[priceData.symbol];
+    let changeClass = 'price-neutral';
+    let changeIndicator = '';
+    
+    if (previousPrice) {
+      if (priceData.price > previousPrice) {
+        changeClass = 'price-up';
+        changeIndicator = '▲';
+      } else if (priceData.price < previousPrice) {
+        changeClass = 'price-down';
+        changeIndicator = '▼';
+      }
+    }
+    
+    // Update cache
+    marketDataCache[priceData.symbol] = priceData.price;
+    
+    // Format timestamp
+    const lastUpdate = new Date(priceData.timestamp || Date.now()).toLocaleTimeString();
+    
+    // Format high/low
+    const highLow = `$${priceData.high.toFixed(2)} / $${priceData.low.toFixed(2)}`;
+    
+    html += `
+      <tr>
+        <td class="symbol-cell">${priceData.symbol}</td>
+        <td class="${changeClass}">$${priceData.price.toFixed(2)} ${changeIndicator}</td>
+        <td>$${priceData.open.toFixed(2)}</td>
+        <td>${highLow}</td>
+        <td>${priceData.volume.toLocaleString()}</td>
+        <td>${lastUpdate}</td>
+        <td>
+          <button onclick="quickBuy('${priceData.symbol}', ${priceData.price})" class="btn-primary" style="font-size: 0.85rem; padding: 4px 8px;">📈 Buy</button>
+          <button onclick="viewHistory('${priceData.symbol}')" class="btn-info" style="font-size: 0.85rem; padding: 4px 8px;">📊 Chart</button>
+        </td>
+      </tr>
+    `;
+  });
+
+  html += '</tbody></table>';
+  tableContainer.innerHTML = html;
+}
+
+function quickBuy(symbol, price) {
+  // Scroll to trading section and pre-fill the form
+  document.getElementById('order-symbol').value = symbol;
+  document.getElementById('order-side').value = 'BUY';
+  document.getElementById('order-type').value = 'MARKET';
+  document.getElementById('order-quantity').focus();
+  
+  // Scroll to trading section
+  document.getElementById('trading-section').scrollIntoView({ behavior: 'smooth' });
+  showMessage('trading-message', `Ready to buy ${symbol} at market price ($${price.toFixed(2)})`);
+}
+
+async function viewHistory(symbol) {
+  try {
+    const response = await makeApiCall(`/api/v1/market/prices/${symbol}/history`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      // The API returns { symbol: String, prices: [...], count: N }
+      const history = data.prices || [];
+      showPriceChart(symbol, history);
+    } else {
+      const error = await response.json().catch(() => ({ message: `Failed to load history for ${symbol}` }));
+      showMessage('market-message', error.message || `Failed to load history for ${symbol}`, true);
+    }
+  } catch (err) {
+    showMessage('market-message', 'Network error occurred', true);
+    console.error('Price history error:', err);
+  }
+}
+
+let priceChart = null;
+
+function showPriceChart(symbol, history) {
+  if (!history || history.length === 0) {
+    showMessage('market-message', `No price history available for ${symbol}`, true);
+    return;
+  }
+
+  // Sort by timestamp (oldest first for chart)
+  const sortedHistory = [...history].sort((a, b) => 
+    new Date(a.timestamp) - new Date(b.timestamp)
+  );
+
+  // Prepare data
+  const labels = sortedHistory.map(entry => 
+    new Date(entry.timestamp).toLocaleString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })
+  );
+  
+  const prices = sortedHistory.map(entry => entry.price);
+  const volumes = sortedHistory.map(entry => entry.volume);
+  
+  // Calculate statistics
+  const currentPrice = sortedHistory[sortedHistory.length - 1].price;
+  const firstPrice = sortedHistory[0].price;
+  const change = currentPrice - firstPrice;
+  const changePercent = ((change / firstPrice) * 100).toFixed(2);
+  const maxPrice = Math.max(...prices);
+  const minPrice = Math.min(...prices);
+  const avgPrice = (prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2);
+  
+  // Show modal
+  document.getElementById('chart-modal').style.display = 'block';
+  document.getElementById('chart-title').textContent = `${symbol} - Price History`;
+  
+  // Display statistics
+  document.getElementById('chart-stats').innerHTML = `
+    <div class="section" style="padding: 10px;">
+      <strong>Current Price</strong><br>
+      <span style="font-size: 1.5rem; color: ${change >= 0 ? '#4caf50' : '#f44336'}">
+        $${currentPrice.toFixed(2)}
+      </span>
+    </div>
+    <div class="section" style="padding: 10px;">
+      <strong>Change</strong><br>
+      <span style="font-size: 1.2rem; color: ${change >= 0 ? '#4caf50' : '#f44336'}">
+        ${change >= 0 ? '+' : ''}$${change.toFixed(2)} (${changePercent}%)
+      </span>
+    </div>
+    <div class="section" style="padding: 10px;">
+      <strong>High / Low</strong><br>
+      <span style="font-size: 1.2rem;">
+        $${maxPrice.toFixed(2)} / $${minPrice.toFixed(2)}
+      </span>
+    </div>
+    <div class="section" style="padding: 10px;">
+      <strong>Average</strong><br>
+      <span style="font-size: 1.2rem;">
+        $${avgPrice}
+      </span>
+    </div>
+  `;
+  
+  // Destroy previous chart if exists
+  if (priceChart) {
+    priceChart.destroy();
+  }
+  
+  // Create new chart
+  const ctx = document.getElementById('price-chart').getContext('2d');
+  priceChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Price ($)',
+        data: prices,
+        borderColor: '#007cba',
+        backgroundColor: 'rgba(0, 124, 186, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#007cba',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        intersect: false,
+        mode: 'index'
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top'
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          padding: 12,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
+          callbacks: {
+            label: function(context) {
+              const price = context.parsed.y;
+              const volume = volumes[context.dataIndex];
+              return [
+                `Price: $${price.toFixed(2)}`,
+                `Volume: ${volume.toLocaleString()}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: false
+          },
+          ticks: {
+            maxRotation: 45,
+            minRotation: 45
+          }
+        },
+        y: {
+          beginAtZero: false,
+          grid: {
+            color: 'rgba(0, 0, 0, 0.05)'
+          },
+          ticks: {
+            callback: function(value) {
+              return '$' + value.toFixed(2);
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function closeChartModal() {
+  document.getElementById('chart-modal').style.display = 'none';
+  if (priceChart) {
+    priceChart.destroy();
+    priceChart = null;
+  }
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+  const modal = document.getElementById('chart-modal');
+  if (event.target === modal) {
+    closeChartModal();
+  }
+}
+
+function displayPriceHistory(symbol, history) {
+  // Legacy function - now using showPriceChart instead
+  showPriceChart(symbol, history);
+}
+
+function closeHistory() {
+  closeChartModal();
+}
+
+function startMarketDataRefresh() {
+  // Refresh market data every 30 seconds
+  if (marketDataRefreshInterval) {
+    clearInterval(marketDataRefreshInterval);
+  }
+  
+  marketDataRefreshInterval = setInterval(() => {
+    if (!document.getElementById('market-data-section').classList.contains('hidden')) {
+      loadMarketData();
+    }
+  }, 30000); // 30 seconds
+}
+
+function stopMarketDataRefresh() {
+  if (marketDataRefreshInterval) {
+    clearInterval(marketDataRefreshInterval);
+    marketDataRefreshInterval = null;
+  }
+}
+
 // MFA Functions
 async function verifyMfa(event) {
   event.preventDefault();
@@ -475,8 +839,10 @@ function showAuthSection() {
   document.getElementById('mfa-section').classList.add('hidden');
   document.getElementById('dashboard-section').classList.add('hidden');
   document.getElementById('profile-section').classList.add('hidden');
+  document.getElementById('market-data-section').classList.add('hidden');
   document.getElementById('trading-section').classList.add('hidden');
   document.getElementById('orders-section').classList.add('hidden');
+  stopMarketDataRefresh();
   clearMfaState();
 }
 
@@ -485,11 +851,14 @@ function showDashboard() {
   document.getElementById('mfa-section').classList.add('hidden');
   document.getElementById('dashboard-section').classList.remove('hidden');
   document.getElementById('profile-section').classList.remove('hidden');
+  document.getElementById('market-data-section').classList.remove('hidden');
   document.getElementById('trading-section').classList.remove('hidden');
   document.getElementById('orders-section').classList.remove('hidden');
 
-  // Load orders when showing dashboard
+  // Load data when showing dashboard
   loadOrders();
+  loadMarketData();
+  startMarketDataRefresh();
 }
 
 function showLogin() {
