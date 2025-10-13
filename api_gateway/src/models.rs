@@ -180,6 +180,7 @@ pub struct HoldingResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UpdateUserRequest {
+    pub email: Option<String>,
     pub firstname: Option<String>,
     pub surname: Option<String>,
 }

@@ -1,5 +1,5 @@
+use crate::models::{AuthError, User, UserId};
 use crate::repository::{UserRepo, UserRepoExt};
-use crate::models::{User, UserId, AuthError};
 use color_eyre::Result;
 use database_adapter::config::DatabaseConfig;
 use database_adapter::db::{DbError, PostgresRepo, Repository};
@@ -45,7 +45,11 @@ impl UserService {
     }
 
     /// Authenticate user - API endpoint
-    pub async fn authenticate_user(&self, email: &str, password: &str) -> Result<Option<UserId>, AuthError> {
+    pub async fn authenticate_user(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<Option<UserId>, AuthError> {
         self.user_repo.authenticate_user(email, password).await
     }
 
@@ -93,5 +97,12 @@ impl UserService {
         self.user_repo
             .update_user_holding(user_id, symbol, quantity_change, execution_price)
             .await
+    }
+
+    pub async fn update_user(&self, user_id: &UserId, updated_user: User) -> Result<(), AuthError> {
+        self.user_repo
+            .update(*user_id, updated_user)
+            .await
+            .map_err(AuthError::UserRepo)
     }
 }

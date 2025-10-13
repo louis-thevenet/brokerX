@@ -1,11 +1,11 @@
+use crate::models::{AuthError, User};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
 };
 use serde::{Deserialize, Serialize};
-use crate::models::{User, AuthError};
-use tracing::info;
+use tracing::{debug, info};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -175,16 +175,47 @@ pub async fn create_user(
     tag = "users"
 )]
 pub async fn update_user(
-    State(_state): State<AppState>,
-    Path(_user_id): Path<Uuid>,
-    Json(_payload): Json<UpdateUserRequest>,
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<UpdateUserRequest>,
 ) -> impl IntoResponse {
-    // For now, return not implemented as this requires more complex user management
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        "User updates not yet implemented in microservice",
-    )
-        .into_response()
+    info!("Updating user with ID: {}", user_id);
+    match state.user_service.get_user(&user_id).await {
+        Ok(Some(mut user)) => {
+            if let Some(email) = &payload.email {
+                if !email.contains('@') {
+                    return (StatusCode::BAD_REQUEST, "Invalid email format").into_response();
+                }
+                if email != &user.email {
+                    if let Ok(Some(_)) = state.user_service.get_user_by_email(email).await {
+                        return (StatusCode::CONFLICT, "Email already in use").into_response();
+                    }
+                }
+                debug!("Updating email for user {}: {}", user_id, email);
+                user.email = email.to_string();
+            }
+            if let Some(firstname) = &payload.firstname {
+                debug!("Updating firstname for user {}: {}", user_id, firstname);
+                user.firstname = firstname.to_string();
+            }
+            if let Some(surname) = &payload.surname {
+                debug!("Updating surname for user {}: {}", user_id, surname);
+                user.surname = surname.to_string();
+            }
+            match state.user_service.update_user(&user_id, user.clone()).await {
+                Ok(()) => {
+                    info!("User {} updated successfully", user_id);
+                    Json(user).into_response()
+                }
+                Err(e) => {
+                    info!("Error updating user {}: {}", user_id, e);
+                    StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 /// Get user by email
@@ -266,16 +297,13 @@ pub async fn authenticate_user(
             } else {
                 (false, "Invalid credentials".to_string(), None)
             };
-            
+
             let response = AuthenticateResponse {
                 authenticated,
                 message: message.clone(),
                 user_id,
             };
-            info!(
-                "Authentication result for {}: {}",
-                payload.email, message
-            );
+            info!("Authentication result for {}: {}", payload.email, message);
             Json(response).into_response()
         }
         Err(e) => {

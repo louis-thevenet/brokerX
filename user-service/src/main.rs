@@ -16,6 +16,7 @@ use service::UserService;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -59,11 +60,10 @@ async fn main() -> color_eyre::Result<()> {
     dotenvy::dotenv().ok();
 
     // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .compact()
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_default())
+        .with(tracing_subscriber::fmt::layer())
         .init();
-
     // Load configuration
     let config = config::Config::from_env();
 
