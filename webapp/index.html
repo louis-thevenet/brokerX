@@ -280,8 +280,8 @@
                     <input type="number" id="order-quantity" placeholder="Quantity" min="1" required>
                     <select id="order-side" required>
                         <option value="">Select Side</option>
-                        <option value="BUY">Buy</option>
-                        <option value="SELL">Sell</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
                     </select>
                     <select id="order-type" onchange="togglePriceField()" required>
                         <option value="">Select Type</option>
@@ -318,6 +318,43 @@
                     <canvas id="price-chart"></canvas>
                 </div>
                 <div id="chart-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;"></div>
+            </div>
+        </div>
+
+        <!-- Update Order Modal -->
+        <div id="update-order-modal" class="chart-modal">
+            <div class="chart-modal-content" style="max-width: 500px;">
+                <div class="chart-header">
+                    <h2>Update Order</h2>
+                    <span class="chart-close" onclick="closeUpdateOrderModal()">&times;</span>
+                </div>
+                <form onsubmit="submitOrderUpdateFromModal(event)">
+                    <input type="hidden" id="update-order-id">
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label for="update-order-quantity" style="display: block; margin-bottom: 5px; font-weight: bold;">Quantity:</label>
+                        <input type="number" id="update-order-quantity" min="1" required style="width: 100%;">
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label for="update-order-type" style="display: block; margin-bottom: 5px; font-weight: bold;">Order Type:</label>
+                        <select id="update-order-type" onchange="toggleUpdatePriceField()" required style="width: 100%;">
+                            <option value="MARKET">Market</option>
+                            <option value="LIMIT">Limit</option>
+                        </select>
+                    </div>
+                    
+                    <div id="update-price-field" style="margin-bottom: 15px;" class="hidden">
+                        <label for="update-order-price" style="display: block; margin-bottom: 5px; font-weight: bold;">Price:</label>
+                        <input type="number" id="update-order-price" step="0.01" min="0.01" style="width: 100%;">
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button type="submit" class="btn-primary" style="flex: 1;">✅ Update Order</button>
+                        <button type="button" onclick="closeUpdateOrderModal()" class="btn-secondary" style="flex: 1;">❌ Cancel</button>
+                    </div>
+                </form>
+                <div id="update-order-message" style="margin-top: 15px;"></div>
             </div>
         </div>
     </div>

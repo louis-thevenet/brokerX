@@ -10,8 +10,9 @@ mod tests;
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post, put},
 };
+
 use database_adapter::config::DatabaseConfig;
 use service::OrderService;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -29,10 +30,12 @@ pub struct AppState {
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        api::health_check,
         api::get_order,
         api::create_order,
-        api::get_orders_for_user,
-        api::health_check,
+        api::get_orders,
+        api::update_order,
+        api::cancel_order,
     ),
     components(schemas(
         models::Order,
@@ -40,6 +43,10 @@ pub struct AppState {
         models::OrderSide,
         models::OrderType,
         api::CreateOrderRequest,
+        api::UpdateOrderRequest,
+        api::OrderResponse,
+        api::PaginatedOrdersResponse,
+        api::PaginationInfo,
         api::HealthResponse,
     )),
     tags(
@@ -85,8 +92,10 @@ async fn main() -> color_eyre::Result<()> {
     let app = Router::new()
         .route("/health", get(api::health_check))
         .route("/orders", post(api::create_order))
+        .route("/orders", get(api::get_orders))
         .route("/orders/{id}", get(api::get_order))
-        .route("/orders/user/{user_id}", get(api::get_orders_for_user))
+        .route("/orders/{id}", put(api::update_order))
+        .route("/orders/{id}", delete(api::cancel_order))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(app_state);

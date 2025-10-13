@@ -1,7 +1,7 @@
 use crate::error::{ApiError, ApiResult};
 use crate::models::{
-    AuthenticateResponse, CreateOrderRequest, OrderResponse, OrderServiceResponse,
-    PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest, UpdateOrderRequest,
+    AuthenticateResponse, CreateOrderRequest, OrderResponse, OrderServicePaginatedResponse,
+    OrderServiceResponse, PaginatedResponse, PaginationQuery, RegisterRequest, UpdateOrderRequest,
     UpdateUserRequest, UserResponse, UserServiceResponse,
 };
 use reqwest::Client;
@@ -216,6 +216,7 @@ impl OrderClient {
         user_id: Uuid,
         request: &CreateOrderRequest,
     ) -> ApiResult<OrderResponse> {
+        debug!("Creating order for user ID {}: {:?}", user_id, request);
         let response = self
             .client
             .post(format!("{}/orders", self.base_url))
@@ -225,19 +226,18 @@ impl OrderClient {
                 "quantity": request.quantity,
                 "order_side": request.order_side,
                 "order_type": request.order_type,
-                "price": request.price
             }))
             .send()
             .await?;
 
         if response.status().is_success() {
-            // The order service returns just a UUID on creation
-            let order_id: Uuid = response.json().await?;
-            // We need to fetch the complete order to return it
-            self.get_order(user_id, order_id).await
+            debug!("Order created successfully");
+            let order: OrderServiceResponse = response.json().await?;
+            Ok(order.into_response())
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
+            error!("Order could not be created: {error_text}");
             Err(ApiError::ServiceUnavailable(format!(
                 "Order service error {status}: {error_text}"
             )))
@@ -255,7 +255,7 @@ impl OrderClient {
             let order: OrderServiceResponse = response.json().await?;
             // Verify the order belongs to the requesting user
             if order.client_id == user_id {
-                Ok(order.into_response(order_id))
+                Ok(order.into_response())
             } else {
                 Err(ApiError::Forbidden)
             }
@@ -289,25 +289,18 @@ impl OrderClient {
             .await?;
 
         if response.status().is_success() {
-            // For now, we'll need to handle the pagination differently
-            // since we don't have access to the order service's exact response format
-            // This is a simplified version - the actual implementation may vary
-            let orders: Vec<OrderServiceResponse> = response.json().await?;
+            // The order service now returns proper paginated response
+            let paginated: OrderServicePaginatedResponse = response.json().await?;
 
-            // Generate IDs for orders (this is a limitation - ideally the service should return IDs)
-            let order_responses: Vec<OrderResponse> = orders
+            let order_responses: Vec<OrderResponse> = paginated
+                .data
                 .into_iter()
-                .map(|o| o.into_response(Uuid::new_v4())) // TODO: Get actual IDs from service
+                .map(|o| o.into_response())
                 .collect();
 
             Ok(PaginatedResponse {
                 data: order_responses,
-                pagination: PaginationInfo {
-                    page: pagination.page,
-                    limit: pagination.limit,
-                    total_items: 0, // TODO: Get from service
-                    total_pages: 0, // TODO: Calculate
-                },
+                pagination: paginated.pagination,
             })
         } else {
             let status = response.status();
@@ -325,13 +318,6 @@ impl OrderClient {
         order_id: Uuid,
         request: &UpdateOrderRequest,
     ) -> ApiResult<OrderResponse> {
-        // First verify the order belongs to the user
-        let existing_order = self.get_order(user_id, order_id).await?;
-
-        if existing_order.client_id != user_id {
-            return Err(ApiError::Forbidden);
-        }
-
         let response = self
             .client
             .put(&format!("{}/orders/{}", self.base_url, order_id))
@@ -341,7 +327,18 @@ impl OrderClient {
 
         if response.status().is_success() {
             let order: OrderServiceResponse = response.json().await?;
-            Ok(order.into_response(order_id))
+            // Verify ownership
+            if order.client_id == user_id {
+                Ok(order.into_response())
+            } else {
+                Err(ApiError::Forbidden)
+            }
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else if response.status() == reqwest::StatusCode::FORBIDDEN {
+            Err(ApiError::Forbidden)
+        } else if response.status() == reqwest::StatusCode::CONFLICT {
+            Err(ApiError::BadRequest("Order cannot be modified".to_string()))
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
@@ -352,14 +349,7 @@ impl OrderClient {
         }
     }
 
-    pub async fn cancel_order(&self, user_id: Uuid, order_id: Uuid) -> ApiResult<()> {
-        // First verify the order belongs to the user
-        let existing_order = self.get_order(user_id, order_id).await?;
-
-        if existing_order.client_id != user_id {
-            return Err(ApiError::Forbidden);
-        }
-
+    pub async fn cancel_order(&self, _user_id: Uuid, order_id: Uuid) -> ApiResult<()> {
         let response = self
             .client
             .delete(&format!("{}/orders/{}", self.base_url, order_id))
@@ -368,6 +358,14 @@ impl OrderClient {
 
         if response.status().is_success() {
             Ok(())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else if response.status() == reqwest::StatusCode::FORBIDDEN {
+            Err(ApiError::Forbidden)
+        } else if response.status() == reqwest::StatusCode::CONFLICT {
+            Err(ApiError::BadRequest(
+                "Order cannot be cancelled".to_string(),
+            ))
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();

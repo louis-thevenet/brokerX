@@ -7,23 +7,27 @@ pub type OrderId = Uuid;
 pub type UserId = Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum OrderSide {
     Buy,
     Sell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum OrderType {
     Market,
-    Limit(f64),
+    Limit { price: f64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OrderStatus {
     Pending,
     PartiallyFilled { filled_quantity: u64 },
     Filled { date: DateTime<Utc> },
     Rejected { date: DateTime<Utc> },
+    Cancelled { date: DateTime<Utc> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -36,6 +40,8 @@ pub struct Order {
     pub status: OrderStatus,
     pub order_type: OrderType,
     pub order_side: OrderSide,
+    /// Price at which the order was filled (for market orders or filled limit orders)
+    pub filled_price: Option<f64>,
 }
 
 // User model for inter-service communication
@@ -55,6 +61,9 @@ pub enum OrderError {
     UserValidationFailed,
     InsufficientFunds,
     InvalidOrder,
+    OrderCannotBeModified,
+    OrderCannotBeCancelled,
+    Unauthorized,
     Repository(database_adapter::db::DbError),
     UserService(String),
     Processing(String),
@@ -67,6 +76,9 @@ impl std::fmt::Display for OrderError {
             OrderError::UserValidationFailed => write!(f, "User validation failed"),
             OrderError::InsufficientFunds => write!(f, "Insufficient funds"),
             OrderError::InvalidOrder => write!(f, "Invalid order"),
+            OrderError::OrderCannotBeModified => write!(f, "Order cannot be modified"),
+            OrderError::OrderCannotBeCancelled => write!(f, "Order cannot be cancelled"),
+            OrderError::Unauthorized => write!(f, "Unauthorized"),
             OrderError::Repository(e) => write!(f, "Repository error: {}", e),
             OrderError::UserService(e) => write!(f, "User service error: {}", e),
             OrderError::Processing(e) => write!(f, "Processing error: {}", e),

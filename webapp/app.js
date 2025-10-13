@@ -229,35 +229,56 @@ async function depositFunds(event) {
   }
 }
 
-// Trading Functions
+// ============================================================================
+// Trading Functions - Order Placement
+// ============================================================================
+// The order API uses a RESTful structure with tagged enums for order_type and status:
+// - order_type: { type: "market" } or { type: "limit", price: 150.0 }
+// - status: { status: "pending" } or { status: "filled", date: "..." }
+// ============================================================================
+
 async function placeOrder(event) {
   event.preventDefault();
 
   const symbol = document.getElementById('order-symbol').value.toUpperCase();
   const quantity = parseInt(document.getElementById('order-quantity').value);
-  const order_side = document.getElementById('order-side').value;
-  const order_type = document.getElementById('order-type').value;
+  const order_side = document.getElementById('order-side').value.toLowerCase(); // Convert to lowercase for API
+  const order_type_value = document.getElementById('order-type').value;
   const price = document.getElementById('order-price').value;
+
+  // Build order_type according to REST API format (tagged enum)
+  // Note: The API Gateway expects OrderType as a tagged enum where Limit variant contains the price
+  let order_type;
+  if (order_type_value === 'MARKET') {
+    order_type = { type: "market" };
+  } else if (order_type_value === 'LIMIT' && price) {
+    order_type = { type: "limit", price: parseFloat(price) };
+  } else {
+    showMessage('trading-message', 'Invalid order type or missing price', true);
+    return;
+  }
 
   const orderData = {
     symbol,
     quantity,
     order_side,
-    order_type
+    order_type,
+    price: order_type_value === 'LIMIT' ? parseFloat(price) : null
   };
 
-  if (order_type === 'LIMIT' && price) {
-    orderData.price = parseFloat(price);
-  }
-
   try {
+    console.log('Placing order:', orderData);
     const response = await makeApiCall('/orders', {
       method: 'POST',
       body: JSON.stringify(orderData)
     });
 
+    console.log('Order response status:', response.status);
+    console.log('Order response headers:', response.headers);
+    
     if (response.ok) {
       const order = await response.json();
+      console.log('Order created:', order);
       showMessage('trading-message', `Order placed successfully! Order ID: ${order.id}`);
       // Clear form
       document.getElementById('order-symbol').value = '';
@@ -273,12 +294,19 @@ async function placeOrder(event) {
         await loadOrders();
       }
     } else {
-      const error = await response.json();
-      showMessage('trading-message', error.message || 'Order placement failed', true);
+      const responseText = await response.text();
+      console.error('Order placement failed. Status:', response.status, 'Response:', responseText);
+      try {
+        const error = JSON.parse(responseText);
+        showMessage('trading-message', error.message || error.error || 'Order placement failed', true);
+      } catch (parseErr) {
+        showMessage('trading-message', `Order placement failed (${response.status}): ${responseText}`, true);
+      }
     }
   } catch (err) {
     showMessage('trading-message', 'Network error occurred', true);
     console.error('Order placement error:', err);
+    console.error('Error stack:', err.stack);
   }
 }
 
@@ -296,22 +324,106 @@ function togglePriceField() {
   }
 }
 
-// Orders Functions
+// ============================================================================
+// Orders Functions - List, Update, Cancel
+// ============================================================================
+// The GET /orders endpoint returns paginated results:
+// { data: [...], pagination: { page, limit, total_items, total_pages } }
+// ============================================================================
+
 async function loadOrders() {
   try {
-    const response = await makeApiCall('/orders');
+    // REST API uses pagination - get first page with reasonable limit
+    const response = await makeApiCall('/orders?page=1&limit=50');
 
     if (response.ok) {
       const data = await response.json();
-      displayOrders(data.data || data);
+      // REST API returns paginated response: { data: [...], pagination: {...} }
+      const orders = data.data || [];
+      displayOrders(orders);
+      
+      // Show pagination info if available
+      if (data.pagination) {
+        const paginationInfo = `Showing page ${data.pagination.page} of ${data.pagination.total_pages} (${data.pagination.total_items} total orders)`;
+        document.getElementById('orders-message').innerHTML = `<p style="color: #666; font-size: 0.9rem;">${paginationInfo}</p>`;
+      }
     } else {
       const error = await response.json();
-      showMessage('orders-message', error.message || 'Failed to load orders', true);
+      showMessage('orders-message', error.message || error.error || 'Failed to load orders', true);
     }
   } catch (err) {
     showMessage('orders-message', 'Network error occurred', true);
     console.error('Orders load error:', err);
   }
+}
+
+function formatOrderType(orderType) {
+  // orderType is a tagged enum: { type: "market" } or { type: "limit", price: 150.0 }
+  if (!orderType) return 'Unknown';
+  
+  if (typeof orderType === 'string') {
+    // Legacy format compatibility (shouldn't happen with new API)
+    return orderType;
+  }
+  
+  if (orderType.type === 'market') {
+    return 'Market';
+  } else if (orderType.type === 'limit') {
+    return `Limit ($${orderType.price.toFixed(2)})`;
+  }
+  return 'Unknown';
+}
+
+function formatOrderStatus(status) {
+  // status is a tagged enum: { status: "pending" } or { status: "filled", date: "..." }
+  if (!status) return 'Unknown';
+  
+  // Debug: log the actual status object
+  console.log('Formatting status:', status);
+  
+  if (typeof status === 'string') {
+    // Legacy format compatibility (shouldn't happen with new API)
+    return status;
+  }
+  
+  if (status.status === 'pending') {
+    return 'Pending';
+  } else if (status.status === 'filled') {
+    const date = new Date(status.date).toLocaleString();
+    return `Filled (${date})`;
+  } else if (status.status === 'cancelled') {
+    const date = new Date(status.date).toLocaleString();
+    return `Cancelled (${date})`;
+  } else if (status.status === 'rejected') {
+    const date = new Date(status.date).toLocaleString();
+    return `Rejected (${date})`;
+  } else if (status.status === 'partially_filled') {
+    return `Partially Filled (${status.filled_quantity})`;
+  }
+  console.warn('Unknown status format:', status);
+  return 'Unknown';
+}
+
+function canCancelOrder(status) {
+  // Can only cancel pending or partially filled orders
+  if (!status) return false;
+  
+  if (typeof status === 'string') {
+    return status === 'PENDING';
+  }
+  
+  return status.status === 'pending' || status.status === 'partially_filled';
+}
+
+function canUpdateOrder(status) {
+  // Can only update pending or partially filled orders
+  if (!status) return false;
+  
+  if (typeof status === 'string') {
+    return status === 'PENDING';
+  }
+  
+  return status.status === 'pending' || status.status === 'partially_filled';
 }
 
 function displayOrders(orders) {
@@ -326,11 +438,12 @@ function displayOrders(orders) {
     <table>
       <thead>
         <tr>
+          <th>Date</th>
           <th>Symbol</th>
           <th>Side</th>
           <th>Type</th>
           <th>Quantity</th>
-          <th>Price</th>
+          <th>Filled Price</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
@@ -339,18 +452,28 @@ function displayOrders(orders) {
   `;
 
   orders.forEach(order => {
+    const orderDate = new Date(order.date).toLocaleString();
+    const filledPrice = order.filled_price ? `$${order.filled_price.toFixed(2)}` : '-';
+    // Escape order data for HTML attributes
+    const orderTypeJson = JSON.stringify(order.order_type).replace(/"/g, '&quot;');
+    
     html += `
       <tr>
-        <td>${order.symbol}</td>
-        <td>${order.order_side}</td>
-        <td>${order.order_type}</td>
+        <td style="font-size: 0.85rem;">${orderDate}</td>
+        <td class="symbol-cell">${order.symbol}</td>
+        <td style="text-transform: capitalize;">${order.order_side}</td>
+        <td>${formatOrderType(order.order_type)}</td>
         <td>${order.quantity}</td>
-        <td>${order.price ? '$' + order.price.toFixed(2) : 'Market'}</td>
-        <td>${order.status}</td>
+        <td>${filledPrice}</td>
+        <td>${formatOrderStatus(order.status)}</td>
         <td>
-          ${order.status === 'PENDING' ? 
-            `<button onclick="cancelOrder('${order.id}')" class="btn-secondary">Cancel</button>` : 
+          ${canCancelOrder(order.status) ? 
+            `<button onclick="cancelOrder('${order.id}')" class="btn-secondary" style="font-size: 0.85rem; padding: 4px 8px;">❌ Cancel</button>` : 
             '-'
+          }
+          ${canUpdateOrder(order.status) ? 
+            `<button onclick="updateOrderDialog('${order.id}', ${order.quantity}, '${orderTypeJson}')" class="btn-info" style="font-size: 0.85rem; padding: 4px 8px; margin-left: 4px;">✏️ Edit</button>` : 
+            ''
           }
         </td>
       </tr>
@@ -384,6 +507,99 @@ async function cancelOrder(orderId) {
   } catch (err) {
     showMessage('orders-message', 'Network error occurred', true);
     console.error('Cancel order error:', err);
+  }
+}
+
+function updateOrderDialog(orderId, currentQuantity, currentTypeJson) {
+  // Parse the order type from the escaped JSON string
+  let currentType;
+  try {
+    currentType = JSON.parse(currentTypeJson.replace(/&quot;/g, '"'));
+  } catch (e) {
+    console.error('Failed to parse order type:', e);
+    currentType = { type: 'market' };
+  }
+
+  // Show modal
+  document.getElementById('update-order-modal').style.display = 'block';
+  document.getElementById('update-order-id').value = orderId;
+  document.getElementById('update-order-quantity').value = currentQuantity;
+  
+  // Set order type
+  if (currentType.type === 'market') {
+    document.getElementById('update-order-type').value = 'MARKET';
+    document.getElementById('update-price-field').classList.add('hidden');
+    document.getElementById('update-order-price').value = '';
+  } else if (currentType.type === 'limit') {
+    document.getElementById('update-order-type').value = 'LIMIT';
+    document.getElementById('update-price-field').classList.remove('hidden');
+    document.getElementById('update-order-price').value = currentType.price || '';
+  }
+  
+  document.getElementById('update-order-message').innerHTML = '';
+}
+
+function closeUpdateOrderModal() {
+  document.getElementById('update-order-modal').style.display = 'none';
+}
+
+function toggleUpdatePriceField() {
+  const orderType = document.getElementById('update-order-type').value;
+  const priceField = document.getElementById('update-price-field');
+  const priceInput = document.getElementById('update-order-price');
+
+  if (orderType === 'LIMIT') {
+    priceField.classList.remove('hidden');
+    priceInput.required = true;
+  } else {
+    priceField.classList.add('hidden');
+    priceInput.required = false;
+    priceInput.value = '';
+  }
+}
+
+async function submitOrderUpdateFromModal(event) {
+  event.preventDefault();
+  
+  const orderId = document.getElementById('update-order-id').value;
+  const quantity = parseInt(document.getElementById('update-order-quantity').value);
+  const orderTypeValue = document.getElementById('update-order-type').value;
+  const price = document.getElementById('update-order-price').value;
+
+  // Build order_type according to new API format
+  let order_type;
+  if (orderTypeValue === 'MARKET') {
+    order_type = { type: "market" };
+  } else if (orderTypeValue === 'LIMIT' && price) {
+    order_type = { type: "limit", price: parseFloat(price) };
+  } else {
+    showMessage('update-order-message', 'Invalid order type or missing price', true);
+    return;
+  }
+
+  const updateData = {
+    quantity,
+    order_type
+  };
+
+  try {
+    const response = await makeApiCall(`/orders/${orderId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData)
+    });
+
+    if (response.ok) {
+      showMessage('orders-message', 'Order updated successfully!');
+      closeUpdateOrderModal();
+      await loadOrders();
+      await loadUserProfile();
+    } else {
+      const error = await response.json();
+      showMessage('update-order-message', error.message || 'Failed to update order', true);
+    }
+  } catch (err) {
+    showMessage('update-order-message', 'Network error occurred', true);
+    console.error('Update order error:', err);
   }
 }
 
@@ -524,7 +740,7 @@ function displayMarketPrices(prices) {
 function quickBuy(symbol, price) {
   // Scroll to trading section and pre-fill the form
   document.getElementById('order-symbol').value = symbol;
-  document.getElementById('order-side').value = 'BUY';
+  document.getElementById('order-side').value = 'buy'; // lowercase for API
   document.getElementById('order-type').value = 'MARKET';
   document.getElementById('order-quantity').focus();
   
@@ -710,9 +926,15 @@ function closeChartModal() {
 
 // Close modal when clicking outside
 window.onclick = function(event) {
-  const modal = document.getElementById('chart-modal');
-  if (event.target === modal) {
+  const chartModal = document.getElementById('chart-modal');
+  const updateModal = document.getElementById('update-order-modal');
+  
+  if (event.target === chartModal) {
     closeChartModal();
+  }
+  
+  if (event.target === updateModal) {
+    closeUpdateOrderModal();
   }
 }
 

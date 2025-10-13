@@ -370,12 +370,15 @@ pub async fn create_order(
     AuthenticatedUser(user_id): AuthenticatedUser,
     Json(order_request): Json<CreateOrderRequest>,
 ) -> ApiResult<impl IntoResponse> {
+    info!("User {} creating order: {:?}", user_id, order_request);
     // Validate order request
     if order_request.symbol.is_empty() {
+        error!("Order creation failed: Symbol is required");
         return Err(ApiError::BadRequest("Symbol is required".to_string()));
     }
 
     if order_request.quantity == 0 {
+        error!("Order creation failed: Quantity must be greater than 0");
         return Err(ApiError::BadRequest(
             "Quantity must be greater than 0".to_string(),
         ));
@@ -384,16 +387,25 @@ pub async fn create_order(
     // For limit orders, price is required
     if matches!(order_request.order_type, OrderType::Limit { .. }) && order_request.price.is_none()
     {
+        error!("Order creation failed: Price is required for limit orders");
         return Err(ApiError::BadRequest(
             "Price is required for limit orders".to_string(),
         ));
     }
 
-    let order = state
+    let order = match state
         .order_client
         .create_order(user_id, &order_request)
-        .await?;
+        .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            error!("Order creation failed for user {}: {}", user_id, e);
+            return Err(e);
+        }
+    };
 
+    info!("Order created with ID: {}", order.id);
     Ok((StatusCode::CREATED, Json(order)))
 }
 
@@ -584,12 +596,15 @@ pub async fn get_market_prices(
             .collect();
 
         if !symbols.is_empty() {
-            info!("Fetching market prices for {} specific symbols", symbols.len());
+            info!(
+                "Fetching market prices for {} specific symbols",
+                symbols.len()
+            );
             let prices = state.market_data_client.get_prices(&symbols).await?;
             return Ok(Json(prices));
         }
     }
-    
+
     // No symbols specified or empty list - fetch all prices
     info!("Fetching all market prices");
     let prices = state.market_data_client.get_all_prices().await?;

@@ -224,6 +224,10 @@ pub enum OrderStatus {
         #[schema(value_type = String)]
         date: DateTime<Utc>,
     },
+    Cancelled {
+        #[schema(value_type = String)]
+        date: DateTime<Utc>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -330,6 +334,7 @@ pub(crate) struct HoldingServiceResponse {
 /// Internal order model for deserializing from order-service responses
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct OrderServiceResponse {
+    pub id: Uuid,
     pub client_id: Uuid,
     pub date: DateTime<Utc>,
     pub symbol: String,
@@ -337,28 +342,38 @@ pub(crate) struct OrderServiceResponse {
     pub status: OrderStatusInternal,
     pub order_type: OrderTypeInternal,
     pub order_side: OrderSideInternal,
+    pub filled_price: Option<f64>,
+}
+
+/// Paginated response from order service
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct OrderServicePaginatedResponse {
+    pub data: Vec<OrderServiceResponse>,
+    pub pagination: PaginationInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum OrderSideInternal {
     Buy,
     Sell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub(crate) enum OrderTypeInternal {
     Market,
-    Limit(f64),
+    Limit { price: f64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum OrderStatusInternal {
     Pending,
     PartiallyFilled { filled_quantity: u64 },
     Filled { date: DateTime<Utc> },
     Rejected { date: DateTime<Utc> },
+    Cancelled { date: DateTime<Utc> },
 }
 
 // ============================================================================
@@ -416,7 +431,7 @@ impl From<OrderTypeInternal> for OrderType {
     fn from(order_type: OrderTypeInternal) -> Self {
         match order_type {
             OrderTypeInternal::Market => OrderType::Market,
-            OrderTypeInternal::Limit(price) => OrderType::Limit { price },
+            OrderTypeInternal::Limit { price } => OrderType::Limit { price },
         }
     }
 }
@@ -425,7 +440,7 @@ impl From<OrderType> for OrderTypeInternal {
     fn from(order_type: OrderType) -> Self {
         match order_type {
             OrderType::Market => OrderTypeInternal::Market,
-            OrderType::Limit { price } => OrderTypeInternal::Limit(price),
+            OrderType::Limit { price } => OrderTypeInternal::Limit { price },
         }
     }
 }
@@ -439,14 +454,15 @@ impl From<OrderStatusInternal> for OrderStatus {
             }
             OrderStatusInternal::Filled { date } => OrderStatus::Filled { date },
             OrderStatusInternal::Rejected { date } => OrderStatus::Rejected { date },
+            OrderStatusInternal::Cancelled { date } => OrderStatus::Cancelled { date },
         }
     }
 }
 
 impl OrderServiceResponse {
-    pub fn into_response(self, order_id: Uuid) -> OrderResponse {
+    pub fn into_response(self) -> OrderResponse {
         OrderResponse {
-            id: order_id,
+            id: self.id,
             client_id: self.client_id,
             date: self.date,
             symbol: self.symbol,
