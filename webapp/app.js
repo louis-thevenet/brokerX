@@ -140,6 +140,13 @@ async function loadUserProfile() {
 
     if (response.ok) {
       currentUser = await response.json();
+      console.log('User profile loaded:', {
+        id: currentUser.id,
+        email: currentUser.email,
+        balance: currentUser.balance,
+        holdingsCount: currentUser.holdings ? Object.keys(currentUser.holdings).length : 0,
+        holdings: currentUser.holdings
+      });
       updateUserInfo();
     } else if (response.status === 401) {
       // Token expired
@@ -233,34 +240,38 @@ async function depositFunds(event) {
 // Holdings Functions
 // ============================================================================
 
+async function refreshHoldings() {
+  // Reload user profile to get latest holdings, then reload market data, then display
+  await loadUserProfile();
+  await loadMarketData();
+  loadHoldings();
+}
+
 async function loadHoldings() {
   if (!currentUser || !currentUser.id) {
     showMessage('holdings-message', 'User not loaded', true);
     return;
   }
 
-  try {
-    const response = await makeApiCall(`/users/${currentUser.id}/holdings`);
-
-    if (response.ok) {
-      const holdings = await response.json();
-      console.log('Holdings loaded:', holdings);
-      displayHoldings(holdings);
-    } else if (response.status === 404) {
-      // No holdings found
-      displayHoldings([]);
-    } else {
-      showMessage('holdings-message', 'Failed to load holdings', true);
-    }
-  } catch (err) {
-    showMessage('holdings-message', 'Network error occurred', true);
-    console.error('Holdings load error:', err);
+  // Holdings are already in the currentUser object
+  if (currentUser.holdings) {
+    // Convert holdings object to array
+    const holdingsArray = Object.values(currentUser.holdings);
+    console.log('Holdings loaded from user profile:', holdingsArray);
+    displayHoldings(holdingsArray);
+  } else {
+    // No holdings
+    console.log('No holdings found in user profile');
+    displayHoldings([]);
   }
 }
 
 function displayHoldings(holdings) {
   const summaryDiv = document.getElementById('holdings-summary');
   const tableDiv = document.getElementById('holdings-table');
+
+  console.log('Displaying holdings:', holdings);
+  console.log('Market data cache:', marketDataCache);
 
   if (!holdings || holdings.length === 0) {
     summaryDiv.innerHTML = '<p style="text-align: center; color: #666;">No holdings yet. Start trading to build your portfolio!</p>';
@@ -274,7 +285,9 @@ function displayHoldings(holdings) {
   let totalShares = 0;
 
   holdings.forEach(holding => {
-    const currentPrice = marketDataCache[holding.symbol]?.price || 0;
+    // Use market price if available, otherwise use average cost (prevents -100% on new holdings)
+    const currentPrice = marketDataCache[holding.symbol] || holding.average_cost;
+    console.log(`Holding ${holding.symbol}: quantity=${holding.quantity}, avg_cost=${holding.average_cost}, current_price=${currentPrice}`);
     const value = holding.quantity * currentPrice;
     const cost = holding.quantity * holding.average_cost;
     totalValue += value;
@@ -329,7 +342,8 @@ function displayHoldings(holdings) {
   `;
 
   holdings.forEach(holding => {
-    const currentPrice = marketDataCache[holding.symbol]?.price || 0;
+    // Use market price if available, otherwise use average cost (prevents -100% on new holdings)
+    const currentPrice = marketDataCache[holding.symbol] || holding.average_cost;
     const marketValue = holding.quantity * currentPrice;
     const totalCost = holding.quantity * holding.average_cost;
     const profitLoss = marketValue - totalCost;
@@ -425,12 +439,13 @@ async function placeOrder(event) {
       document.getElementById('order-price').classList.add('hidden');
 
       // Refresh orders, profile, and holdings
-      await loadUserProfile();
+      await loadUserProfile(); // Load profile first to update currentUser with new holdings
+      await loadMarketData(); // Load market data to get current prices
       if (!document.getElementById('orders-section').classList.contains('hidden')) {
         await loadOrders();
       }
       if (!document.getElementById('holdings-section').classList.contains('hidden')) {
-        await loadHoldings();
+        loadHoldings(); // Display holdings with updated data
       }
     } else {
       const responseText = await response.text();
@@ -1102,10 +1117,10 @@ function startMarketDataRefresh() {
     clearInterval(marketDataRefreshInterval);
   }
   
-  marketDataRefreshInterval = setInterval(() => {
+  marketDataRefreshInterval = setInterval(async () => {
     if (!document.getElementById('market-data-section').classList.contains('hidden')) {
-      loadMarketData();
-      // Also refresh holdings to update with new prices
+      await loadMarketData();
+      // Refresh holdings after market data loads to update with new prices
       if (!document.getElementById('holdings-section').classList.contains('hidden')) {
         loadHoldings();
       }
@@ -1232,9 +1247,11 @@ function showDashboard() {
   document.getElementById('orders-section').classList.remove('hidden');
 
   // Load data when showing dashboard
+  // Load market data first, then holdings (so prices are available)
+  loadMarketData().then(() => {
+    loadHoldings();
+  });
   loadOrders();
-  loadMarketData();
-  loadHoldings();
   startMarketDataRefresh();
 }
 

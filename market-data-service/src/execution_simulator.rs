@@ -358,27 +358,21 @@ impl ExecutionSimulator {
     ) -> Result<()> {
         if let Some(exec_price) = execution.average_price {
             info!(
-                "📝 [UPDATE STATE] {} | Updating market state: price=${:.2}, volume={}",
+                "📝 [UPDATE STATE] {} | Updating market state: price=${:.2}, filled_quantity={}",
                 symbol, exec_price, execution.filled_quantity
             );
 
-            // Update market simulation state
+            // Update market simulation state (adds to daily volume)
             self.repository
                 .update_market_state(symbol, exec_price, execution.filled_quantity as i64)
                 .await?;
 
-            debug!(
-                "💾 [SAVE PRICE] {} | Inserting execution price point into database",
-                symbol
-            );
-
-            // Insert execution as a new price point (this affects market)
-            self.repository
-                .insert_execution_price(symbol, exec_price, execution.filled_quantity as i64)
-                .await?;
+            // Note: We don't insert execution prices as new market price points
+            // because that would replace the market volume with the order quantity.
+            // The regular price simulation updates will generate proper market prices.
             
             info!(
-                "✅ [STATE UPDATED] {} | Market state and price history updated successfully",
+                "✅ [STATE UPDATED] {} | Market simulation state updated successfully",
                 symbol
             );
         }

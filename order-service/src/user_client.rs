@@ -1,4 +1,4 @@
-use crate::models::{OrderError, UserId};
+use crate::models::{OrderError, UserId, OrderSide};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
@@ -38,6 +38,13 @@ pub struct AuthenticateResponse {
     pub authenticated: bool,
     pub message: String,
     pub user_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateHoldingsRequest {
+    pub symbol: String,
+    pub quantity_change: i64,
+    pub execution_price: f64,
 }
 
 impl UserClient {
@@ -132,6 +139,62 @@ impl UserClient {
             Err(e) => {
                 error!("Failed to call user service: {}", e);
                 Err(AuthError::UserRepo(format!("Network error: {}", e)))
+            }
+        }
+    }
+
+    /// Update user holdings after order execution
+    pub async fn update_holdings(
+        &self,
+        user_id: &UserId,
+        symbol: &str,
+        order_side: OrderSide,
+        quantity: u64,
+        execution_price: f64,
+    ) -> Result<(), OrderError> {
+        let url = format!("{}/users/{}/holdings", self.base_url, user_id);
+        
+        // For Buy orders, quantity_change is positive
+        // For Sell orders, quantity_change is negative
+        let quantity_change = match order_side {
+            OrderSide::Buy => quantity as i64,
+            OrderSide::Sell => -(quantity as i64),
+        };
+        
+        let request = UpdateHoldingsRequest {
+            symbol: symbol.to_string(),
+            quantity_change,
+            execution_price,
+        };
+
+        debug!(
+            "Calling user service: PUT {} with quantity_change: {}, price: {}",
+            url, quantity_change, execution_price
+        );
+
+        match self.client.put(&url).json(&request).send().await {
+            Ok(response) => match response.status().as_u16() {
+                200 => {
+                    debug!("Successfully updated holdings for user {}", user_id);
+                    Ok(())
+                }
+                _ => {
+                    error!(
+                        "User service holdings update returned status: {}",
+                        response.status()
+                    );
+                    Err(OrderError::UserService(format!(
+                        "Failed to update holdings: {}",
+                        response.status()
+                    )))
+                }
+            },
+            Err(e) => {
+                error!("Failed to call user service to update holdings: {}", e);
+                Err(OrderError::UserService(format!(
+                    "Network error updating holdings: {}",
+                    e
+                )))
             }
         }
     }

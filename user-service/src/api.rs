@@ -1,4 +1,4 @@
-use crate::models::{AuthError, User};
+use crate::models::{AuthError, Holding, User};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -275,6 +275,43 @@ pub async fn deposit_funds(
                 AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
                 _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
             }
+        }
+    }
+}
+
+/// Get user holdings
+#[utoipa::path(
+    get,
+    path = "/users/{id}/holdings",
+    responses(
+        (status = 200, description = "Holdings retrieved successfully", body = Vec<Holding>),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    tag = "users"
+)]
+pub async fn get_holdings(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+) -> impl IntoResponse {
+    debug!("Getting holdings for user {}", user_id);
+
+    match state.user_service.get_user(&user_id).await {
+        Ok(Some(user)) => {
+            let holdings: Vec<_> = user.holdings.values().cloned().collect();
+            debug!("Found {} holdings for user {}", holdings.len(), user_id);
+            Json(holdings).into_response()
+        }
+        Ok(None) => {
+            debug!("User {} not found", user_id);
+            (StatusCode::NOT_FOUND, "User not found").into_response()
+        }
+        Err(e) => {
+            error!("Error getting holdings for user {}: {}", user_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

@@ -32,6 +32,7 @@ pub struct AppState {
         api::create_user,
         api::update_user,
         api::deposit_funds,
+        api::get_holdings,
         api::update_holdings,
         api::get_user_by_email,
         api::verify_user_email,
@@ -95,6 +96,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/users/{id}", get(api::get_user))
         .route("/users/{id}", put(api::update_user))
         .route("/users/{id}/deposit", post(api::deposit_funds))
+        .route("/users/{id}/holdings", get(api::get_holdings))
         .route("/users/{id}/holdings", post(api::update_holdings))
         .route("/users/by-email/{email}", get(api::get_user_by_email))
         .route("/users/{id}/verify", post(api::verify_user_email))

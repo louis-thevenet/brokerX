@@ -14,7 +14,7 @@ use repository::MarketDataRepository;
 use service::MarketDataService;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use tracing::{info, debug, error};
+use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -77,7 +77,10 @@ async fn main() -> color_eyre::Result<()> {
 
     info!("Starting Market Data Service");
     info!("Port: {}", config.port);
-    info!("Database: {}", market_data_db_url.split('@').last().unwrap_or("***"));
+    info!(
+        "Database: {}",
+        market_data_db_url.split('@').last().unwrap_or("***")
+    );
 
     // Initialize database connection using sqlx
     info!("Connecting to database...");
@@ -105,13 +108,13 @@ async fn main() -> color_eyre::Result<()> {
     info!("Starting background price simulation task (30s interval)");
     let simulation_service = market_data_service.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        
+
         loop {
             interval.tick().await;
             debug!("[SCHEDULED] Running price simulation");
-            
+
             match simulation_service.simulate_price_update().await {
                 Ok(count) => {
                     debug!("[SIMULATION] Updated {} symbols", count);
@@ -127,7 +130,7 @@ async fn main() -> color_eyre::Result<()> {
         market_data_service,
         execution_simulator,
     };
-    
+
     // Build the router
     let app = Router::new()
         // Health check
@@ -153,8 +156,14 @@ async fn main() -> color_eyre::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;
 
-    info!("Market Data Service listening on {}", listener.local_addr()?);
-    info!("Swagger UI available at http://localhost:{}/swagger-ui", config.port);
+    info!(
+        "Market Data Service listening on {}",
+        listener.local_addr()?
+    );
+    info!(
+        "Swagger UI available at http://localhost:{}/swagger-ui",
+        config.port
+    );
 
     axum::serve(listener, app).await?;
 
