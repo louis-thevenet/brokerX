@@ -1,10 +1,10 @@
+use crate::execution_simulator::ExecutionSimulator;
 /// Market Data API Handlers
 use crate::models::{
-    HistoricalPricesQuery, HistoricalPricesResponse, MarketPriceResponse, MarketPricesResponse,
-    ExecuteOrderRequest, ExecuteOrderResponse,
+    ExecuteOrderRequest, ExecuteOrderResponse, HistoricalPricesQuery, HistoricalPricesResponse,
+    MarketPriceResponse, MarketPricesResponse,
 };
 use crate::service::MarketDataService;
-use crate::execution_simulator::ExecutionSimulator;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -126,7 +126,7 @@ pub async fn get_current_price(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
 ) -> Result<Json<MarketPriceResponse>, ApiError> {
-    use tracing::{info, debug};
+    use tracing::{debug, info};
     info!("Getting current price for symbol: {}", symbol);
     let price = state.market_data_service.get_current_price(&symbol).await?;
     debug!("Price for {}: ${:.2}", symbol, price.price);
@@ -151,7 +151,7 @@ pub async fn get_current_prices(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<MarketPricesResponse>, ApiError> {
-    use tracing::{info, debug};
+    use tracing::{debug, info};
     if let Some(symbols_str) = params.get("symbols") {
         let symbols: Vec<String> = symbols_str
             .split(',')
@@ -165,13 +165,19 @@ pub async fn get_current_prices(
             .market_data_service
             .get_current_prices(symbols)
             .await?;
-        info!("Current prices retrieved successfully: {} prices", prices.count);
+        info!(
+            "Current prices retrieved successfully: {} prices",
+            prices.count
+        );
         Ok(Json(prices))
     } else {
         // If no symbols specified, return all available prices
         info!("Getting all current prices");
         let prices = state.market_data_service.get_all_current_prices().await?;
-        info!("All current prices retrieved successfully: {} prices", prices.count);
+        info!(
+            "All current prices retrieved successfully: {} prices",
+            prices.count
+        );
         Ok(Json(prices))
     }
 }
@@ -198,15 +204,20 @@ pub async fn get_historical_prices(
     Path(symbol): Path<String>,
     Query(query): Query<HistoricalPricesQuery>,
 ) -> Result<Json<HistoricalPricesResponse>, ApiError> {
-    use tracing::{info, debug};
+    use tracing::{debug, info};
     info!("Getting historical prices for symbol: {}", symbol);
-    debug!("Query parameters: start={:?}, end={:?}, limit={}", 
-           query.start_date, query.end_date, query.limit);
+    debug!(
+        "Query parameters: start={:?}, end={:?}, limit={}",
+        query.start_date, query.end_date, query.limit
+    );
     let prices = state
         .market_data_service
         .get_historical_prices(&symbol, query.start_date, query.end_date, query.limit)
         .await?;
-    info!("Historical prices retrieved successfully: {} records", prices.count);
+    info!(
+        "Historical prices retrieved successfully: {} records",
+        prices.count
+    );
     Ok(Json(prices))
 }
 
@@ -227,7 +238,10 @@ pub async fn get_available_symbols(
     info!("Getting available symbols");
     let symbols = state.market_data_service.get_available_symbols().await?;
     let count = symbols.len();
-    info!("Available symbols retrieved successfully: {} symbols", count);
+    info!(
+        "Available symbols retrieved successfully: {} symbols",
+        count
+    );
     Ok(Json(SymbolsResponse { symbols, count }))
 }
 
@@ -243,7 +257,7 @@ pub async fn get_available_symbols(
 )]
 #[axum::debug_handler]
 pub async fn initialize_market_data(State(state): State<AppState>) -> impl IntoResponse {
-    use tracing::{info, debug};
+    use tracing::{debug, info};
     info!("Initializing market data");
     match state.market_data_service.initialize_market_data().await {
         Ok(symbols_created) => {
@@ -282,7 +296,7 @@ pub async fn initialize_market_data(State(state): State<AppState>) -> impl IntoR
 )]
 #[axum::debug_handler]
 pub async fn simulate_price_update(State(state): State<AppState>) -> impl IntoResponse {
-    use tracing::{info, debug};
+    use tracing::{debug, info};
     info!("Simulating price updates");
     match state.market_data_service.simulate_price_update().await {
         Ok(updated_count) => {
@@ -326,18 +340,21 @@ pub async fn execute_order(
     State(state): State<AppState>,
     Json(request): Json<ExecuteOrderRequest>,
 ) -> impl IntoResponse {
-    use tracing::{info, debug, error};
-    
+    use tracing::{debug, error, info};
+
     info!(
         "Executing order {} for {} {:?} {} shares",
         request.order_id, request.symbol, request.side, request.quantity
     );
-    debug!("Order details: type={:?}, side={:?}", request.order_type, request.side);
+    debug!(
+        "Order details: type={:?}, side={:?}",
+        request.order_type, request.side
+    );
 
     match state.execution_simulator.execute_order(request).await {
         Ok(response) => {
             let status_code = match response.status {
-                crate::models::ExecutionStatus::FullyFilled 
+                crate::models::ExecutionStatus::FullyFilled
                 | crate::models::ExecutionStatus::PartiallyFilled => {
                     debug!(
                         "Order {} filled: {} shares @ ${:.2}",
@@ -357,7 +374,7 @@ pub async fn execute_order(
                     StatusCode::UNPROCESSABLE_ENTITY
                 }
             };
-            
+
             (status_code, Json(response)).into_response()
         }
         Err(e) => {

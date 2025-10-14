@@ -332,11 +332,7 @@ impl OrderRepository {
         }
     }
 
-    pub async fn update_order(
-        &self,
-        order_id: OrderId,
-        order: Order,
-    ) -> Result<(), OrderError> {
+    pub async fn update_order(&self, order_id: OrderId, order: Order) -> Result<(), OrderError> {
         debug!("Updating order {}", order_id);
 
         // Extract order_type fields
@@ -418,7 +414,9 @@ impl OrderRepository {
             OrderStatus::Filled { date } => {
                 // For Filled status, we need to get the order quantity
                 // This is a simplified approach - in production you might handle this differently
-                let order = self.get_order_by_id(order_id).await?
+                let order = self
+                    .get_order_by_id(order_id)
+                    .await?
                     .ok_or(OrderError::OrderNotFound)?;
                 ("Filled", Some(order.quantity as i64), Some(*date))
             }

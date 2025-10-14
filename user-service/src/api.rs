@@ -348,7 +348,12 @@ pub async fn update_holdings(
 
     match state
         .user_service
-        .update_user_holding(&user_id, &payload.symbol, payload.quantity_change, payload.execution_price)
+        .update_user_holding(
+            &user_id,
+            &payload.symbol,
+            payload.quantity_change,
+            payload.execution_price,
+        )
         .await
     {
         Ok(()) => {
@@ -361,7 +366,9 @@ pub async fn update_holdings(
         Err(e) => {
             error!("Error updating holdings for user {}: {}", user_id, e);
             match e {
-                AuthError::UserNotFound => (StatusCode::NOT_FOUND, "User not found").into_response(),
+                AuthError::UserNotFound => {
+                    (StatusCode::NOT_FOUND, "User not found").into_response()
+                }
                 AuthError::NotEnoughMoneyError => {
                     (StatusCode::BAD_REQUEST, "Insufficient shares to sell").into_response()
                 }

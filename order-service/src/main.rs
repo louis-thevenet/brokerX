@@ -15,10 +15,10 @@ use axum::{
 
 use database_adapter::config::DatabaseConfig;
 use service::OrderService;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -98,7 +98,10 @@ async fn main() -> color_eyre::Result<()> {
         .route("/orders/{id}", get(api::get_order))
         .route("/orders/{id}", put(api::update_order))
         .route("/orders/{id}", delete(api::cancel_order))
-        .route("/orders/{id}/execution", axum::routing::patch(api::update_order_execution))
+        .route(
+            "/orders/{id}/execution",
+            axum::routing::patch(api::update_order_execution),
+        )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(app_state);

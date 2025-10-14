@@ -1,8 +1,9 @@
 /// Market Data Service
 /// Business logic layer for market data operations
 /// Implements price simulation and data management
-
-use crate::models::{HistoricalPricesResponse, MarketPrice, MarketPriceResponse, MarketPricesResponse};
+use crate::models::{
+    HistoricalPricesResponse, MarketPrice, MarketPriceResponse, MarketPricesResponse,
+};
 use crate::repository::{MarketDataRepository, RepositoryError};
 use chrono::{DateTime, Utc};
 use rand::Rng;
@@ -39,8 +40,9 @@ impl MarketDataService {
     pub async fn get_current_prices(&self, symbols: Vec<String>) -> Result<MarketPricesResponse> {
         let symbols: Vec<String> = symbols.iter().map(|s| s.to_uppercase()).collect();
         let prices = self.repository.get_latest_prices(&symbols).await?;
-        
-        let price_responses: Vec<MarketPriceResponse> = prices.into_iter().map(|p| p.into()).collect();
+
+        let price_responses: Vec<MarketPriceResponse> =
+            prices.into_iter().map(|p| p.into()).collect();
         let count = price_responses.len();
 
         Ok(MarketPricesResponse {
@@ -52,8 +54,9 @@ impl MarketDataService {
     /// Get all available current prices
     pub async fn get_all_current_prices(&self) -> Result<MarketPricesResponse> {
         let prices = self.repository.get_all_latest_prices().await?;
-        
-        let price_responses: Vec<MarketPriceResponse> = prices.into_iter().map(|p| p.into()).collect();
+
+        let price_responses: Vec<MarketPriceResponse> =
+            prices.into_iter().map(|p| p.into()).collect();
         let count = price_responses.len();
 
         Ok(MarketPricesResponse {
@@ -76,7 +79,8 @@ impl MarketDataService {
             .get_historical_prices(&symbol, start_date, end_date, limit)
             .await?;
 
-        let price_responses: Vec<MarketPriceResponse> = prices.into_iter().map(|p| p.into()).collect();
+        let price_responses: Vec<MarketPriceResponse> =
+            prices.into_iter().map(|p| p.into()).collect();
         let count = price_responses.len();
 
         Ok(HistoricalPricesResponse {
@@ -112,17 +116,17 @@ impl MarketDataService {
     /// Simulate a realistic price change based on the previous price
     fn simulate_price_change(&self, previous: &MarketPrice) -> MarketPrice {
         let mut rng = rand::thread_rng();
-        
+
         // Simulate price change between -2% and +2%
         let change_percent = rng.gen_range(-0.02..0.02);
         let new_price = previous.price * (1.0 + change_percent);
-        
+
         // Calculate new open, high, low
         let volatility = rng.gen_range(-0.01..0.01);
         let open = previous.price * (1.0 + volatility);
         let high = new_price.max(open) * (1.0 + rng.gen_range(0.0..0.005));
         let low = new_price.min(open) * (1.0 - rng.gen_range(0.0..0.005));
-        
+
         // Simulate volume change
         let volume_change = rng.gen_range(0.8..1.2);
         let volume = (previous.volume as f64 * volume_change) as i64;

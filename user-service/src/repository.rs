@@ -18,7 +18,11 @@ pub trait UserRepoExt {
         initial_balance: f64,
     ) -> Result<UserId, AuthError>;
 
-    async fn authenticate_user(&self, email: &str, password: &str) -> Result<Option<UserId>, AuthError>;
+    async fn authenticate_user(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<Option<UserId>, AuthError>;
 
     async fn initiate_mfa<P: MfaProvider>(
         &self,
@@ -87,7 +91,11 @@ impl UserRepoExt for UserRepo {
         Ok(user_id)
     }
 
-    async fn authenticate_user(&self, email: &str, password: &str) -> Result<Option<UserId>, AuthError> {
+    async fn authenticate_user(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<Option<UserId>, AuthError> {
         let user = self
             .get_user_by_email(email)
             .await?

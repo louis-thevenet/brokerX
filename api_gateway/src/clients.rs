@@ -656,13 +656,19 @@ impl MarketDataExecutionClient {
             let execution: crate::models::ExecuteOrderResponse = response.json().await?;
             info!(
                 "Order {} execution result: {:?}, filled: {}, price: {:?}",
-                execution.order_id, execution.status, execution.filled_quantity, execution.average_price
+                execution.order_id,
+                execution.status,
+                execution.filled_quantity,
+                execution.average_price
             );
             Ok(execution)
         } else if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
             // Order was rejected
             let execution: crate::models::ExecuteOrderResponse = response.json().await?;
-            info!("Order {} rejected: {:?}", execution.order_id, execution.message);
+            info!(
+                "Order {} rejected: {:?}",
+                execution.order_id, execution.message
+            );
             Ok(execution)
         } else {
             let status = response.status();

@@ -1,4 +1,4 @@
-use crate::models::{OrderError, UserId, OrderSide};
+use crate::models::{OrderError, OrderSide, UserId};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
@@ -153,14 +153,14 @@ impl UserClient {
         execution_price: f64,
     ) -> Result<(), OrderError> {
         let url = format!("{}/users/{}/holdings", self.base_url, user_id);
-        
+
         // For Buy orders, quantity_change is positive
         // For Sell orders, quantity_change is negative
         let quantity_change = match order_side {
             OrderSide::Buy => quantity as i64,
             OrderSide::Sell => -(quantity as i64),
         };
-        
+
         let request = UpdateHoldingsRequest {
             symbol: symbol.to_string(),
             quantity_change,

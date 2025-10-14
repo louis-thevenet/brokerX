@@ -1,7 +1,6 @@
 /// Market Data Repository
 /// Handles all database operations for market price data
 /// Follows the Repository pattern to abstract database access
-
 use crate::models::MarketPrice;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -92,62 +91,54 @@ impl MarketDataRepository {
         limit: i64,
     ) -> Result<Vec<MarketPrice>> {
         let query = match (start_date, end_date) {
-            (Some(start), Some(end)) => {
-                sqlx::query_as::<_, MarketPrice>(
-                    r#"
+            (Some(start), Some(end)) => sqlx::query_as::<_, MarketPrice>(
+                r#"
                     SELECT id, symbol, price, open, high, low, volume, timestamp
                     FROM market_prices
                     WHERE symbol = $1 AND timestamp >= $2 AND timestamp <= $3
                     ORDER BY timestamp DESC
                     LIMIT $4
                     "#,
-                )
-                .bind(symbol)
-                .bind(start)
-                .bind(end)
-                .bind(limit)
-            }
-            (Some(start), None) => {
-                sqlx::query_as::<_, MarketPrice>(
-                    r#"
+            )
+            .bind(symbol)
+            .bind(start)
+            .bind(end)
+            .bind(limit),
+            (Some(start), None) => sqlx::query_as::<_, MarketPrice>(
+                r#"
                     SELECT id, symbol, price, open, high, low, volume, timestamp
                     FROM market_prices
                     WHERE symbol = $1 AND timestamp >= $2
                     ORDER BY timestamp DESC
                     LIMIT $3
                     "#,
-                )
-                .bind(symbol)
-                .bind(start)
-                .bind(limit)
-            }
-            (None, Some(end)) => {
-                sqlx::query_as::<_, MarketPrice>(
-                    r#"
+            )
+            .bind(symbol)
+            .bind(start)
+            .bind(limit),
+            (None, Some(end)) => sqlx::query_as::<_, MarketPrice>(
+                r#"
                     SELECT id, symbol, price, open, high, low, volume, timestamp
                     FROM market_prices
                     WHERE symbol = $1 AND timestamp <= $2
                     ORDER BY timestamp DESC
                     LIMIT $3
                     "#,
-                )
-                .bind(symbol)
-                .bind(end)
-                .bind(limit)
-            }
-            (None, None) => {
-                sqlx::query_as::<_, MarketPrice>(
-                    r#"
+            )
+            .bind(symbol)
+            .bind(end)
+            .bind(limit),
+            (None, None) => sqlx::query_as::<_, MarketPrice>(
+                r#"
                     SELECT id, symbol, price, open, high, low, volume, timestamp
                     FROM market_prices
                     WHERE symbol = $1
                     ORDER BY timestamp DESC
                     LIMIT $2
                     "#,
-                )
-                .bind(symbol)
-                .bind(limit)
-            }
+            )
+            .bind(symbol)
+            .bind(limit),
         };
 
         let prices = query.fetch_all(&self.pool).await?;
@@ -221,11 +212,11 @@ impl MarketDataRepository {
         // Create new state with defaults
         let new_state = crate::models::MarketSimulationState {
             symbol: symbol.to_string(),
-            current_volatility: 0.02,     // 2% default volatility
-            trend_direction: 0.0,          // Neutral trend
+            current_volatility: 0.02, // 2% default volatility
+            trend_direction: 0.0,     // Neutral trend
             last_execution_price: Some(current_price),
             last_execution_time: Some(Utc::now()),
-            daily_volume: 1_000_000,      // Default 1M shares
+            daily_volume: 1_000_000, // Default 1M shares
             execution_count: 0,
         };
 

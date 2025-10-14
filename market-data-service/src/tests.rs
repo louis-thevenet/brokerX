@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn test_config_from_env() {
         use crate::config::Config;
-        
+
         // Set test environment variables
         unsafe {
             std::env::set_var("MARKET_DATA_SERVICE_PORT", "3003");
@@ -61,19 +61,19 @@ mod tests {
         }
 
         let config = Config::from_env();
-        
+
         assert_eq!(config.port, 3003);
         assert_eq!(config.host, "127.0.0.1");
     }
 
     // Integration tests would go here
     // These would require setting up a test database
-    
+
     #[tokio::test]
     async fn test_service_price_simulation() {
         // This is a conceptual test - actual implementation would need
         // a test database setup
-        
+
         // Example of what a full integration test would look like:
         // 1. Set up test database
         // 2. Initialize repository

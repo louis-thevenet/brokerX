@@ -1,7 +1,6 @@
 /// Order Execution Simulator
 /// Simulates realistic order execution without storing orders
 /// Only updates market prices based on execution activity
-
 use crate::models::{
     ExecuteOrderRequest, ExecuteOrderResponse, ExecutionStatus, MarketSimulationState, OrderSide,
     OrderType,
@@ -33,7 +32,10 @@ impl ExecutionSimulator {
     }
 
     /// Simulate order execution based on current market conditions
-    pub async fn execute_order(&self, request: ExecuteOrderRequest) -> Result<ExecuteOrderResponse> {
+    pub async fn execute_order(
+        &self,
+        request: ExecuteOrderRequest,
+    ) -> Result<ExecuteOrderResponse> {
         let symbol = request.symbol.to_uppercase();
         debug!(
             "Processing order {} for {} ({:?}, {} shares)",
@@ -87,7 +89,7 @@ impl ExecutionSimulator {
 
         // Simulate execution based on order type
         debug!("Simulating {:?} order execution", request.order_type);
-        
+
         let execution = match request.order_type {
             OrderType::Market => {
                 self.simulate_market_order(&request, current_price, &market_state)
@@ -178,12 +180,18 @@ impl ExecutionSimulator {
         }
 
         // Calculate slippage based on order size and volatility
-        let slippage =
-            self.calculate_slippage(request.quantity, market_state.current_volatility, liquidity_factor);
-        
+        let slippage = self.calculate_slippage(
+            request.quantity,
+            market_state.current_volatility,
+            liquidity_factor,
+        );
+
         debug!(
             "[SLIPPAGE] Order {} | Calculated slippage: {:.4}% (volatility: {:.2}%, liquidity: {:.2})",
-            request.order_id, slippage * 100.0, market_state.current_volatility * 100.0, liquidity_factor
+            request.order_id,
+            slippage * 100.0,
+            market_state.current_volatility * 100.0,
+            liquidity_factor
         );
 
         // Apply slippage (worse price for buyer, better for seller in thin markets)
@@ -207,7 +215,11 @@ impl ExecutionSimulator {
             let qty = ((request.quantity as f64 * fill_ratio) as u64).max(1);
             debug!(
                 "[PARTIAL FILL] Order {} | Low liquidity ({:.2}) -> Partial fill: {} of {} shares ({:.0}%)",
-                request.order_id, liquidity_factor, qty, request.quantity, fill_ratio * 100.0
+                request.order_id,
+                liquidity_factor,
+                qty,
+                request.quantity,
+                fill_ratio * 100.0
             );
             qty
         } else {
@@ -297,7 +309,10 @@ impl ExecutionSimulator {
             let qty = ((request.quantity as f64 * fill_ratio) as u64).max(1);
             debug!(
                 "⚠️  [PARTIAL] Order {} | Partial fill: {} of {} shares ({:.0}%)",
-                request.order_id, qty, request.quantity, fill_ratio * 100.0
+                request.order_id,
+                qty,
+                request.quantity,
+                fill_ratio * 100.0
             );
             qty
         } else {
@@ -330,7 +345,11 @@ impl ExecutionSimulator {
     }
 
     /// Calculate liquidity factor (0.0 = no liquidity, 1.0 = perfect liquidity)
-    fn calculate_liquidity_factor(&self, quantity: u64, market_state: &MarketSimulationState) -> f64 {
+    fn calculate_liquidity_factor(
+        &self,
+        quantity: u64,
+        market_state: &MarketSimulationState,
+    ) -> f64 {
         // Estimate typical volume per second (assuming 6.5 hour trading day)
         let typical_volume_per_second = market_state.daily_volume as f64 / (6.5 * 3600.0);
         let order_impact = quantity as f64 / typical_volume_per_second.max(100.0);
@@ -370,7 +389,7 @@ impl ExecutionSimulator {
             // Note: We don't insert execution prices as new market price points
             // because that would replace the market volume with the order quantity.
             // The regular price simulation updates will generate proper market prices.
-            
+
             info!(
                 "✅ [STATE UPDATED] {} | Market simulation state updated successfully",
                 symbol

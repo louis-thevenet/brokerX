@@ -452,7 +452,10 @@ pub async fn create_order(
     {
         Ok(updated) => updated,
         Err(e) => {
-            error!("Failed to update order {} with execution results: {}", order.id, e);
+            error!(
+                "Failed to update order {} with execution results: {}",
+                order.id, e
+            );
             // Return original order if update fails
             return Ok((StatusCode::CREATED, Json(order)));
         }

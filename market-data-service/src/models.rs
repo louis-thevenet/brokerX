@@ -1,6 +1,5 @@
 /// Market Data Models
 /// These models represent the domain entities for market data and pricing information
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

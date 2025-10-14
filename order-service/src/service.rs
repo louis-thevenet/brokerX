@@ -21,7 +21,7 @@ impl OrderService {
             .max_connections(5)
             .connect(&db_config.database_url)
             .await?;
-        
+
         let order_repo = OrderRepository::new(pool);
         let user_client = Arc::new(UserClient::new(&user_service_url));
 
@@ -52,10 +52,7 @@ impl OrderService {
         &self,
         order_id: &OrderId,
     ) -> Result<Option<(OrderId, Order)>, OrderError> {
-        let order = self
-            .order_repo
-            .get_order_by_id(order_id)
-            .await?;
+        let order = self.order_repo.get_order_by_id(order_id).await?;
 
         Ok(order.map(|o| (*order_id, o)))
     }
@@ -139,9 +136,7 @@ impl OrderService {
         order_id: &OrderId,
         order: Order,
     ) -> Result<(), OrderError> {
-        self.order_repo
-            .update_order(*order_id, order)
-            .await?;
+        self.order_repo.update_order(*order_id, order).await?;
         Ok(())
     }
 

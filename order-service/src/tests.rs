@@ -59,7 +59,10 @@ mod tests {
             .route("/orders", axum::routing::get(crate::api::get_orders))
             .route("/orders/{id}", axum::routing::get(crate::api::get_order))
             .route("/orders/{id}", axum::routing::put(crate::api::update_order))
-            .route("/orders/{id}", axum::routing::delete(crate::api::cancel_order))
+            .route(
+                "/orders/{id}",
+                axum::routing::delete(crate::api::cancel_order),
+            )
             .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
             .layer(CorsLayer::permissive())
             .with_state(app_state);
