@@ -219,8 +219,9 @@ pub async fn verify_login_mfa(
         .verify_challenge(&verify_request.challenge_id, &verify_request.code)
         .await?;
 
-    let user_id = state.user_client.get_user_id_by_email(&user_email).await?;
-    let user = state.user_client.get_user(user_id).await?;
+    // Get user by email (returns full user object, which includes the ID)
+    let user = state.user_client.get_user_by_email(&user_email).await?;
+    let user_id = user.id;
 
     if user.is_verified {
         info!("User {} completed MFA (already verified)", user_id);

@@ -227,6 +227,31 @@ impl UserClient {
         }
     }
 
+    pub async fn get_user_by_email(&self, email: &str) -> ApiResult<UserResponse> {
+        debug!("Fetching user by email: {}", email);
+        let response = self
+            .client
+            .get(format!("{}/users/by-email/{}", self.base_url, email))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let user: UserServiceResponse = response.json().await?;
+            info!("Fetched user: {}", user.email);
+            Ok(user.into())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("User not found");
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Error fetching user by email: {}", error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
+            )))
+        }
+    }
+
     /// Update user holdings after order execution
     pub async fn update_holdings(
         &self,

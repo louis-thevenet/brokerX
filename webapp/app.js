@@ -6,6 +6,7 @@ let currentUser = null;
 // MFA state management (mandatory for all users)
 let pendingMfaChallenge = null;
 let mfaStep = null; // 'registration' or 'login'
+let isMfaSubmitting = false; // Prevent duplicate submissions
 
 // Market data cache
 let marketDataCache = {};
@@ -1139,6 +1140,12 @@ function stopMarketDataRefresh() {
 async function verifyMfa(event) {
   event.preventDefault();
 
+  // Prevent duplicate submissions
+  if (isMfaSubmitting) {
+    console.log('MFA verification already in progress, ignoring duplicate submission');
+    return;
+  }
+
   if (!pendingMfaChallenge) {
     showMessage('mfa-message', 'No active MFA challenge. Please login again.', true);
     clearMfaState();
@@ -1152,6 +1159,8 @@ async function verifyMfa(event) {
     showMessage('mfa-message', 'Please enter a valid 6-digit code', true);
     return;
   }
+
+  isMfaSubmitting = true;
 
   try {
     // Both registration and login verification use the same endpoint
@@ -1179,10 +1188,12 @@ async function verifyMfa(event) {
     } else {
       const error = await response.json();
       showMessage('mfa-message', error.message || 'Verification failed', true);
+      isMfaSubmitting = false; // Reset flag on error
     }
   } catch (err) {
     showMessage('mfa-message', 'Network error occurred', true);
     console.error('MFA verification error:', err);
+    isMfaSubmitting = false; // Reset flag on error
   }
 }
 
@@ -1215,6 +1226,7 @@ function showMfaVerification(title, description) {
 function clearMfaState() {
   pendingMfaChallenge = null;
   mfaStep = null;
+  isMfaSubmitting = false; // Reset submission flag
   document.getElementById('mfa-section').classList.add('hidden');
 }
 
@@ -1284,11 +1296,6 @@ async function checkApiHealth() {
 checkApiHealth();
 
 // Auto-submit MFA code when 6 digits are entered
-document.addEventListener('DOMContentLoaded', function() {
-  // This will be set up after the DOM is loaded
-  setupMfaAutoSubmit();
-});
-
 function setupMfaAutoSubmit() {
   const mfaCodeInput = document.getElementById('mfa-code');
   if (mfaCodeInput) {
