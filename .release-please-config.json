@@ -1,9 +1,28 @@
 {
   "packages": {
-    "app": {
-      "path": "app",
+    ".": {
       "release-type": "rust",
-      "component": "app"
+      "component": "brokerx"
+    },
+    "user-service": {
+      "path": "user-service",
+      "release-type": "rust",
+      "component": "user-service"
+    },
+    "order-service": {
+      "path": "order-service",
+      "release-type": "rust",
+      "component": "order-service"
+    },
+    "market-data-service": {
+      "path": "market-data-service",
+      "release-type": "rust",
+      "component": "market-data-service"
+    },
+    "api_gateway": {
+      "path": "api_gateway",
+      "release-type": "rust",
+      "component": "api-gateway"
     }
   },
   "plugins": [
@@ -15,7 +34,11 @@
       "type": "linked-versions",
       "groupName": "brokerx",
       "components": [
-        "app"
+        "brokerx",
+        "user-service",
+        "order-service",
+        "market-data-service",
+        "api-gateway"
       ]
     }
   ]
