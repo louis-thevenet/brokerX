@@ -1,7 +1,6 @@
 [workspace]
 members = [ 
     "database_adapter",
-    "domain", 
     "mfa_adapter", 
     "user-service",
     "order-service",
