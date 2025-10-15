@@ -56,6 +56,8 @@
               tinymist
               typstyle
 
+              just
+
               rust-toolchain
 
               postman
