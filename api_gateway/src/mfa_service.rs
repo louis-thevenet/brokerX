@@ -31,7 +31,7 @@ impl MfaService {
     /// Verify an MFA challenge with the provided code
     ///
     /// # Returns
-    /// - Ok(user_email) if verification is successful
+    /// - `Ok(user_email)` if verification is successful
     /// - Err if the code is invalid, challenge not found, or expired
     pub async fn verify_challenge(&self, challenge_id: &str, code: &str) -> ApiResult<String> {
         // First, verify the code is valid

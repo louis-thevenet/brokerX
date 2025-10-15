@@ -103,7 +103,7 @@ pub struct HealthResponse {
 /// Health check endpoint
 #[utoipa::path(
     get,
-    path = "/health",
+    path = "/v1/health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse)
     ),
@@ -120,7 +120,7 @@ pub async fn health_check() -> impl IntoResponse {
 /// Get order by ID
 #[utoipa::path(
     get,
-    path = "/orders/{id}",
+    path = "/v1/orders/{id}",
     responses(
         (status = 200, description = "Order found", body = OrderResponse),
         (status = 404, description = "Order not found"),
@@ -150,7 +150,7 @@ pub async fn get_order(
 /// Create a new order
 #[utoipa::path(
     post,
-    path = "/orders",
+    path = "/v1/orders",
     request_body = CreateOrderRequest,
     responses(
         (status = 201, description = "Order created successfully", body = OrderResponse),
@@ -206,7 +206,7 @@ pub async fn create_order(
 /// Get orders with optional filtering and pagination
 #[utoipa::path(
     get,
-    path = "/orders",
+    path = "/v1/orders",
     params(GetOrdersQuery),
     responses(
         (status = 200, description = "Orders retrieved successfully", body = PaginatedOrdersResponse),
@@ -276,7 +276,7 @@ pub async fn get_orders(
 /// Update an existing order
 #[utoipa::path(
     put,
-    path = "/orders/{id}",
+    path = "/v1/orders/{id}",
     request_body = UpdateOrderRequest,
     responses(
         (status = 200, description = "Order updated successfully", body = OrderResponse),
@@ -339,7 +339,7 @@ pub async fn update_order(
 /// Cancel an order
 #[utoipa::path(
     delete,
-    path = "/orders/{id}",
+    path = "/v1/orders/{id}",
     responses(
         (status = 200, description = "Order cancelled successfully"),
         (status = 403, description = "Forbidden - cannot cancel this order"),
@@ -395,7 +395,7 @@ pub async fn cancel_order(
 /// Update order with execution results from market data service
 #[utoipa::path(
     patch,
-    path = "/orders/{id}/execution",
+    path = "/v1/orders/{id}/execution",
     request_body = UpdateOrderExecutionRequest,
     responses(
         (status = 200, description = "Order execution updated", body = OrderResponse),

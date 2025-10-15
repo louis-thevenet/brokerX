@@ -26,7 +26,7 @@ impl UserClient {
         debug!("Creating user: {:?}", request);
         let response = self
             .client
-            .post(format!("{}/users", self.base_url))
+            .post(format!("{}/v1/users", self.base_url))
             .json(&json!({
                 "email": request.email,
                 "password": request.password,
@@ -55,7 +55,7 @@ impl UserClient {
         debug!("Authenticating user with email: {}", email);
         let response = self
             .client
-            .post(format!("{}/auth/login", self.base_url))
+            .post(format!("{}/v1/auth/login", self.base_url))
             .json(&json!({
                 "email": email,
                 "password": password
@@ -83,7 +83,7 @@ impl UserClient {
     pub async fn get_user(&self, user_id: Uuid) -> ApiResult<UserResponse> {
         let response = self
             .client
-            .get(format!("{}/users/{}", self.base_url, user_id))
+            .get(format!("{}/v1/users/{}", self.base_url, user_id))
             .send()
             .await?;
 
@@ -108,7 +108,7 @@ impl UserClient {
     ) -> ApiResult<UserResponse> {
         let response = self
             .client
-            .put(format!("{}/users/{}", self.base_url, user_id))
+            .put(format!("{}/v1/users/{}", self.base_url, user_id))
             .json(request)
             .send()
             .await?;
@@ -130,7 +130,7 @@ impl UserClient {
     pub async fn verify_email(&self, user_id: Uuid) -> ApiResult<()> {
         let response = self
             .client
-            .post(format!("{}/users/{}/verify", self.base_url, user_id))
+            .post(format!("{}/v1/users/{}/verify", self.base_url, user_id))
             .send()
             .await?;
 
@@ -149,7 +149,7 @@ impl UserClient {
         debug!("Depositing {} to user ID {}", amount, user_id);
         let response = self
             .client
-            .post(format!("{}/users/{}/deposit", self.base_url, user_id))
+            .post(format!("{}/v1/users/{}/deposit", self.base_url, user_id))
             .json(&json!({ "amount": amount }))
             .send()
             .await?;
@@ -175,7 +175,7 @@ impl UserClient {
         debug!("Withdrawing {} from user ID {}", amount, user_id);
         let response = self
             .client
-            .post(format!("{}/users/{}/withdraw", self.base_url, user_id))
+            .post(format!("{}/v1/users/{}/withdraw", self.base_url, user_id))
             .json(&json!({ "amount": amount }))
             .send()
             .await?;
@@ -205,7 +205,7 @@ impl UserClient {
         debug!("Fetching user ID for email: {}", email);
         let response = self
             .client
-            .get(format!("{}/users/by-email/{}", self.base_url, email))
+            .get(format!("{}/v1/users/by-email/{}", self.base_url, email))
             .send()
             .await?;
 
@@ -231,7 +231,7 @@ impl UserClient {
         debug!("Fetching user by email: {}", email);
         let response = self
             .client
-            .get(format!("{}/users/by-email/{}", self.base_url, email))
+            .get(format!("{}/v1/users/by-email/{}", self.base_url, email))
             .send()
             .await?;
 
@@ -267,7 +267,7 @@ impl UserClient {
 
         let response = self
             .client
-            .post(format!("{}/users/{}/holdings", self.base_url, user_id))
+            .post(format!("{}/v1/users/{}/holdings", self.base_url, user_id))
             .json(&json!({
                 "symbol": symbol,
                 "quantity_change": quantity_change,
@@ -314,7 +314,7 @@ impl OrderClient {
         debug!("Creating order for user ID {}: {:?}", user_id, request);
         let response = self
             .client
-            .post(format!("{}/orders", self.base_url))
+            .post(format!("{}/v1/orders", self.base_url))
             .json(&json!({
                 "client_id": user_id,
                 "symbol": request.symbol,
@@ -342,7 +342,7 @@ impl OrderClient {
     pub async fn get_order(&self, user_id: Uuid, order_id: Uuid) -> ApiResult<OrderResponse> {
         let response = self
             .client
-            .get(format!("{}/orders/{}", self.base_url, order_id))
+            .get(format!("{}/v1/orders/{}", self.base_url, order_id))
             .send()
             .await?;
 
@@ -380,19 +380,18 @@ impl OrderClient {
 
         let response = self
             .client
-            .get(format!("{}/orders", self.base_url))
+            .get(format!("{}/v1/orders", self.base_url))
             .query(&query_params)
             .send()
             .await?;
 
         if response.status().is_success() {
-            // The order service now returns proper paginated response
             let paginated: OrderServicePaginatedResponse = response.json().await?;
 
             let order_responses: Vec<OrderResponse> = paginated
                 .data
                 .into_iter()
-                .map(|o| o.into_response())
+                .map(OrderServiceResponse::into_response)
                 .collect();
 
             Ok(PaginatedResponse {
@@ -416,7 +415,7 @@ impl OrderClient {
     ) -> ApiResult<OrderResponse> {
         let response = self
             .client
-            .put(format!("{}/orders/{}", self.base_url, order_id))
+            .put(format!("{}/v1/orders/{}", self.base_url, order_id))
             .json(request)
             .send()
             .await?;
@@ -449,7 +448,7 @@ impl OrderClient {
     pub async fn cancel_order(&self, _user_id: Uuid, order_id: Uuid) -> ApiResult<()> {
         let response = self
             .client
-            .delete(format!("{}/orders/{}", self.base_url, order_id))
+            .delete(format!("{}/v1/orders/{}", self.base_url, order_id))
             .send()
             .await?;
 
@@ -500,7 +499,10 @@ impl OrderClient {
 
         let response = self
             .client
-            .patch(format!("{}/orders/{}/execution", self.base_url, order_id))
+            .patch(format!(
+                "{}/v1/orders/{}/execution",
+                self.base_url, order_id
+            ))
             .json(&json!({
                 "status": order_status,
                 "filled_price": filled_price
@@ -548,7 +550,7 @@ impl MarketDataClient {
         debug!("Fetching price for symbol: {}", symbol);
         let response = self
             .client
-            .get(format!("{}/api/v1/prices/{}", self.base_url, symbol))
+            .get(format!("{}/v1/prices/{}", self.base_url, symbol))
             .send()
             .await?;
 
@@ -575,7 +577,7 @@ impl MarketDataClient {
         let symbols_param = symbols.join(",");
         let response = self
             .client
-            .get(format!("{}/api/v1/prices", self.base_url))
+            .get(format!("{}/v1/prices", self.base_url))
             .query(&[("symbols", symbols_param)])
             .send()
             .await?;
@@ -597,7 +599,7 @@ impl MarketDataClient {
         debug!("Fetching all available prices");
         let response = self
             .client
-            .get(format!("{}/api/v1/prices", self.base_url))
+            .get(format!("{}/v1/prices", self.base_url))
             .send()
             .await?;
 
@@ -618,7 +620,7 @@ impl MarketDataClient {
         debug!("Fetching available symbols");
         let response = self
             .client
-            .get(format!("{}/api/v1/symbols", self.base_url))
+            .get(format!("{}/v1/symbols", self.base_url))
             .send()
             .await?;
 
@@ -641,10 +643,9 @@ impl MarketDataClient {
         limit: Option<i64>,
     ) -> ApiResult<serde_json::Value> {
         debug!("Fetching historical prices for symbol: {}", symbol);
-        let mut req = self.client.get(format!(
-            "{}/api/v1/prices/{}/history",
-            self.base_url, symbol
-        ));
+        let mut req = self
+            .client
+            .get(format!("{}/v1/prices/{}/history", self.base_url, symbol));
 
         if let Some(limit) = limit {
             req = req.query(&[("limit", limit.to_string())]);
@@ -696,7 +697,7 @@ impl MarketDataExecutionClient {
 
         let response = self
             .client
-            .post(format!("{}/api/v1/execute", self.base_url))
+            .post(format!("{}/v1/execute", self.base_url))
             .json(&request)
             .send()
             .await?;

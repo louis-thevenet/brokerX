@@ -91,14 +91,14 @@ async fn main() -> color_eyre::Result<()> {
 
     // Build routes
     let app = Router::new()
-        .route("/health", get(api::health_check))
-        .route("/orders", post(api::create_order))
-        .route("/orders", get(api::get_orders))
-        .route("/orders/{id}", get(api::get_order))
-        .route("/orders/{id}", put(api::update_order))
-        .route("/orders/{id}", delete(api::cancel_order))
+        .route("/v1/health", get(api::health_check))
+        .route("/v1/orders", post(api::create_order))
+        .route("/v1/orders", get(api::get_orders))
+        .route("/v1/orders/{id}", get(api::get_order))
+        .route("/v1/orders/{id}", put(api::update_order))
+        .route("/v1/orders/{id}", delete(api::cancel_order))
         .route(
-            "/orders/{id}/execution",
+            "/v1/orders/{id}/execution",
             axum::routing::patch(api::update_order_execution),
         )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))

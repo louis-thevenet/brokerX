@@ -93,7 +93,7 @@ impl From<crate::service::ServiceError> for ApiError {
 /// Returns the service status and version information
 #[utoipa::path(
     get,
-    path = "/health",
+    path = "/v1/health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse)
     ),
@@ -112,7 +112,7 @@ pub async fn health_check() -> Json<HealthResponse> {
 /// Returns the latest market price data for the requested symbol
 #[utoipa::path(
     get,
-    path = "/api/v1/prices/{symbol}",
+    path = "/v1/prices/{symbol}",
     params(
         ("symbol" = String, Path, description = "Asset symbol (e.g., AAPL, GOOGL)")
     ),
@@ -138,7 +138,7 @@ pub async fn get_current_price(
 /// Query parameter: symbols=AAPL,GOOGL,MSFT
 #[utoipa::path(
     get,
-    path = "/api/v1/prices",
+    path = "/v1/prices",
     params(
         ("symbols" = Option<String>, Query, description = "Comma-separated list of symbols")
     ),
@@ -186,7 +186,7 @@ pub async fn get_current_prices(
 /// Supports optional date range filtering and result limiting
 #[utoipa::path(
     get,
-    path = "/api/v1/prices/{symbol}/history",
+    path = "/v1/prices/{symbol}/history",
     params(
         ("symbol" = String, Path, description = "Asset symbol"),
         ("start_date" = Option<String>, Query, description = "Start date (ISO 8601)"),
@@ -225,7 +225,7 @@ pub async fn get_historical_prices(
 /// Returns all symbols that have market data available
 #[utoipa::path(
     get,
-    path = "/api/v1/symbols",
+    path = "/v1/symbols",
     responses(
         (status = 200, description = "List of available symbols", body = SymbolsResponse)
     ),
@@ -249,7 +249,7 @@ pub async fn get_available_symbols(
 /// Creates initial price data for common symbols if they don't exist
 #[utoipa::path(
     post,
-    path = "/api/v1/initialize",
+    path = "/v1/initialize",
     responses(
         (status = 200, description = "Market data initialized", body = InitializeResponse)
     ),
@@ -288,7 +288,7 @@ pub async fn initialize_market_data(State(state): State<AppState>) -> impl IntoR
 /// This endpoint simulates market movement
 #[utoipa::path(
     post,
-    path = "/api/v1/simulate",
+    path = "/v1/simulate",
     responses(
         (status = 200, description = "Prices updated", body = MessageResponse)
     ),
@@ -325,7 +325,7 @@ pub async fn simulate_price_update(State(state): State<AppState>) -> impl IntoRe
 /// Simulates order execution and returns result
 #[utoipa::path(
     post,
-    path = "/api/v1/execute",
+    path = "/v1/execute",
     request_body = ExecuteOrderRequest,
     responses(
         (status = 200, description = "Order executed successfully", body = ExecuteOrderResponse),

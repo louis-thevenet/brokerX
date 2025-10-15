@@ -69,20 +69,23 @@ async fn create_test_setup() -> (Router, Uuid) {
 
     // Build the same router as in main.rs
     let app = Router::new()
-        .route("/health", axum::routing::get(crate::api::health_check))
-        .route("/users", axum::routing::post(crate::api::create_user))
-        .route("/users/{id}", axum::routing::get(crate::api::get_user))
-        .route("/users/{id}", axum::routing::put(crate::api::update_user))
+        .route("/v1/health", axum::routing::get(crate::api::health_check))
+        .route("/v1/users", axum::routing::post(crate::api::create_user))
+        .route("/v1/users/{id}", axum::routing::get(crate::api::get_user))
         .route(
-            "/users/by-email/{email}",
+            "/v1/users/{id}",
+            axum::routing::put(crate::api::update_user),
+        )
+        .route(
+            "/v1/users/by-email/{email}",
             axum::routing::get(crate::api::get_user_by_email),
         )
         .route(
-            "/users/{id}/verify",
+            "/v1/users/{id}/verify",
             axum::routing::post(crate::api::verify_user_email),
         )
         .route(
-            "/auth/login",
+            "/v1/auth/login",
             axum::routing::post(crate::api::authenticate_user),
         )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -100,7 +103,7 @@ async fn test_health_check() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/health")
+                .uri("/v1/health")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -118,7 +121,7 @@ async fn test_get_user_success() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri(format!("/users/{test_user_id}"))
+                .uri(format!("/v1/users/{test_user_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -153,7 +156,7 @@ async fn test_get_user_not_found() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri(format!("/users/{non_existent_id}"))
+                .uri(format!("/v1/users/{non_existent_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -171,7 +174,7 @@ async fn test_get_user_invalid_uuid() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/users/invalid-uuid")
+                .uri("/v1/users/invalid-uuid")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -208,7 +211,7 @@ async fn test_create_user_success() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/users")
+                .uri("/v1/users")
                 .header("content-type", "application/json")
                 .body(Body::from(create_request))
                 .unwrap(),
@@ -242,7 +245,7 @@ async fn test_create_user_validation() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/users")
+                .uri("/v1/users")
                 .header("content-type", "application/json")
                 .body(Body::from(invalid_request))
                 .unwrap(),
@@ -267,7 +270,7 @@ async fn test_authenticate_user() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/auth/login")
+                .uri("/v1/auth/login")
                 .header("content-type", "application/json")
                 .body(Body::from(auth_request))
                 .unwrap(),

@@ -91,7 +91,7 @@ pub struct ValidateTradeResponse {
 /// Health check endpoint
 #[utoipa::path(
     get,
-    path = "/health",
+    path = "/v1/health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse)
     ),
@@ -108,7 +108,7 @@ pub async fn health_check() -> impl IntoResponse {
 /// Get user by ID
 #[utoipa::path(
     get,
-    path = "/users/{id}",
+    path = "/v1/users/{id}",
     responses(
         (status = 200, description = "User found", body = User),
         (status = 404, description = "User not found"),
@@ -138,7 +138,7 @@ pub async fn get_user(
 /// Create a new user
 #[utoipa::path(
     post,
-    path = "/users",
+    path = "/v1/users",
     request_body = CreateUserRequest,
     responses(
         (status = 201, description = "User created successfully", body = Uuid),
@@ -196,7 +196,7 @@ pub async fn create_user(
 /// Update user information
 #[utoipa::path(
     put,
-    path = "/users/{id}",
+    path = "/v1/users/{id}",
     request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User updated successfully", body = User),
@@ -256,7 +256,7 @@ pub async fn update_user(
 /// Deposit funds into user account
 #[utoipa::path(
     post,
-    path = "/users/{id}/deposit",
+    path = "/v1/users/{id}/deposit",
     request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User balance updated successfully", body = User),
@@ -305,7 +305,7 @@ pub async fn deposit_funds(
 /// Withdraw funds from user account
 #[utoipa::path(
     post,
-    path = "/users/{id}/withdraw",
+    path = "/v1/users/{id}/withdraw",
     request_body = WithdrawRequest,
     responses(
         (status = 200, description = "User balance updated successfully", body = User),
@@ -357,7 +357,7 @@ pub async fn withdraw_funds(
 /// Get user holdings
 #[utoipa::path(
     get,
-    path = "/users/{id}/holdings",
+    path = "/v1/users/{id}/holdings",
     responses(
         (status = 200, description = "Holdings retrieved successfully", body = Vec<Holding>),
         (status = 404, description = "User not found"),
@@ -394,7 +394,7 @@ pub async fn get_holdings(
 /// Update user holdings after order execution
 #[utoipa::path(
     post,
-    path = "/users/{id}/holdings",
+    path = "/v1/users/{id}/holdings",
     request_body = UpdateHoldingsRequest,
     responses(
         (status = 200, description = "Holdings updated successfully"),
@@ -456,7 +456,7 @@ pub async fn update_holdings(
 /// Get user by email
 #[utoipa::path(
     get,
-    path = "/users/by-email/{email}",
+    path = "/v1/users/by-email/{email}",
     responses(
         (status = 200, description = "User found", body = User),
         (status = 404, description = "User not found"),
@@ -482,7 +482,7 @@ pub async fn get_user_by_email(
 /// Verify user email
 #[utoipa::path(
     post,
-    path = "/users/{id}/verify",
+    path = "/v1/users/{id}/verify",
     responses(
         (status = 200, description = "Email verified successfully"),
         (status = 404, description = "User not found"),
@@ -507,7 +507,7 @@ pub async fn verify_user_email(
 /// Authenticate user credentials
 #[utoipa::path(
     post,
-    path = "/auth/login",
+    path = "/v1/auth/login",
     request_body = AuthenticateRequest,
     responses(
         (status = 200, description = "Authentication result", body = AuthenticateResponse),
@@ -556,7 +556,7 @@ pub async fn authenticate_user(
 /// Validate if user can execute a trade (pre-trade check)
 #[utoipa::path(
     post,
-    path = "/users/{id}/validate-trade",
+    path = "/v1/users/{id}/validate-trade",
     request_body = ValidateTradeRequest,
     responses(
         (status = 200, description = "Trade validation result", body = ValidateTradeResponse),

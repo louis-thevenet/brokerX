@@ -134,19 +134,19 @@ async fn main() -> color_eyre::Result<()> {
     // Build the router
     let app = Router::new()
         // Health check
-        .route("/health", get(api::health_check))
+        .route("/v1/health", get(api::health_check))
         // API routes
-        .route("/api/v1/prices/{symbol}", get(api::get_current_price))
-        .route("/api/v1/prices", get(api::get_current_prices))
+        .route("/v1/prices/{symbol}", get(api::get_current_price))
+        .route("/v1/prices", get(api::get_current_prices))
         .route(
-            "/api/v1/prices/{symbol}/history",
+            "/v1/prices/{symbol}/history",
             get(api::get_historical_prices),
         )
-        .route("/api/v1/symbols", get(api::get_available_symbols))
-        .route("/api/v1/initialize", post(api::initialize_market_data))
-        .route("/api/v1/simulate", post(api::simulate_price_update))
+        .route("/v1/symbols", get(api::get_available_symbols))
+        .route("/v1/initialize", post(api::initialize_market_data))
+        .route("/v1/simulate", post(api::simulate_price_update))
         // Order execution endpoint
-        .route("/api/v1/execute", post(api::execute_order))
+        .route("/v1/execute", post(api::execute_order))
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Add state and middleware

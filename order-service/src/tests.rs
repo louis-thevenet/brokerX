@@ -48,13 +48,16 @@ async fn create_test_setup() -> (Router, Uuid, Uuid) {
 
     // Build the same router as in main.rs
     let app = Router::new()
-        .route("/health", axum::routing::get(crate::api::health_check))
-        .route("/orders", axum::routing::post(crate::api::create_order))
-        .route("/orders", axum::routing::get(crate::api::get_orders))
-        .route("/orders/{id}", axum::routing::get(crate::api::get_order))
-        .route("/orders/{id}", axum::routing::put(crate::api::update_order))
+        .route("/v1/health", axum::routing::get(crate::api::health_check))
+        .route("/v1/orders", axum::routing::post(crate::api::create_order))
+        .route("/v1/orders", axum::routing::get(crate::api::get_orders))
+        .route("/v1/orders/{id}", axum::routing::get(crate::api::get_order))
         .route(
-            "/orders/{id}",
+            "/v1/orders/{id}",
+            axum::routing::put(crate::api::update_order),
+        )
+        .route(
+            "/v1/orders/{id}",
             axum::routing::delete(crate::api::cancel_order),
         )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -72,7 +75,7 @@ async fn test_health_check() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/health")
+                .uri("/v1/health")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -91,7 +94,7 @@ async fn test_get_order_not_found() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri(format!("/orders/{non_existent_id}"))
+                .uri(format!("/v1/orders/{non_existent_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -109,7 +112,7 @@ async fn test_get_order_invalid_uuid() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/orders/invalid-uuid")
+                .uri("/v1/orders/invalid-uuid")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -127,7 +130,7 @@ async fn test_get_orders_for_user_empty() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri(format!("/orders?client_id={user_id}"))
+                .uri(format!("/v1/orders?client_id={user_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -153,7 +156,7 @@ async fn test_get_orders_for_nonexistent_user() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri(format!("/orders?client_id={non_existent_id}"))
+                .uri(format!("/v1/orders?client_id={non_existent_id}"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -177,7 +180,7 @@ async fn test_get_orders_for_user_invalid_uuid() {
         .oneshot(
             Request::builder()
                 .method(Method::GET)
-                .uri("/orders?client_id=invalid-uuid")
+                .uri("/v1/orders?client_id=invalid-uuid")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -205,7 +208,7 @@ async fn test_create_order() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/orders")
+                .uri("/v1/orders")
                 .header("content-type", "application/json")
                 .body(Body::from(request_body))
                 .unwrap(),
@@ -239,7 +242,7 @@ async fn test_create_order_validation() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/orders")
+                .uri("/v1/orders")
                 .header("content-type", "application/json")
                 .body(Body::from(invalid_request))
                 .unwrap(),
@@ -272,7 +275,7 @@ async fn test_create_limit_order() {
         .oneshot(
             Request::builder()
                 .method(Method::POST)
-                .uri("/orders")
+                .uri("/v1/orders")
                 .header("content-type", "application/json")
                 .body(Body::from(request_body))
                 .unwrap(),
@@ -314,7 +317,7 @@ async fn test_error_handling() {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(format!("/orders/{uuid_str}"))
+                    .uri(format!("/v1/orders/{uuid_str}"))
                     .body(Body::empty())
                     .unwrap(),
             )

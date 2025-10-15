@@ -58,7 +58,7 @@ async function login(event) {
   const password = document.getElementById('login-password').value;
 
   try {
-    const response = await makeApiCall('/auth/login', {
+    const response = await makeApiCall('/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password })
     });
@@ -91,7 +91,7 @@ async function register(event) {
   const surname = document.getElementById('reg-surname').value;
 
   try {
-    const response = await makeApiCall('/auth/register', {
+    const response = await makeApiCall('/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         email,
@@ -137,7 +137,7 @@ function logout() {
 // User Profile Functions
 async function loadUserProfile() {
   try {
-    const response = await makeApiCall('/me');
+    const response = await makeApiCall('/v1/me');
 
     if (response.ok) {
       currentUser = await response.json();
@@ -190,7 +190,7 @@ async function updateProfile(event) {
   }
 
   try {
-    const response = await makeApiCall('/me', {
+    const response = await makeApiCall('/v1/me', {
       method: 'PUT',
       body: JSON.stringify(updateData)
     });
@@ -218,7 +218,7 @@ async function depositFunds(event) {
   const amount = parseFloat(document.getElementById('deposit-amount').value);
 
   try {
-    const response = await makeApiCall('/me/deposit', {
+    const response = await makeApiCall('/v1/me/deposit', {
       method: 'POST',
       body: JSON.stringify({ amount })
     });
@@ -419,7 +419,7 @@ async function placeOrder(event) {
 
   try {
     console.log('Placing order:', orderData);
-    const response = await makeApiCall('/orders', {
+    const response = await makeApiCall('/v1/orders', {
       method: 'POST',
       body: JSON.stringify(orderData)
     });
@@ -489,7 +489,7 @@ function togglePriceField() {
 async function loadOrders() {
   try {
     // REST API uses pagination - get first page with reasonable limit
-    const response = await makeApiCall('/orders?page=1&limit=50');
+    const response = await makeApiCall('/v1/orders?page=1&limit=50');
 
     if (response.ok) {
       const data = await response.json();
@@ -647,7 +647,7 @@ async function cancelOrder(orderId) {
   }
 
   try {
-    const response = await makeApiCall(`/orders/${orderId}`, {
+    const response = await makeApiCall(`/v1/orders/${orderId}`, {
       method: 'DELETE'
     });
 
@@ -738,7 +738,7 @@ async function submitOrderUpdateFromModal(event) {
   };
 
   try {
-    const response = await makeApiCall(`/orders/${orderId}`, {
+    const response = await makeApiCall(`/v1/orders/${orderId}`, {
       method: 'PUT',
       body: JSON.stringify(updateData)
     });
@@ -762,7 +762,7 @@ async function submitOrderUpdateFromModal(event) {
 async function loadMarketData() {
   try {
     // First, load available symbols
-    const symbolsResponse = await makeApiCall('/api/v1/market/symbols');
+    const symbolsResponse = await makeApiCall('/v1/market/symbols');
     
     if (!symbolsResponse.ok) {
       const error = await symbolsResponse.json().catch(() => ({ message: 'Failed to load market data' }));
@@ -787,7 +787,7 @@ async function loadMarketData() {
     updateSymbolDatalist(symbols);
 
     // Fetch prices for all symbols
-    const pricesResponse = await makeApiCall('/api/v1/market/prices');
+    const pricesResponse = await makeApiCall('/v1/market/prices');
     
     if (pricesResponse.ok) {
       const pricesData = await pricesResponse.json();
@@ -916,7 +916,7 @@ function quickBuy(symbol, price) {
 
 async function viewHistory(symbol) {
   try {
-    const response = await makeApiCall(`/api/v1/market/prices/${symbol}/history`);
+    const response = await makeApiCall(`/v1/market/prices/${symbol}/history`);
     
     if (response.ok) {
       const data = await response.json();
@@ -1164,7 +1164,7 @@ async function verifyMfa(event) {
 
   try {
     // Both registration and login verification use the same endpoint
-    const response = await makeApiCall('/auth/verify-login', {
+    const response = await makeApiCall('/v1/auth/verify-login', {
       method: 'POST',
       body: JSON.stringify({
         challenge_id: pendingMfaChallenge,
@@ -1280,7 +1280,7 @@ function showRegister() {
 // Health check function (for development)
 async function checkApiHealth() {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const response = await fetch(`${API_BASE_URL}/v1/health`);
     if (response.ok) {
       const data = await response.json();
       console.log('API Health:', data);

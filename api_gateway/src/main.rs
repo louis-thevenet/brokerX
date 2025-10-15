@@ -96,30 +96,30 @@ async fn main() -> anyhow::Result<()> {
 fn create_router(app_state: AppState) -> Router {
     // Public routes (no authentication required)
     let public_routes = Router::new()
-        .route("/health", get(api::health_check))
-        .route("/auth/register", post(api::register))
-        .route("/auth/login", post(api::login))
-        .route("/auth/verify-login", post(api::verify_login_mfa))
-        .route("/auth/logout", post(api::logout))
+        .route("/v1/health", get(api::health_check))
+        .route("/v1/auth/register", post(api::register))
+        .route("/v1/auth/login", post(api::login))
+        .route("/v1/auth/verify-login", post(api::verify_login_mfa))
+        .route("/v1/auth/logout", post(api::logout))
         // Market data public endpoints
-        .route("/api/v1/market/prices/{symbol}", get(api::get_market_price))
-        .route("/api/v1/market/prices", get(api::get_market_prices))
-        .route("/api/v1/market/symbols", get(api::get_market_symbols))
+        .route("/v1/market/prices/{symbol}", get(api::get_market_price))
+        .route("/v1/market/prices", get(api::get_market_prices))
+        .route("/v1/market/symbols", get(api::get_market_symbols))
         .route(
-            "/api/v1/market/prices/{symbol}/history",
+            "/v1/market/prices/{symbol}/history",
             get(api::get_market_history),
         );
 
     // Protected routes (authentication required)
     let protected_routes = Router::new()
-        .route("/me", get(api::get_me))
-        .route("/me", put(api::update_me))
-        .route("/me/deposit", post(api::deposit_funds))
-        .route("/orders", post(api::create_order))
-        .route("/orders", get(api::get_my_orders))
-        .route("/orders/{id}", get(api::get_order))
-        .route("/orders/{id}", put(api::update_order))
-        .route("/orders/{id}", delete(api::cancel_order))
+        .route("/v1/me", get(api::get_me))
+        .route("/v1/me", put(api::update_me))
+        .route("/v1/me/deposit", post(api::deposit_funds))
+        .route("/v1/orders", post(api::create_order))
+        .route("/v1/orders", get(api::get_my_orders))
+        .route("/v1/orders/{id}", get(api::get_order))
+        .route("/v1/orders/{id}", put(api::update_order))
+        .route("/v1/orders/{id}", delete(api::cancel_order))
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             middleware::auth_middleware,

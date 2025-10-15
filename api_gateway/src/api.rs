@@ -80,7 +80,7 @@ pub struct ApiDoc;
 /// Health check endpoint
 #[utoipa::path(
     get,
-    path = "/health",
+    path = "/v1/health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthResponse)
     ),
@@ -96,12 +96,9 @@ pub async fn health_check() -> impl IntoResponse {
 }
 
 /// Register a new user
-///
-/// Creates a new user account and automatically initiates email verification.
-/// The user must complete MFA verification before they can log in.
 #[utoipa::path(
     post,
-    path = "/auth/register",
+    path = "/v1/auth/register",
     request_body = RegisterRequest,
     responses(
         (status = 201, description = "User registered successfully", body = RegisterResponse),
@@ -128,7 +125,6 @@ pub async fn register(
     let user_id = state.user_client.create_user(&request).await?;
     info!("User created with ID: {}", user_id);
 
-    // MFA challenge will be sent when user attempts to login
     Ok((
         StatusCode::CREATED,
         Json(RegisterResponse {
@@ -143,10 +139,10 @@ pub async fn register(
 /// Login and get JWT token
 ///
 /// MFA is required for all login attempts. A challenge ID will be returned
-/// that must be verified with /auth/verify-login to complete authentication.
+/// that must be verified with /v1/auth/verify-login to complete authentication.
 #[utoipa::path(
     post,
-    path = "/auth/login",
+    path = "/v1/auth/login",
     request_body = LoginRequest,
     responses(
         (status = 200, description = "MFA challenge sent", body = LoginResponse),
@@ -174,7 +170,7 @@ pub async fn login(
     // Get user info
     let user = state.user_client.get_user(user_id).await?;
 
-    // ALWAYS send MFA challenge for all users (maximum security)
+    // send MFA challenge
     info!("Initiating MFA challenge for user {}", user_id);
     let challenge_id = state.mfa_service.initiate_challenge(&user.email).await?;
 
@@ -188,10 +184,9 @@ pub async fn login(
 /// Verify login MFA challenge
 ///
 /// Complete the login process by verifying the MFA code sent to the user's email.
-/// All login attempts require MFA verification for maximum security.
 #[utoipa::path(
     post,
-    path = "/auth/verify-login",
+    path = "/v1/auth/verify-login",
     request_body = VerifyMfaRequest,
     responses(
         (status = 200, description = "MFA verification successful, token issued", body = VerifyMfaResponse),
@@ -245,9 +240,10 @@ pub async fn verify_login_mfa(
 /// Logout
 ///
 /// Client-side logout. The client should delete its token.
+/// TODO: revoke token server-side ?
 #[utoipa::path(
     post,
-    path = "/auth/logout",
+    path = "/v1/auth/logout",
     request_body = LogoutRequest,
     responses(
         (status = 200, description = "Logout successful", body = MessageResponse)
@@ -263,7 +259,7 @@ pub async fn logout() -> ApiResult<impl IntoResponse> {
 /// Get current user profile
 #[utoipa::path(
     get,
-    path = "/me",
+    path = "/v1/me",
     responses(
         (status = 200, description = "User profile", body = UserResponse),
         (status = 401, description = "Unauthorized"),
@@ -285,7 +281,7 @@ pub async fn get_me(
 /// Update current user profile
 #[utoipa::path(
     put,
-    path = "/me",
+    path = "/v1/me",
     request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User updated successfully", body = UserResponse),
@@ -312,7 +308,7 @@ pub async fn update_me(
 /// Deposit funds to user account
 #[utoipa::path(
     post,
-    path = "/me/deposit",
+    path = "/v1/me/deposit",
     request_body = DepositRequest,
     responses(
         (status = 200, description = "Funds deposited successfully", body = UserResponse),
@@ -352,9 +348,11 @@ pub async fn deposit_funds(
 }
 
 /// Create a new order
+/// Archestrates the full order lifecycle: validation, creation, execution, and updating user holdings.
+/// TODO: needs refactor
 #[utoipa::path(
     post,
-    path = "/orders",
+    path = "/v1/orders",
     request_body = CreateOrderRequest,
     responses(
         (status = 201, description = "Order created successfully", body = OrderResponse),
@@ -366,6 +364,7 @@ pub async fn deposit_funds(
     ),
     tag = "orders"
 )]
+#[allow(clippy::too_many_lines)]
 pub async fn create_order(
     State(state): State<AppState>,
     AuthenticatedUser(user_id): AuthenticatedUser,
@@ -566,8 +565,28 @@ pub async fn create_order(
                             "Failed to debit user {} account for order {}: {}",
                             user_id, order.id, e
                         );
-                        // Note: Holdings were already updated, so we have an inconsistency
-                        // In production, this should trigger a compensating transaction
+                        // Holdings were already updated, so we have an inconsistency
+                        // undo holdings update
+                        if let Err(e) = state
+                            .user_client
+                            .update_holdings(
+                                user_id,
+                                &order_request.symbol,
+                                -quantity_change,
+                                exec_price,
+                            )
+                            .await
+                        {
+                            error!(
+                                "Failed to rollback holdings for user {} after failed debit for order {}: {}",
+                                user_id, order.id, e
+                            );
+                        } else {
+                            info!(
+                                "Rolled back holdings for user {} after failed debit for order {}",
+                                user_id, order.id
+                            );
+                        }
                     } else {
                         info!(
                             "Debited ${:.2} from user {} for buy order {}",
@@ -586,8 +605,28 @@ pub async fn create_order(
                             "Failed to credit user {} account for order {}: {}",
                             user_id, order.id, e
                         );
-                        // Note: Holdings were already updated, so we have an inconsistency
-                        // In production, this should trigger a compensating transaction
+                        // Holdings were already updated, so we have an inconsistency
+                        // undo holdings update
+                        if let Err(e) = state
+                            .user_client
+                            .update_holdings(
+                                user_id,
+                                &order_request.symbol,
+                                -quantity_change,
+                                exec_price,
+                            )
+                            .await
+                        {
+                            error!(
+                                "Failed to rollback holdings for user {} after failed credit for order {}: {}",
+                                user_id, order.id, e
+                            );
+                        } else {
+                            info!(
+                                "Rolled back holdings for user {} after failed credit for order {}",
+                                user_id, order.id
+                            );
+                        }
                     } else {
                         info!(
                             "Credited ${:.2} to user {} for sell order {}",
@@ -606,7 +645,7 @@ pub async fn create_order(
 /// Get user's orders with pagination and filtering
 #[utoipa::path(
     get,
-    path = "/orders",
+    path = "/v1/orders",
     params(PaginationQuery),
     responses(
         (status = 200, description = "List of user orders", body = PaginatedResponse<OrderResponse>),
@@ -644,7 +683,7 @@ pub async fn get_my_orders(
 /// Get specific order by ID
 #[utoipa::path(
     get,
-    path = "/orders/{id}",
+    path = "/v1/orders/{id}",
     params(
         ("id" = Uuid, Path, description = "Order ID")
     ),
@@ -671,7 +710,7 @@ pub async fn get_order(
 /// Update an existing order
 #[utoipa::path(
     put,
-    path = "/orders/{id}",
+    path = "/v1/orders/{id}",
     params(
         ("id" = Uuid, Path, description = "Order ID")
     ),
@@ -703,7 +742,7 @@ pub async fn update_order(
 /// Cancel an order
 #[utoipa::path(
     delete,
-    path = "/orders/{id}",
+    path = "/v1/orders/{id}",
     params(
         ("id" = Uuid, Path, description = "Order ID")
     ),
@@ -740,7 +779,7 @@ pub async fn cancel_order(
 /// This endpoint is public and does not require authentication.
 #[utoipa::path(
     get,
-    path = "/api/v1/market/prices/{symbol}",
+    path = "/v1/market/prices/{symbol}",
     params(
         ("symbol" = String, Path, description = "Stock symbol (e.g., AAPL, GOOGL)")
     ),
@@ -767,7 +806,7 @@ pub async fn get_market_price(
 /// This endpoint is public and does not require authentication.
 #[utoipa::path(
     get,
-    path = "/api/v1/market/prices",
+    path = "/v1/market/prices",
     params(
         ("symbols" = String, Query, description = "Comma-separated list of symbols (e.g., AAPL,GOOGL,MSFT)")
     ),
@@ -811,7 +850,7 @@ pub async fn get_market_prices(
 /// This endpoint is public and does not require authentication.
 #[utoipa::path(
     get,
-    path = "/api/v1/market/symbols",
+    path = "/v1/market/symbols",
     responses(
         (status = 200, description = "List of available symbols"),
         (status = 503, description = "Market data service unavailable")
@@ -827,10 +866,9 @@ pub async fn get_market_symbols(State(state): State<AppState>) -> ApiResult<impl
 /// Get historical prices for a symbol
 ///
 /// Returns historical price data for charting and analysis.
-/// This endpoint is public and does not require authentication.
 #[utoipa::path(
     get,
-    path = "/api/v1/market/prices/{symbol}/history",
+    path = "/v1/market/prices/{symbol}/history",
     params(
         ("symbol" = String, Path, description = "Stock symbol (e.g., AAPL)"),
         ("limit" = Option<i64>, Query, description = "Maximum number of historical records (default: 100)")
