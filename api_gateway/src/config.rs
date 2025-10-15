@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::env;
 
 #[derive(Debug, Clone)]
@@ -12,8 +11,8 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Result<Self> {
-        Ok(Config {
+    pub fn from_env() -> Config {
+        Config {
             server_address: env::var("API_GATEWAY_ADDRESS")
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
             user_service_url: env::var("USER_SERVICE_URL")
@@ -29,6 +28,6 @@ impl Config {
                 .unwrap_or_else(|_| "24".to_string())
                 .parse()
                 .unwrap_or(24),
-        })
+        }
     }
 }

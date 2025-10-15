@@ -45,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration
     dotenvy::dotenv().ok();
-    let config = Arc::new(Config::from_env()?);
+    let config = Arc::new(Config::from_env());
 
     // Initialize service clients
     let user_client = Arc::new(clients::UserClient::new(&config.user_service_url));

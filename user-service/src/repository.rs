@@ -48,7 +48,7 @@ impl UserRepoExt for UserRepo {
         initial_balance: f64,
     ) -> Result<UserId, AuthError> {
         // Check if user already exists
-        if let Some(_) = self.get_user_by_email(&email).await? {
+        if (self.get_user_by_email(&email).await?).is_some() {
             return Err(AuthError::UserAlreadyExists);
         }
 
@@ -58,7 +58,7 @@ impl UserRepoExt for UserRepo {
         }
 
         // Check if email already exists
-        if let Some(_) = self.get_user_by_email(&email).await? {
+        if (self.get_user_by_email(&email).await?).is_some() {
             return Err(AuthError::UserAlreadyExists);
         }
 

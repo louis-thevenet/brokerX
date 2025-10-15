@@ -279,7 +279,7 @@ pub struct MarketPriceResponse {
     pub high: f64,
     #[schema(example = 173.90)]
     pub low: f64,
-    #[schema(example = 1000000)]
+    #[schema(example = 1_000_000)]
     pub volume: u64,
     #[schema(value_type = String)]
     pub timestamp: DateTime<Utc>,
