@@ -76,7 +76,7 @@ impl MfaService {
             ),
             MfaError::InvalidCode => ApiError::BadRequest("Invalid verification code".to_string()),
             MfaError::SendingFailed(msg) => {
-                ApiError::InternalServerError(format!("Failed to send verification code: {}", msg))
+                ApiError::InternalServerError(format!("Failed to send verification code: {msg}"))
             }
             MfaError::ServiceUnavailable => {
                 ApiError::ServiceUnavailable("MFA service is temporarily unavailable".to_string())

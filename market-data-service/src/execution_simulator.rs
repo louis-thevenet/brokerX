@@ -51,7 +51,7 @@ impl ExecutionSimulator {
                     status: ExecutionStatus::Rejected,
                     filled_quantity: 0,
                     average_price: None,
-                    message: Some(format!("Symbol {} not found", symbol)),
+                    message: Some(format!("Symbol {symbol} not found")),
                     timestamp: Utc::now(),
                 });
             }
@@ -283,8 +283,7 @@ impl ExecutionSimulator {
                 filled_quantity: 0,
                 average_price: None,
                 message: Some(format!(
-                    "Limit price ${:.2} not reached (current ${:.2})",
-                    limit_price, current_price
+                    "Limit price ${limit_price:.2} not reached (current ${current_price:.2})"
                 )),
                 timestamp: Utc::now(),
             });

@@ -604,8 +604,7 @@ pub async fn validate_trade(
 
             let msg = if !can_afford {
                 Some(format!(
-                    "Insufficient funds: need ${:.2}, have ${:.2}",
-                    estimated_cost, available_balance
+                    "Insufficient funds: need ${estimated_cost:.2}, have ${available_balance:.2}"
                 ))
             } else {
                 None

@@ -93,7 +93,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/orders/{}", non_existent_id))
+                    .uri(format!("/orders/{non_existent_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -129,7 +129,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/orders?client_id={}", user_id))
+                    .uri(format!("/orders?client_id={user_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -155,7 +155,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/orders?client_id={}", non_existent_id))
+                    .uri(format!("/orders?client_id={non_existent_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -316,7 +316,7 @@ mod tests {
                 .oneshot(
                     Request::builder()
                         .method(Method::GET)
-                        .uri(&format!("/orders/{}", uuid_str))
+                        .uri(format!("/orders/{uuid_str}"))
                         .body(Body::empty())
                         .unwrap(),
                 )

@@ -162,7 +162,7 @@ impl MarketDataRepository {
         .bind(price.open)
         .bind(price.high)
         .bind(price.low)
-        .bind(price.volume as i64)
+        .bind(price.volume)
         .bind(price.timestamp)
         .execute(&self.pool)
         .await?;

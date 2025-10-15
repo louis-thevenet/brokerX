@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize MFA provider with environment configuration
     let mfa_provider = Arc::new(
         mfa_adapter::EmailOtpProvider::new_from_env()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize MFA provider: {}", e))?,
+            .map_err(|e| anyhow::anyhow!("Failed to initialize MFA provider: {e}"))?,
     );
     let mfa_service = mfa_service::MfaService::new(mfa_provider);
 

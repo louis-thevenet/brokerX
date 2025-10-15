@@ -262,8 +262,7 @@ impl UserClient {
             let error_text = response.text().await.unwrap_or_default();
             error!("Error updating holdings: {}", error_text);
             Err(ApiError::ServiceUnavailable(format!(
-                "User service error {}: {}",
-                status, error_text
+                "User service error {status}: {error_text}"
             )))
         }
     }
@@ -356,7 +355,7 @@ impl OrderClient {
 
         let response = self
             .client
-            .get(&format!("{}/orders", self.base_url))
+            .get(format!("{}/orders", self.base_url))
             .query(&query_params)
             .send()
             .await?;
@@ -379,8 +378,7 @@ impl OrderClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Order service error {}: {}",
-                status, error_text
+                "Order service error {status}: {error_text}"
             )))
         }
     }
@@ -393,7 +391,7 @@ impl OrderClient {
     ) -> ApiResult<OrderResponse> {
         let response = self
             .client
-            .put(&format!("{}/orders/{}", self.base_url, order_id))
+            .put(format!("{}/orders/{}", self.base_url, order_id))
             .json(request)
             .send()
             .await?;
@@ -418,8 +416,7 @@ impl OrderClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Order service error {}: {}",
-                status, error_text
+                "Order service error {status}: {error_text}"
             )))
         }
     }
@@ -427,7 +424,7 @@ impl OrderClient {
     pub async fn cancel_order(&self, _user_id: Uuid, order_id: Uuid) -> ApiResult<()> {
         let response = self
             .client
-            .delete(&format!("{}/orders/{}", self.base_url, order_id))
+            .delete(format!("{}/orders/{}", self.base_url, order_id))
             .send()
             .await?;
 
@@ -445,8 +442,7 @@ impl OrderClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Order service error {}: {}",
-                status, error_text
+                "Order service error {status}: {error_text}"
             )))
         }
     }
@@ -499,8 +495,7 @@ impl OrderClient {
             let error_text = response.text().await.unwrap_or_default();
             error!("Error updating order execution: {}", error_text);
             Err(ApiError::ServiceUnavailable(format!(
-                "Order service error {}: {}",
-                status, error_text
+                "Order service error {status}: {error_text}"
             )))
         }
     }
@@ -567,8 +562,7 @@ impl MarketDataClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Market data service error {}: {}",
-                status, error_text
+                "Market data service error {status}: {error_text}"
             )))
         }
     }
@@ -589,8 +583,7 @@ impl MarketDataClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Market data service error {}: {}",
-                status, error_text
+                "Market data service error {status}: {error_text}"
             )))
         }
     }
@@ -611,8 +604,7 @@ impl MarketDataClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Market data service error {}: {}",
-                status, error_text
+                "Market data service error {status}: {error_text}"
             )))
         }
     }
@@ -644,8 +636,7 @@ impl MarketDataClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             Err(ApiError::ServiceUnavailable(format!(
-                "Market data service error {}: {}",
-                status, error_text
+                "Market data service error {status}: {error_text}"
             )))
         }
     }
@@ -708,8 +699,7 @@ impl MarketDataExecutionClient {
             let error_text = response.text().await.unwrap_or_default();
             error!("Market data execution error {}: {}", status, error_text);
             Err(ApiError::ServiceUnavailable(format!(
-                "Market data service error {}: {}",
-                status, error_text
+                "Market data service error {status}: {error_text}"
             )))
         }
     }

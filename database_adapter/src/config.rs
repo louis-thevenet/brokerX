@@ -28,7 +28,7 @@ impl DatabaseConfig {
 
         let base_url = env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://localhost:5432/brokerx".to_string());
-        let database_url = base_url.replace("/brokerx", &format!("/brokerx_{}_test", test_db_name));
+        let database_url = base_url.replace("/brokerx", &format!("/brokerx_{test_db_name}_test"));
 
         Self { database_url }
     }

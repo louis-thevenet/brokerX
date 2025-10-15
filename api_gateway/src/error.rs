@@ -30,15 +30,15 @@ impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ApiError::Unauthorized => write!(f, "Unauthorized"),
-            ApiError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
+            ApiError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
             ApiError::NotFound => write!(f, "Not found"),
-            ApiError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
-            ApiError::UnprocessableEntity(msg) => write!(f, "Unprocessable entity: {}", msg),
-            ApiError::InternalServerError(msg) => write!(f, "Internal server error: {}", msg),
-            ApiError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {}", msg),
-            ApiError::JwtError(err) => write!(f, "JWT error: {}", err),
-            ApiError::RequestError(err) => write!(f, "Request error: {}", err),
-            ApiError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
+            ApiError::BadRequest(msg) => write!(f, "Bad request: {msg}"),
+            ApiError::UnprocessableEntity(msg) => write!(f, "Unprocessable entity: {msg}"),
+            ApiError::InternalServerError(msg) => write!(f, "Internal server error: {msg}"),
+            ApiError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {msg}"),
+            ApiError::JwtError(err) => write!(f, "JWT error: {err}"),
+            ApiError::RequestError(err) => write!(f, "Request error: {err}"),
+            ApiError::ValidationError(msg) => write!(f, "Validation error: {msg}"),
         }
     }
 }

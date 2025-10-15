@@ -73,7 +73,7 @@ impl std::fmt::Display for OrderError {
             OrderError::OrderCannotBeModified => write!(f, "Order cannot be modified"),
             OrderError::OrderCannotBeCancelled => write!(f, "Order cannot be cancelled"),
             OrderError::Unauthorized => write!(f, "Unauthorized"),
-            OrderError::Repository(e) => write!(f, "Repository error: {}", e),
+            OrderError::Repository(e) => write!(f, "Repository error: {e}"),
         }
     }
 }

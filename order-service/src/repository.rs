@@ -139,13 +139,13 @@ impl OrderRepository {
                         filled_quantity: status_filled_quantity.unwrap_or(0) as u64,
                     },
                     "Filled" => OrderStatus::Filled {
-                        date: status_date.unwrap_or_else(|| Utc::now()),
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Rejected" => OrderStatus::Rejected {
-                        date: status_date.unwrap_or_else(|| Utc::now()),
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Cancelled" => OrderStatus::Cancelled {
-                        date: status_date.unwrap_or_else(|| Utc::now()),
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     _ => OrderStatus::Pending,
                 };
@@ -241,13 +241,13 @@ impl OrderRepository {
                         filled_quantity: status_filled_quantity.unwrap_or(0) as u64,
                     },
                     "Filled" => OrderStatus::Filled {
-                        date: status_date.unwrap_or_else(|| Utc::now()),
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Rejected" => OrderStatus::Rejected {
-                        date: status_date.unwrap_or_else(|| Utc::now()),
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Cancelled" => OrderStatus::Cancelled {
-                        date: status_date.unwrap_or_else(|| Utc::now()),
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     _ => OrderStatus::Pending,
                 };

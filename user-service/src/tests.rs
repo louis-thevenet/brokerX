@@ -120,7 +120,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/users/{}", test_user_id))
+                    .uri(format!("/users/{test_user_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -155,7 +155,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method(Method::GET)
-                    .uri(&format!("/users/{}", non_existent_id))
+                    .uri(format!("/users/{non_existent_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )

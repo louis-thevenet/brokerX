@@ -79,7 +79,7 @@ async fn main() -> color_eyre::Result<()> {
     info!("Port: {}", config.port);
     info!(
         "Database: {}",
-        market_data_db_url.split('@').last().unwrap_or("***")
+        market_data_db_url.split('@').next_back().unwrap_or("***")
     );
 
     // Initialize database connection using sqlx
