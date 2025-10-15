@@ -15,9 +15,10 @@ pub struct ErrorResponse {
 #[derive(Debug)]
 pub enum ApiError {
     Unauthorized,
-    Forbidden,
+    Forbidden(String),
     NotFound,
     BadRequest(String),
+    UnprocessableEntity(String),
     InternalServerError(String),
     ServiceUnavailable(String),
     JwtError(jsonwebtoken::errors::Error),
@@ -29,9 +30,10 @@ impl fmt::Display for ApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ApiError::Unauthorized => write!(f, "Unauthorized"),
-            ApiError::Forbidden => write!(f, "Forbidden"),
+            ApiError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
             ApiError::NotFound => write!(f, "Not found"),
             ApiError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            ApiError::UnprocessableEntity(msg) => write!(f, "Unprocessable entity: {}", msg),
             ApiError::InternalServerError(msg) => write!(f, "Internal server error: {}", msg),
             ApiError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {}", msg),
             ApiError::JwtError(err) => write!(f, "JWT error: {}", err),
@@ -59,9 +61,14 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, error_type, message) = match self {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", self.to_string()),
-            ApiError::Forbidden => (StatusCode::FORBIDDEN, "forbidden", self.to_string()),
+            ApiError::Forbidden(ref msg) => (StatusCode::FORBIDDEN, "forbidden", msg.clone()),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "not_found", self.to_string()),
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request", self.to_string()),
+            ApiError::UnprocessableEntity(_) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "unprocessable_entity",
+                self.to_string(),
+            ),
             ApiError::ValidationError(_) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "validation_error",

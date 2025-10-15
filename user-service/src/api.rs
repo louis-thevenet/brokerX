@@ -38,6 +38,11 @@ pub struct DepositRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct WithdrawRequest {
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UpdateHoldingsRequest {
     pub symbol: String,
     pub quantity_change: i64,
@@ -63,6 +68,24 @@ pub struct HealthResponse {
     pub status: String,
     pub service: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ValidateTradeRequest {
+    pub symbol: String,
+    pub quantity: u64,
+    pub order_side: String, // "buy" or "sell"
+    pub estimated_price: f64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ValidateTradeResponse {
+    pub can_trade: bool,
+    pub available_balance: f64,
+    pub available_shares: u64,
+    pub estimated_cost: f64,
+    pub balance_after_trade: f64,
+    pub message: Option<String>,
 }
 
 /// Health check endpoint
@@ -279,6 +302,58 @@ pub async fn deposit_funds(
     }
 }
 
+/// Withdraw funds from user account
+#[utoipa::path(
+    post,
+    path = "/users/{id}/withdraw",
+    request_body = WithdrawRequest,
+    responses(
+        (status = 200, description = "User balance updated successfully", body = User),
+        (status = 404, description = "User not found"),
+        (status = 400, description = "Invalid request data or insufficient funds"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "User ID"),
+    ),
+    tag = "users"
+)]
+pub async fn withdraw_funds(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<WithdrawRequest>,
+) -> impl IntoResponse {
+    info!("Withdrawing funds from user ID: {}", user_id);
+    if payload.amount <= 0.0 {
+        return (StatusCode::BAD_REQUEST, "Withdraw amount must be positive").into_response();
+    }
+    match state
+        .user_service
+        .withdraw_from_user(&user_id, payload.amount)
+        .await
+    {
+        Ok(()) => {
+            info!("Withdrew {} from user {}", payload.amount, user_id);
+            let user = state.user_service.get_user(&user_id).await;
+            match user {
+                Ok(Some(user)) => Json(user).into_response(),
+                Ok(None) => StatusCode::NOT_FOUND.into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+        Err(e) => {
+            info!("Error withdrawing funds from user {}: {}", user_id, e);
+            match e {
+                AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
+                AuthError::NotEnoughMoneyError => {
+                    (StatusCode::BAD_REQUEST, "Insufficient funds").into_response()
+                }
+                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
+        }
+    }
+}
+
 /// Get user holdings
 #[utoipa::path(
     get,
@@ -476,4 +551,106 @@ pub async fn authenticate_user(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
         }
     }
+}
+
+/// Validate if user can execute a trade (pre-trade check)
+#[utoipa::path(
+    post,
+    path = "/users/{id}/validate-trade",
+    request_body = ValidateTradeRequest,
+    responses(
+        (status = 200, description = "Trade validation result", body = ValidateTradeResponse),
+        (status = 404, description = "User not found"),
+        (status = 400, description = "Invalid request"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    tag = "users"
+)]
+pub async fn validate_trade(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(payload): Json<ValidateTradeRequest>,
+) -> impl IntoResponse {
+    debug!(
+        "Validating trade for user {}: {} {} @ {}",
+        user_id, payload.quantity, payload.symbol, payload.estimated_price
+    );
+
+    // Get user
+    let user = match state.user_service.get_user(&user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(e) => {
+            error!("Error fetching user {}: {}", user_id, e);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let order_side = payload.order_side.to_lowercase();
+    let estimated_cost = payload.quantity as f64 * payload.estimated_price;
+
+    let (can_trade, message, available_shares, balance_after) = match order_side.as_str() {
+        "buy" => {
+            let available_balance = user.balance;
+            let can_afford = available_balance >= estimated_cost;
+            let balance_after = if can_afford {
+                available_balance - estimated_cost
+            } else {
+                available_balance
+            };
+
+            let msg = if !can_afford {
+                Some(format!(
+                    "Insufficient funds: need ${:.2}, have ${:.2}",
+                    estimated_cost, available_balance
+                ))
+            } else {
+                None
+            };
+
+            (can_afford, msg, 0, balance_after)
+        }
+        "sell" => {
+            let available_shares = user
+                .holdings
+                .get(&payload.symbol)
+                .map(|h| h.quantity)
+                .unwrap_or(0);
+
+            let can_sell = available_shares >= payload.quantity;
+            let balance_after = user.balance + estimated_cost;
+
+            let msg = if !can_sell {
+                Some(format!(
+                    "Insufficient shares: need {}, have {}",
+                    payload.quantity, available_shares
+                ))
+            } else {
+                None
+            };
+
+            (can_sell, msg, available_shares, balance_after)
+        }
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Invalid order_side: must be 'buy' or 'sell'",
+            )
+                .into_response();
+        }
+    };
+
+    let response = ValidateTradeResponse {
+        can_trade,
+        available_balance: user.balance,
+        available_shares,
+        estimated_cost,
+        balance_after_trade: balance_after,
+        message,
+    };
+
+    Json(response).into_response()
 }

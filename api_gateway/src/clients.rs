@@ -1,9 +1,8 @@
 use crate::error::{ApiError, ApiResult};
 use crate::models::{
-    AuthenticateResponse, CreateOrderRequest, ExecuteOrderRequest, ExecuteOrderResponse,
-    OrderResponse, OrderServicePaginatedResponse, OrderServiceResponse, PaginatedResponse,
-    PaginationQuery, RegisterRequest, UpdateOrderRequest, UpdateUserRequest, UserResponse,
-    UserServiceResponse,
+    AuthenticateResponse, CreateOrderRequest, OrderResponse, OrderServicePaginatedResponse,
+    OrderServiceResponse, PaginatedResponse, PaginationQuery, RegisterRequest, UpdateOrderRequest,
+    UpdateUserRequest, UserResponse, UserServiceResponse,
 };
 use reqwest::Client;
 use serde_json::json;
@@ -172,6 +171,36 @@ impl UserClient {
         }
     }
 
+    pub async fn withdraw_funds(&self, user_id: Uuid, amount: f64) -> ApiResult<UserResponse> {
+        debug!("Withdrawing {} from user ID {}", amount, user_id);
+        let response = self
+            .client
+            .post(format!("{}/users/{}/withdraw", self.base_url, user_id))
+            .json(&json!({ "amount": amount }))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let user: UserServiceResponse = response.json().await?;
+            info!("Withdrew funds. New balance: {}", user.balance);
+            Ok(user.into())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            error!("User not found for withdrawal");
+            Err(ApiError::NotFound)
+        } else if response.status() == reqwest::StatusCode::BAD_REQUEST {
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Withdrawal failed: {}", error_text);
+            Err(ApiError::BadRequest(error_text))
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Error withdrawing funds: {}", error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
+            )))
+        }
+    }
+
     pub async fn get_user_id_by_email(&self, email: &str) -> ApiResult<Uuid> {
         debug!("Fetching user ID for email: {}", email);
         let response = self
@@ -299,7 +328,9 @@ impl OrderClient {
             if order.client_id == user_id {
                 Ok(order.into_response())
             } else {
-                Err(ApiError::Forbidden)
+                Err(ApiError::Forbidden(
+                    "Access denied to this order".to_string(),
+                ))
             }
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
             Err(ApiError::NotFound)
@@ -373,12 +404,14 @@ impl OrderClient {
             if order.client_id == user_id {
                 Ok(order.into_response())
             } else {
-                Err(ApiError::Forbidden)
+                Err(ApiError::Forbidden(
+                    "Access denied to this order".to_string(),
+                ))
             }
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
             Err(ApiError::NotFound)
         } else if response.status() == reqwest::StatusCode::FORBIDDEN {
-            Err(ApiError::Forbidden)
+            Err(ApiError::Forbidden("Access denied".to_string()))
         } else if response.status() == reqwest::StatusCode::CONFLICT {
             Err(ApiError::BadRequest("Order cannot be modified".to_string()))
         } else {
@@ -403,7 +436,7 @@ impl OrderClient {
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
             Err(ApiError::NotFound)
         } else if response.status() == reqwest::StatusCode::FORBIDDEN {
-            Err(ApiError::Forbidden)
+            Err(ApiError::Forbidden("Access denied".to_string()))
         } else if response.status() == reqwest::StatusCode::CONFLICT {
             Err(ApiError::BadRequest(
                 "Order cannot be cancelled".to_string(),

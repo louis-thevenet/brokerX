@@ -76,6 +76,11 @@ impl UserService {
         self.user_repo.deposit_to_user(user_id, amount).await
     }
 
+    /// Withdraw funds from user account
+    pub async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
+        self.user_repo.withdraw_from_user(user_id, amount).await
+    }
+
     /// Update user holdings after order execution
     pub async fn update_user_holding(
         &self,

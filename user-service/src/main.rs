@@ -34,6 +34,7 @@ pub struct AppState {
         api::deposit_funds,
         api::get_holdings,
         api::update_holdings,
+        api::validate_trade,
         api::get_user_by_email,
         api::verify_user_email,
         api::authenticate_user,
@@ -45,6 +46,8 @@ pub struct AppState {
         api::CreateUserRequest,
         api::UpdateUserRequest,
         api::UpdateHoldingsRequest,
+        api::ValidateTradeRequest,
+        api::ValidateTradeResponse,
         api::AuthenticateRequest,
         api::HealthResponse,
         api::DepositRequest,
@@ -96,8 +99,10 @@ async fn main() -> color_eyre::Result<()> {
         .route("/users/{id}", get(api::get_user))
         .route("/users/{id}", put(api::update_user))
         .route("/users/{id}/deposit", post(api::deposit_funds))
+        .route("/users/{id}/withdraw", post(api::withdraw_funds))
         .route("/users/{id}/holdings", get(api::get_holdings))
         .route("/users/{id}/holdings", post(api::update_holdings))
+        .route("/users/{id}/validate-trade", post(api::validate_trade))
         .route("/users/by-email/{email}", get(api::get_user_by_email))
         .route("/users/{id}/verify", post(api::verify_user_email))
         .route("/auth/login", post(api::authenticate_user))

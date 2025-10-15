@@ -14,7 +14,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use utoipa::OpenApi;
 use uuid::Uuid;
 
@@ -371,7 +371,8 @@ pub async fn create_order(
     Json(order_request): Json<CreateOrderRequest>,
 ) -> ApiResult<impl IntoResponse> {
     info!("User {} creating order: {:?}", user_id, order_request);
-    // Validate order request
+
+    // PRE-TRADE VALIDATION
     if order_request.symbol.is_empty() {
         error!("Order creation failed: Symbol is required");
         return Err(ApiError::BadRequest("Symbol is required".to_string()));
@@ -384,7 +385,6 @@ pub async fn create_order(
         ));
     }
 
-    // For limit orders, price is required
     if matches!(order_request.order_type, OrderType::Limit { .. }) && order_request.price.is_none()
     {
         error!("Order creation failed: Price is required for limit orders");
@@ -393,6 +393,65 @@ pub async fn create_order(
         ));
     }
 
+    info!("Running pre-trade validation for user {}", user_id);
+    let validation_result = state
+        .trade_validator
+        .validate_trade(
+            user_id,
+            &order_request.symbol,
+            order_request.quantity,
+            &order_request.order_side,
+            &order_request.order_type,
+        )
+        .await;
+
+    if !validation_result.valid {
+        let error_msg = validation_result
+            .first_error()
+            .map_or_else(|| "Validation failed".to_string(), ToString::to_string);
+
+        error!(
+            "Pre-trade validation failed for user {}: {}",
+            user_id, error_msg
+        );
+
+        // Map validation errors to appropriate HTTP status codes
+        if let Some(first_error) = validation_result.first_error() {
+            use crate::trade_validation::ValidationError;
+            return Err(match first_error {
+                ValidationError::InsufficientFunds { .. }
+                | ValidationError::InsufficientHoldings { .. }
+                | ValidationError::InsufficientBuyingPower { .. }
+                | ValidationError::ShortSellingNotAllowed { .. } => ApiError::Forbidden(error_msg),
+                ValidationError::UserNotVerified { .. } => {
+                    ApiError::Forbidden("User account must be verified to trade".to_string())
+                }
+                ValidationError::InvalidSymbol { .. }
+                | ValidationError::InstrumentNotActive { .. }
+                | ValidationError::InvalidOrderData { .. } => ApiError::BadRequest(error_msg),
+                ValidationError::OrderTooLarge { .. }
+                | ValidationError::OrderTooSmall { .. }
+                | ValidationError::NotionalValueTooLarge { .. }
+                | ValidationError::PriceOutOfRange { .. }
+                | ValidationError::InvalidTickSize { .. }
+                | ValidationError::ConcentrationLimit { .. }
+                | ValidationError::DailyOrderLimitExceeded { .. } => {
+                    ApiError::UnprocessableEntity(error_msg)
+                }
+            });
+        }
+
+        return Err(ApiError::BadRequest(error_msg));
+    }
+
+    // Log any warnings
+    for warning in &validation_result.warnings {
+        warn!("Pre-trade warning for user {}: {}", user_id, warning);
+    }
+
+    info!("Pre-trade validation passed for user {}", user_id);
+
+    // ORDER CREATION AND EXECUTION
     // Step 1: Create order in Order Service with Pending status
     let order = match state
         .order_client
@@ -426,7 +485,7 @@ pub async fn create_order(
             error!("Order {} execution failed: {}", order.id, e);
             // Order exists but execution failed - it remains Pending
             // Return the order with pending status
-            return Ok((StatusCode::CREATED, Json(order)));
+            return Ok((StatusCode::CREATED, Json(order))); // TODO: Retry ?
         }
     };
 
@@ -461,7 +520,7 @@ pub async fn create_order(
         }
     };
 
-    // Step 4: Update user holdings if order was filled (fully or partially)
+    // Step 4: Update user holdings and balance if order was filled (fully or partially)
     if matches!(
         execution_result.status,
         crate::models::ExecutionStatus::FullyFilled
@@ -473,6 +532,7 @@ pub async fn create_order(
                 OrderSide::Sell => -(execution_result.filled_quantity as i64),
             };
 
+            // Update holdings
             if let Err(e) = state
                 .user_client
                 .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
@@ -482,13 +542,58 @@ pub async fn create_order(
                     "Failed to update holdings for user {} after order {}: {}",
                     user_id, order.id, e
                 );
-                // Note: Order is executed but holdings update failed
-                // In production, this would need compensation logic
             } else {
                 info!(
                     "Updated holdings for user {}: {} {} shares @ ${}",
                     user_id, quantity_change, order_request.symbol, exec_price
                 );
+            }
+
+            // Calculate total transaction amount
+            let transaction_amount = exec_price * execution_result.filled_quantity as f64;
+
+            // Debit/Credit user account based on order side
+            match order_request.order_side {
+                OrderSide::Buy => {
+                    // Debit account for buy orders
+                    if let Err(e) = state
+                        .user_client
+                        .withdraw_funds(user_id, transaction_amount)
+                        .await
+                    {
+                        error!(
+                            "Failed to debit user {} account for order {}: {}",
+                            user_id, order.id, e
+                        );
+                        // Note: Holdings were already updated, so we have an inconsistency
+                        // In production, this should trigger a compensating transaction
+                    } else {
+                        info!(
+                            "Debited ${:.2} from user {} for buy order {}",
+                            transaction_amount, user_id, order.id
+                        );
+                    }
+                }
+                OrderSide::Sell => {
+                    // Credit account for sell orders
+                    if let Err(e) = state
+                        .user_client
+                        .deposit_funds(user_id, transaction_amount)
+                        .await
+                    {
+                        error!(
+                            "Failed to credit user {} account for order {}: {}",
+                            user_id, order.id, e
+                        );
+                        // Note: Holdings were already updated, so we have an inconsistency
+                        // In production, this should trigger a compensating transaction
+                    } else {
+                        info!(
+                            "Credited ${:.2} to user {} for sell order {}",
+                            transaction_amount, user_id, order.id
+                        );
+                    }
+                }
             }
         }
     }
