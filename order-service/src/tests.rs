@@ -10,7 +10,7 @@ mod tests {
     use tower::ServiceExt; // for `oneshot`
     use uuid::Uuid;
 
-    use crate::api::CreateOrderRequest;
+    use crate::api::{CreateOrderRequest, OrderResponse};
     use crate::models::{OrderSide, OrderType};
     use crate::service::OrderService;
     use crate::{ApiDoc, AppState};
@@ -215,21 +215,19 @@ mod tests {
             .await
             .unwrap();
 
-        // Order creation might fail due to user validation or database issues
-        // But we should get a proper HTTP response
-        assert!(
-            response.status() == StatusCode::OK
-                || response.status().is_client_error()
-                || response.status().is_server_error()
-        );
+        // Order creation should succeed since we're a pure data service (no validation)
+        // We expect CREATED (201) status
+        assert_eq!(response.status(), StatusCode::CREATED);
 
-        if response.status() == StatusCode::OK {
-            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap();
-            let order_id: String = serde_json::from_slice(&body).unwrap();
-            assert!(Uuid::parse_str(&order_id).is_ok());
-        }
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order_response: OrderResponse = serde_json::from_slice(&body).unwrap();
+        
+        // Verify the order was created with correct data
+        assert_eq!(order_response.client_id, user_id);
+        assert_eq!(order_response.symbol, "AAPL");
+        assert_eq!(order_response.quantity, 10);
     }
 
     #[tokio::test]
@@ -284,12 +282,19 @@ mod tests {
             .await
             .unwrap();
 
-        // Should handle limit orders properly
-        assert!(
-            response.status() == StatusCode::OK
-                || response.status().is_client_error()
-                || response.status().is_server_error()
-        );
+        // Order creation should succeed since we're a pure data service (no validation)
+        // We expect CREATED (201) status for limit orders too
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let order_response: OrderResponse = serde_json::from_slice(&body).unwrap();
+        
+        // Verify the order was created with correct data
+        assert_eq!(order_response.client_id, user_id);
+        assert_eq!(order_response.symbol, "GOOGL");
+        assert_eq!(order_response.quantity, 5);
     }
 
     #[tokio::test]

@@ -187,70 +187,6 @@ impl OrderRepository {
         Ok(count)
     }
 
-    pub async fn get_pending_orders(&self) -> Result<Vec<(OrderId, Order)>, OrderError> {
-        debug!("Getting all pending orders");
-
-        let rows = sqlx::query(
-            r#"
-            SELECT 
-                id, client_id, date, symbol, quantity, order_side,
-                order_type_variant, order_type_price,
-                status_variant, status_filled_quantity, status_date,
-                filled_price
-            FROM orders
-            WHERE status_variant = 'Pending'
-            ORDER BY date DESC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
-
-        let orders = rows
-            .into_iter()
-            .map(|row| {
-                let id: Uuid = row.get("id");
-                let client_id: Uuid = row.get("client_id");
-                let date: DateTime<Utc> = row.get("date");
-                let symbol: String = row.get("symbol");
-                let quantity: i64 = row.get("quantity");
-                let order_side_str: String = row.get("order_side");
-                let order_type_variant: String = row.get("order_type_variant");
-                let order_type_price: Option<f64> = row.get("order_type_price");
-                let filled_price: Option<f64> = row.get("filled_price");
-
-                let order_side = match order_side_str.as_str() {
-                    "Buy" => OrderSide::Buy,
-                    "Sell" => OrderSide::Sell,
-                    _ => OrderSide::Buy,
-                };
-
-                let order_type = match order_type_variant.as_str() {
-                    "Market" => OrderType::Market,
-                    "Limit" => OrderType::Limit {
-                        price: order_type_price.unwrap_or(0.0),
-                    },
-                    _ => OrderType::Market,
-                };
-
-                let order = Order {
-                    client_id,
-                    date,
-                    symbol,
-                    quantity: quantity as u64,
-                    order_side,
-                    order_type,
-                    status: OrderStatus::Pending,
-                    filled_price,
-                };
-
-                (id, order)
-            })
-            .collect();
-
-        Ok(orders)
-    }
-
     pub async fn get_order_by_id(&self, order_id: &OrderId) -> Result<Option<Order>, OrderError> {
         debug!("Getting order by ID: {}", order_id);
 
@@ -438,27 +374,6 @@ impl OrderRepository {
         .bind(status_variant)
         .bind(status_filled_quantity)
         .bind(status_date)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
-
-        if result.rows_affected() == 0 {
-            return Err(OrderError::OrderNotFound);
-        }
-
-        Ok(())
-    }
-
-    pub async fn delete_order(&self, order_id: &OrderId) -> Result<(), OrderError> {
-        debug!("Deleting order {}", order_id);
-
-        let result = sqlx::query(
-            r#"
-            DELETE FROM orders
-            WHERE id = $1
-            "#,
-        )
-        .bind(order_id)
         .execute(&self.pool)
         .await
         .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;

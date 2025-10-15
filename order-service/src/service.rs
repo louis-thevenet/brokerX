@@ -52,18 +52,6 @@ impl OrderService {
         Ok((orders, total))
     }
 
-    pub async fn get_pending_orders(&self) -> Result<Vec<(OrderId, Order)>, OrderError> {
-        self.order_repo.get_pending_orders().await
-    }
-
-    pub async fn update_order_status(
-        &self,
-        order_id: &OrderId,
-        status: OrderStatus,
-    ) -> Result<(), OrderError> {
-        self.order_repo.update_order_status(order_id, status).await
-    }
-
     pub async fn update_order(
         &self,
         order_id: &OrderId,
@@ -157,34 +145,5 @@ impl OrderService {
             .await?;
 
         Ok(())
-    }
-
-    pub async fn process_order(&self, order_id: &OrderId) -> Result<(), OrderError> {
-        let (_, order) = self
-            .get_order(order_id)
-            .await?
-            .ok_or(OrderError::OrderNotFound)?;
-
-        debug!("Processing order: {:?}", order);
-
-        // Simplified order processing logic
-        // In a real system, this would involve:
-        // 1. Market data validation
-        // 2. Risk checks
-        // 3. Order matching
-        // 4. Settlement
-
-        // For demo purposes, we'll just mark orders as filled or rejected based on simple rules
-        let new_status = if order.quantity > 0 && order.quantity <= 1000 {
-            OrderStatus::Filled {
-                date: chrono::Utc::now(),
-            }
-        } else {
-            OrderStatus::Rejected {
-                date: chrono::Utc::now(),
-            }
-        };
-
-        self.update_order_status(order_id, new_status).await
     }
 }

@@ -58,30 +58,22 @@ pub struct User {
 #[derive(Debug)]
 pub enum OrderError {
     OrderNotFound,
-    UserValidationFailed,
-    InsufficientFunds,
     InvalidOrder,
     OrderCannotBeModified,
     OrderCannotBeCancelled,
     Unauthorized,
     Repository(database_adapter::db::DbError),
-    UserService(String),
-    Processing(String),
 }
 
 impl std::fmt::Display for OrderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OrderError::OrderNotFound => write!(f, "Order not found"),
-            OrderError::UserValidationFailed => write!(f, "User validation failed"),
-            OrderError::InsufficientFunds => write!(f, "Insufficient funds"),
             OrderError::InvalidOrder => write!(f, "Invalid order"),
             OrderError::OrderCannotBeModified => write!(f, "Order cannot be modified"),
             OrderError::OrderCannotBeCancelled => write!(f, "Order cannot be cancelled"),
             OrderError::Unauthorized => write!(f, "Unauthorized"),
             OrderError::Repository(e) => write!(f, "Repository error: {}", e),
-            OrderError::UserService(e) => write!(f, "User service error: {}", e),
-            OrderError::Processing(e) => write!(f, "Processing error: {}", e),
         }
     }
 }

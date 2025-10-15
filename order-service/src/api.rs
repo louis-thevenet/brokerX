@@ -196,13 +196,6 @@ pub async fn create_order(
             )
                 .into_response()
         }
-        Err(OrderError::UserValidationFailed) => {
-            error!(
-                "User validation failed for client_id: {}",
-                payload.client_id
-            );
-            (StatusCode::NOT_FOUND, "User not found").into_response()
-        }
         Err(e) => {
             error!("Error creating order: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
