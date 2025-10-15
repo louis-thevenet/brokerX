@@ -57,13 +57,11 @@ mod tests {
         // Set test environment variables
         unsafe {
             std::env::set_var("MARKET_DATA_SERVICE_PORT", "3003");
-            std::env::set_var("MARKET_DATA_SERVICE_URL", "127.0.0.1");
         }
 
         let config = Config::from_env();
 
         assert_eq!(config.port, 3003);
-        assert_eq!(config.host, "127.0.0.1");
     }
 
     // Integration tests would go here

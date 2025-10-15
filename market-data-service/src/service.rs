@@ -12,10 +12,6 @@ use rand::Rng;
 pub enum ServiceError {
     #[error("Repository error: {0}")]
     RepositoryError(#[from] RepositoryError),
-    #[error("Invalid symbol: {0}")]
-    InvalidSymbol(String),
-    #[error("Invalid price data")]
-    InvalidPriceData,
 }
 
 pub type Result<T> = std::result::Result<T, ServiceError>;

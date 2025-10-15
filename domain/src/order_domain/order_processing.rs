@@ -33,7 +33,6 @@ pub struct ProcessingPool {
 #[derive(Debug)]
 enum ProcessingError {
     DbError,
-    UserServiceError,
 }
 
 impl ProcessingPool {

@@ -1,9 +1,8 @@
 use crate::models::{AuthError, Holding, User, UserId};
 use color_eyre::Result;
 use database_adapter::db::{PostgresRepo, Repository};
-use mfa_adapter::MfaProvider;
 use std::collections::HashMap;
-use tracing::{debug, error};
+use tracing::error;
 
 pub type UserRepo = PostgresRepo<User, UserId>;
 
@@ -23,14 +22,6 @@ pub trait UserRepoExt {
         email: &str,
         password: &str,
     ) -> Result<Option<UserId>, AuthError>;
-
-    async fn initiate_mfa<P: MfaProvider>(
-        &self,
-        email: &str,
-        mfa_provider: &P,
-    ) -> Result<String, AuthError>;
-
-    async fn verify_mfa(&self, email: &str, token: &str) -> Result<bool, AuthError>;
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError>;
 
@@ -112,32 +103,6 @@ impl UserRepoExt for UserRepo {
         // This allows the gateway to send MFA challenges to unverified users
 
         Ok(user.id)
-    }
-
-    async fn initiate_mfa<P: MfaProvider>(
-        &self,
-        email: &str,
-        mfa_provider: &P,
-    ) -> Result<String, AuthError> {
-        let _user = self
-            .get_user_by_email(email)
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-
-        // Simplified MFA initiation - in real implementation, use proper MFA service
-        debug!("Initiating MFA for user: {}", email);
-        Ok("mfa_secret_placeholder".to_string())
-    }
-
-    async fn verify_mfa(&self, email: &str, token: &str) -> Result<bool, AuthError> {
-        let _user = self
-            .get_user_by_email(email)
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-
-        // Placeholder MFA verification
-        debug!("Verifying MFA token: {}", token);
-        Ok(token == "123456") // Simplified for demo
     }
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {

@@ -268,33 +268,4 @@ impl MarketDataRepository {
 
         Ok(())
     }
-
-    /// Insert a new price record based on execution
-    pub async fn insert_execution_price(
-        &self,
-        symbol: &str,
-        price: f64,
-        volume: i64,
-    ) -> Result<Uuid> {
-        let id = Uuid::new_v4();
-        let timestamp = Utc::now();
-
-        // Create price record with execution data
-        // For simplicity, use price for all OHLC values
-        sqlx::query(
-            r#"
-            INSERT INTO market_prices (id, symbol, price, open, high, low, volume, timestamp)
-            VALUES ($1, $2, $3, $3, $3, $3, $4, $5)
-            "#,
-        )
-        .bind(id)
-        .bind(symbol)
-        .bind(price)
-        .bind(volume)
-        .bind(timestamp)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(id)
-    }
 }

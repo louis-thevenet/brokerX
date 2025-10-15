@@ -33,18 +33,10 @@ pub enum AuthError {
     UserNotFound,
     #[error("User already exists")]
     UserAlreadyExists,
-    #[error("Invalid credentials")]
-    InvalidCredentials,
-    #[error("User not verified: {0}")]
-    NotVerified(UserId),
     #[error("Password too weak")]
     WeakPassword,
     #[error("Not enough money")]
     NotEnoughMoneyError,
-    #[error("MFA failed: {0}")]
-    MfaFailed(String),
     #[error("Repository error: {0}")]
     UserRepo(#[from] database_adapter::db::DbError),
-    #[error("Database error: {0}")]
-    Database(String),
 }

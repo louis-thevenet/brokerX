@@ -14,10 +14,6 @@ use tracing::{debug, info};
 pub enum ExecutionError {
     #[error("Repository error: {0}")]
     RepositoryError(#[from] RepositoryError),
-    #[error("Symbol not found: {0}")]
-    SymbolNotFound(String),
-    #[error("Invalid order: {0}")]
-    InvalidOrder(String),
 }
 
 pub type Result<T> = std::result::Result<T, ExecutionError>;

@@ -1,7 +1,6 @@
 #[derive(Debug, Clone)]
 pub struct Config {
     pub port: u16,
-    pub host: String,
 }
 
 impl Config {
@@ -13,8 +12,6 @@ impl Config {
             .parse()
             .expect("USER_SERVICE_PORT must be a valid port number");
 
-        let host = std::env::var("USER_SERVICE_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
-
-        Self { port, host }
+        Self { port }
     }
 }
