@@ -39,13 +39,9 @@ mod tests {
         // Create database config for order service
         let db_config = DatabaseConfig::from_url(order_db_url);
 
-        // User service URL for validation (can be mock for tests)
-        let user_service_url = std::env::var("USER_SERVICE_URL")
-            .unwrap_or_else(|_| "http://localhost:3001".to_string());
-
         // Create order service with test database configuration
         let order_service = Arc::new(
-            OrderService::new_with_config(&test_table_name, &db_config, user_service_url)
+            OrderService::new_with_config(&test_table_name, &db_config)
                 .await
                 .expect("Failed to create order service for testing"),
         );

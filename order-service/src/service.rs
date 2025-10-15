@@ -1,21 +1,17 @@
 use crate::models::{Order, OrderError, OrderId, OrderStatus, UserId};
 use crate::repository::OrderRepository;
-use crate::user_client::UserClient;
 use database_adapter::config::DatabaseConfig;
 use sqlx::postgres::PgPoolOptions;
-use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::debug;
 
 pub struct OrderService {
     order_repo: OrderRepository,
-    user_client: Arc<UserClient>,
 }
 
 impl OrderService {
     pub async fn new_with_config(
         _table_name: &str,
         db_config: &DatabaseConfig,
-        user_service_url: String,
     ) -> color_eyre::Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(5)
@@ -23,28 +19,13 @@ impl OrderService {
             .await?;
 
         let order_repo = OrderRepository::new(pool);
-        let user_client = Arc::new(UserClient::new(&user_service_url));
 
-        Ok(Self {
-            order_repo,
-            user_client,
-        })
+        Ok(Self { order_repo })
     }
 
     pub async fn create_order(&self, order: Order) -> Result<(OrderId, Order), OrderError> {
-        debug!("Processing new order for user: {}", order.client_id);
-
-        // Validate user exists and has sufficient funds
-        match self.user_client.validate_user(&order.client_id).await {
-            Ok(true) => {}
-            Ok(false) => return Err(OrderError::UserValidationFailed),
-            Err(e) => {
-                error!("User validation failed: {}", e);
-                return Err(OrderError::UserService(e.to_string()));
-            }
-        }
-
-        // Create the order
+        debug!("Creating order for user: {}", order.client_id);
+        // No validation - API Gateway has already done pre-trade checks
         self.order_repo.create_order(order).await
     }
 

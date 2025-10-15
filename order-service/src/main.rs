@@ -3,7 +3,6 @@ mod config;
 mod models;
 mod repository;
 mod service;
-mod user_client;
 
 #[cfg(test)]
 mod tests;
@@ -83,7 +82,7 @@ async fn main() -> color_eyre::Result<()> {
 
     // Initialize order service with dedicated database
     let order_service = Arc::new(
-        OrderService::new_with_config("orders", &db_config, config.user_service_url.clone())
+        OrderService::new_with_config("orders", &db_config)
             .await
             .expect("Failed to initialize order service"),
     );
