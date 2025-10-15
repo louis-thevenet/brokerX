@@ -223,7 +223,7 @@ mod tests {
             .await
             .unwrap();
         let order_response: OrderResponse = serde_json::from_slice(&body).unwrap();
-        
+
         // Verify the order was created with correct data
         assert_eq!(order_response.client_id, user_id);
         assert_eq!(order_response.symbol, "AAPL");
@@ -290,7 +290,7 @@ mod tests {
             .await
             .unwrap();
         let order_response: OrderResponse = serde_json::from_slice(&body).unwrap();
-        
+
         // Verify the order was created with correct data
         assert_eq!(order_response.client_id, user_id);
         assert_eq!(order_response.symbol, "GOOGL");
