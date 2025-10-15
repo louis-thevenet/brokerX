@@ -12,56 +12,91 @@ jobs:
     name: Test Suite
     runs-on: ubuntu-latest
     services:
-      postgres:
+      # User Service Database
+      user-db:
         image: postgres:15
         env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_USER: postgres
-          POSTGRES_DB: brokerx
+          POSTGRES_DB: brokerx_users
+          POSTGRES_USER: brokerx_user
+          POSTGRES_PASSWORD: password123
           POSTGRES_HOST_AUTH_METHOD: trust
         options: >-
-          --health-cmd "pg_isready -U postgres"
+          --health-cmd "pg_isready -U brokerx_user -d brokerx_users"
           --health-interval 10s
-          --health-timeout 10s
-          --health-retries 10
+          --health-timeout 5s
+          --health-retries 5
           --health-start-period 30s
         ports:
           - 5432:5432
+      
+      # Order Service Database
+      order-db:
+        image: postgres:15
+        env:
+          POSTGRES_DB: brokerx_orders
+          POSTGRES_USER: brokerx_user
+          POSTGRES_PASSWORD: password123
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd "pg_isready -U brokerx_user -d brokerx_orders"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+        ports:
+          - 5433:5432
+      
+      # Market Data Service Database
+      market-data-db:
+        image: postgres:15
+        env:
+          POSTGRES_DB: brokerx_market_data
+          POSTGRES_USER: brokerx_user
+          POSTGRES_PASSWORD: password123
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd "pg_isready -U brokerx_user -d brokerx_market_data"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+        ports:
+          - 5434:5432
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      
       - uses: Swatinem/rust-cache@v2
+      
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      - name: Wait for PostgreSQL to be ready
+      
+      - name: Initialize databases
         run: |
-          until pg_isready -h localhost -p 5432 -U postgres; do
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-          echo "PostgreSQL is ready!"
-      - name: Set up database
-        run: |
-          echo "Testing PostgreSQL connection..."
-          PGPASSWORD=postgres psql -h localhost -U postgres -c "SELECT version();"
-          echo "Verifying database exists..."
-          PGPASSWORD=postgres psql -h localhost -U postgres -l
-          echo "Testing connection to test database..."
-          PGPASSWORD=postgres psql -h localhost -U postgres -d brokerx -c "SELECT 1;"
-
+          PGPASSWORD=password123 psql -h localhost -p 5432 -U brokerx_user -d brokerx_users -f docker/init-user-db.sql
+          PGPASSWORD=password123 psql -h localhost -p 5433 -U brokerx_user -d brokerx_orders -f docker/init-order-db.sql
+          PGPASSWORD=password123 psql -h localhost -p 5434 -U brokerx_user -d brokerx_market_data -f docker/init-market-data-db.sql
         env:
-          PGPASSWORD: postgres
+          PGPASSWORD: password123
+      
       - name: Run tests
         run: cargo test --all-features --workspace
         env: 
           CI: true
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/brokerx
+          # Service-specific database URLs (each service uses its own database)
+          USER_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5432/brokerx_users
+          ORDER_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5433/brokerx_orders
+          MARKET_DATA_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5434/brokerx_market_data
+          # Fallback URL for tests that don't specify a service
+          DATABASE_URL: postgresql://brokerx_user:password123@localhost:5432/brokerx_users
 
 
-  rustfmt:
-    name: Rustfmt
+  fmt:
+    name: Format Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -74,30 +109,16 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
-  # clippy:
-  #   name: Clippy
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-  #     - name: Install Rust toolchain
-  #       uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         components: clippy
-  #     - uses: Swatinem/rust-cache@v2
-  #     - name: Clippy check
-  #       run: cargo clippy --all-targets --all-features --workspace -- -D warnings
-
-  docs:
-    name: Docs
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Check documentation
-        env:
-          RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --document-private-items --all-features --workspace --examples
+      - name: Clippy check
+        run: cargo clippy --all-targets --all-features --workspace -- -D warnings
