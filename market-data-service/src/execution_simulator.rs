@@ -23,6 +23,7 @@ pub struct ExecutionSimulator {
 }
 
 impl ExecutionSimulator {
+    #[must_use]
     pub fn new(repository: MarketDataRepository) -> Self {
         Self { repository }
     }

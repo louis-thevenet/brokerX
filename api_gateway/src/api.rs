@@ -4,10 +4,11 @@ use crate::error::{ApiError, ApiResult};
 use crate::middleware::AuthenticatedUser;
 use crate::models::{
     CreateOrderRequest, DepositRequest, ErrorResponse, HealthResponse, HoldingResponse,
-    LoginRequest, LoginResponse, LogoutRequest, MessageResponse, MfaChallengeResponse,
-    OrderResponse, OrderSide, OrderStatus, OrderType, PaginatedResponse, PaginationInfo,
-    PaginationQuery, RegisterRequest, RegisterResponse, UpdateOrderRequest, UpdateUserRequest,
-    UserResponse, VerifyMfaRequest, VerifyMfaResponse,
+    LoginRequest, LoginResponse, LogoutRequest, MarketPriceResponse, MarketPricesResponse,
+    MessageResponse, MfaChallengeResponse, OrderResponse, OrderSide, OrderStatus, OrderType,
+    PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest, RegisterResponse,
+    SymbolsResponse, UpdateOrderRequest, UpdateUserRequest, UserResponse, VerifyMfaRequest,
+    VerifyMfaResponse,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -64,6 +65,9 @@ use uuid::Uuid;
             MfaChallengeResponse,
             VerifyMfaRequest,
             VerifyMfaResponse,
+            MarketPriceResponse,
+            MarketPricesResponse,
+            SymbolsResponse,
             ErrorResponse
         )
     ),
@@ -525,114 +529,113 @@ pub async fn create_order(
         execution_result.status,
         crate::models::ExecutionStatus::FullyFilled
             | crate::models::ExecutionStatus::PartiallyFilled
-    ) {
-        if let Some(exec_price) = execution_result.average_price {
-            let quantity_change = match order_request.order_side {
-                OrderSide::Buy => execution_result.filled_quantity as i64,
-                OrderSide::Sell => -(execution_result.filled_quantity as i64),
-            };
+    ) && let Some(exec_price) = execution_result.average_price
+    {
+        let quantity_change = match order_request.order_side {
+            OrderSide::Buy => execution_result.filled_quantity as i64,
+            OrderSide::Sell => -(execution_result.filled_quantity as i64),
+        };
 
-            // Update holdings
-            if let Err(e) = state
-                .user_client
-                .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
-                .await
-            {
-                error!(
-                    "Failed to update holdings for user {} after order {}: {}",
-                    user_id, order.id, e
-                );
-            } else {
-                info!(
-                    "Updated holdings for user {}: {} {} shares @ ${}",
-                    user_id, quantity_change, order_request.symbol, exec_price
-                );
-            }
+        // Update holdings
+        if let Err(e) = state
+            .user_client
+            .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
+            .await
+        {
+            error!(
+                "Failed to update holdings for user {} after order {}: {}",
+                user_id, order.id, e
+            );
+        } else {
+            info!(
+                "Updated holdings for user {}: {} {} shares @ ${}",
+                user_id, quantity_change, order_request.symbol, exec_price
+            );
+        }
 
-            // Calculate total transaction amount
-            let transaction_amount = exec_price * execution_result.filled_quantity as f64;
+        // Calculate total transaction amount
+        let transaction_amount = exec_price * execution_result.filled_quantity as f64;
 
-            // Debit/Credit user account based on order side
-            match order_request.order_side {
-                OrderSide::Buy => {
-                    // Debit account for buy orders
+        // Debit/Credit user account based on order side
+        match order_request.order_side {
+            OrderSide::Buy => {
+                // Debit account for buy orders
+                if let Err(e) = state
+                    .user_client
+                    .withdraw_funds(user_id, transaction_amount)
+                    .await
+                {
+                    error!(
+                        "Failed to debit user {} account for order {}: {}",
+                        user_id, order.id, e
+                    );
+                    // Holdings were already updated, so we have an inconsistency
+                    // undo holdings update
                     if let Err(e) = state
                         .user_client
-                        .withdraw_funds(user_id, transaction_amount)
+                        .update_holdings(
+                            user_id,
+                            &order_request.symbol,
+                            -quantity_change,
+                            exec_price,
+                        )
                         .await
                     {
                         error!(
-                            "Failed to debit user {} account for order {}: {}",
+                            "Failed to rollback holdings for user {} after failed debit for order {}: {}",
                             user_id, order.id, e
                         );
-                        // Holdings were already updated, so we have an inconsistency
-                        // undo holdings update
-                        if let Err(e) = state
-                            .user_client
-                            .update_holdings(
-                                user_id,
-                                &order_request.symbol,
-                                -quantity_change,
-                                exec_price,
-                            )
-                            .await
-                        {
-                            error!(
-                                "Failed to rollback holdings for user {} after failed debit for order {}: {}",
-                                user_id, order.id, e
-                            );
-                        } else {
-                            info!(
-                                "Rolled back holdings for user {} after failed debit for order {}",
-                                user_id, order.id
-                            );
-                        }
                     } else {
                         info!(
-                            "Debited ${:.2} from user {} for buy order {}",
-                            transaction_amount, user_id, order.id
+                            "Rolled back holdings for user {} after failed debit for order {}",
+                            user_id, order.id
                         );
                     }
+                } else {
+                    info!(
+                        "Debited ${:.2} from user {} for buy order {}",
+                        transaction_amount, user_id, order.id
+                    );
                 }
-                OrderSide::Sell => {
-                    // Credit account for sell orders
+            }
+            OrderSide::Sell => {
+                // Credit account for sell orders
+                if let Err(e) = state
+                    .user_client
+                    .deposit_funds(user_id, transaction_amount)
+                    .await
+                {
+                    error!(
+                        "Failed to credit user {} account for order {}: {}",
+                        user_id, order.id, e
+                    );
+                    // Holdings were already updated, so we have an inconsistency
+                    // undo holdings update
                     if let Err(e) = state
                         .user_client
-                        .deposit_funds(user_id, transaction_amount)
+                        .update_holdings(
+                            user_id,
+                            &order_request.symbol,
+                            -quantity_change,
+                            exec_price,
+                        )
                         .await
                     {
                         error!(
-                            "Failed to credit user {} account for order {}: {}",
+                            "Failed to rollback holdings for user {} after failed credit for order {}: {}",
                             user_id, order.id, e
                         );
-                        // Holdings were already updated, so we have an inconsistency
-                        // undo holdings update
-                        if let Err(e) = state
-                            .user_client
-                            .update_holdings(
-                                user_id,
-                                &order_request.symbol,
-                                -quantity_change,
-                                exec_price,
-                            )
-                            .await
-                        {
-                            error!(
-                                "Failed to rollback holdings for user {} after failed credit for order {}: {}",
-                                user_id, order.id, e
-                            );
-                        } else {
-                            info!(
-                                "Rolled back holdings for user {} after failed credit for order {}",
-                                user_id, order.id
-                            );
-                        }
                     } else {
                         info!(
-                            "Credited ${:.2} to user {} for sell order {}",
-                            transaction_amount, user_id, order.id
+                            "Rolled back holdings for user {} after failed credit for order {}",
+                            user_id, order.id
                         );
                     }
+                } else {
+                    info!(
+                        "Credited ${:.2} to user {} for sell order {}",
+                        transaction_amount, user_id, order.id
+                    );
                 }
             }
         }

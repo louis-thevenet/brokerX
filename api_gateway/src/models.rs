@@ -1,7 +1,4 @@
 // API Gateway Models - REST API DTOs
-// These models represent the external API contract and follow REST API best practices
-// They are separate from internal service models to allow independent evolution
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -111,10 +108,7 @@ pub struct LoginResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct LogoutRequest {
-    // Empty for now, token invalidation would happen on client side
-    // In a production system, this might include a token to blacklist
-}
+pub struct LogoutRequest {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {

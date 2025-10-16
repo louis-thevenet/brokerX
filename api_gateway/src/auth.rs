@@ -38,6 +38,9 @@ impl JwtService {
 
     pub fn validate_token(&self, token: &str) -> ApiResult<Claims> {
         let token_data = decode::<Claims>(token, &self.decoding_key, &Validation::default())?;
+        if token_data.claims.exp < Utc::now().timestamp() as usize {
+            return Err(ApiError::Unauthorized);
+        }
         Ok(token_data.claims)
     }
 

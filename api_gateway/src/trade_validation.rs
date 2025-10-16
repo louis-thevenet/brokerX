@@ -1,7 +1,6 @@
 //! Trade Validation Module
 //!
 //! Provides comprehensive pre-trade and post-trade validation checks
-//! for the broker platform following regulatory best practices.
 
 use crate::clients::{MarketDataClient, UserClient};
 use crate::models::{OrderSide, OrderType};
@@ -287,7 +286,7 @@ impl TradeValidator {
         }
     }
 
-    /// Perform comprehensive pre-trade validation
+    /// Perform pre-trade validation
     pub async fn validate_trade(
         &self,
         user_id: Uuid,

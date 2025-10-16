@@ -17,12 +17,6 @@ pub async fn auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
-    // Skip authentication for certain routes
-    let path = request.uri().path();
-    if should_skip_auth(path) {
-        return Ok(next.run(request).await);
-    }
-
     // Extract JWT token from Authorization header
     let token = extract_token_from_headers(&headers)?;
 
@@ -34,18 +28,6 @@ pub async fn auth_middleware(
     request.extensions_mut().insert(user_id);
 
     Ok(next.run(request).await)
-}
-
-fn should_skip_auth(path: &str) -> bool {
-    matches!(
-        path,
-        "/health"
-            | "/auth/register"
-            | "/auth/login"
-            | "/swagger-ui"
-            | "/swagger-ui/"
-            | "/api-docs/openapi.json"
-    ) || path.starts_with("/swagger-ui/")
 }
 
 fn extract_token_from_headers(headers: &HeaderMap) -> Result<String, ApiError> {
