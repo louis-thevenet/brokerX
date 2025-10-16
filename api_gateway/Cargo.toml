@@ -25,3 +25,4 @@ dotenvy = "0.15"
 anyhow = "1.0"
 thiserror = "1.0"
 mfa_adapter = { path = "../mfa_adapter" }
+axum-prometheus = "0.9.0"

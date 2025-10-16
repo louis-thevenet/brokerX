@@ -89,6 +89,11 @@ all:
     echo "  just services"
     echo "  just webapp"
 
+promoehtus:
+    #!/usr/bin/env bash
+    prometheus --config.file=prometheus.yml
+
+
 # === STOP COMMANDS ===
 
 # Stop databases
@@ -100,3 +105,4 @@ db-stop:
 stop:
     @echo "Stopping databases..."
     docker compose stop
+

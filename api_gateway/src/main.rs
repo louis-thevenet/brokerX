@@ -14,6 +14,7 @@ use axum::{
     http::{HeaderValue, Method},
     routing::{delete, get, post, put},
 };
+use axum_prometheus::PrometheusMetricLayer;
 use config::Config;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -91,6 +92,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn create_router(app_state: AppState) -> Router {
+    let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     // Public routes (no authentication required)
     let public_routes = Router::new()
         .route("/v1/health", get(api::health_check))
@@ -171,6 +173,8 @@ fn create_router(app_state: AppState) -> Router {
         .merge(public_routes)
         .merge(protected_routes)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .route("/v1/metrics", get(|| async move { metric_handle.render() }))
+        .layer(prometheus_layer)
         .layer(cors_layer)
         .with_state(app_state)
 }

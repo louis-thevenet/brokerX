@@ -12,6 +12,7 @@ use axum::{
     routing::{delete, get, post, put},
 };
 
+use axum_prometheus::PrometheusMetricLayer;
 use database_adapter::config::DatabaseConfig;
 use service::OrderService;
 use std::sync::Arc;
@@ -88,6 +89,8 @@ async fn main() -> color_eyre::Result<()> {
 
     let app_state = AppState { order_service };
 
+    let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+
     // Build routes
     let app = Router::new()
         .route("/v1/health", get(api::health_check))
@@ -100,6 +103,8 @@ async fn main() -> color_eyre::Result<()> {
             "/v1/orders/{id}/execution",
             axum::routing::patch(api::update_order_execution),
         )
+        .route("/v1/metrics", get(|| async move { metric_handle.render() }))
+        .layer(prometheus_layer)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .with_state(app_state);
 

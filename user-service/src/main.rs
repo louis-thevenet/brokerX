@@ -11,6 +11,7 @@ use axum::{
     Router,
     routing::{get, post, put},
 };
+use axum_prometheus::PrometheusMetricLayer;
 use database_adapter::config::DatabaseConfig;
 use service::UserService;
 use std::sync::Arc;
@@ -91,6 +92,8 @@ async fn main() -> color_eyre::Result<()> {
 
     let app_state = AppState { user_service };
 
+    let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+
     // Build routes
     let app = Router::new()
         .route("/v1/health", get(api::health_check))
@@ -106,6 +109,8 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/users/{id}/verify", post(api::verify_user_email))
         .route("/v1/auth/login", post(api::authenticate_user))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .route("/v1/metrics", get(|| async move { metric_handle.render() }))
+        .layer(prometheus_layer)
         .with_state(app_state);
 
     // Start server

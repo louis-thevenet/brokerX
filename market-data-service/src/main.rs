@@ -10,6 +10,7 @@ mod tests;
 
 use api::AppState;
 use axum::{Router, routing::get, routing::post};
+use axum_prometheus::PrometheusMetricLayer;
 use repository::MarketDataRepository;
 use service::MarketDataService;
 use std::sync::Arc;
@@ -130,6 +131,8 @@ async fn main() -> color_eyre::Result<()> {
         execution_simulator,
     };
 
+    let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+
     // Build the router
     let app = Router::new()
         // Health check
@@ -148,6 +151,8 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/execute", post(api::execute_order))
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .route("/v1/metrics", get(|| async move { metric_handle.render() }))
+        .layer(prometheus_layer)
         // Add state and middleware
         .with_state(app_state)
         .layer(tower_http::trace::TraceLayer::new_for_http());
