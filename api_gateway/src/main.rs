@@ -57,11 +57,8 @@ async fn main() -> anyhow::Result<()> {
         &config.market_data_service_url,
     ));
 
-    // Initialize MFA provider with environment configuration
-    let mfa_provider = Arc::new(
-        mfa_adapter::EmailOtpProvider::new_from_env()
-            .map_err(|e| anyhow::anyhow!("Failed to initialize MFA provider: {e}"))?,
-    );
+    // Initialize MFA provider with environment configuration (falls back to console logging if SMTP not configured)
+    let mfa_provider = Arc::new(mfa_adapter::EmailOtpProvider::new_with_default_config());
     let mfa_service = mfa_service::MfaService::new(mfa_provider);
 
     // Initialize trade validator with default configuration
