@@ -8,10 +8,21 @@ pub struct Config {
     pub market_data_service_url: String,
     pub jwt_secret: String,
     pub jwt_expiry_hours: i64,
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl Config {
     pub fn from_env() -> Config {
+        // Parse CORS allowed origins from comma-separated list
+        let cors_origins = env::var("CORS_ALLOWED_ORIGINS")
+            .unwrap_or_else(|_| "http://localhost:8000,http://127.0.0.1:8000".to_string());
+
+        let cors_allowed_origins: Vec<String> = cors_origins
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
         Config {
             server_address: env::var("API_GATEWAY_ADDRESS")
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
@@ -28,6 +39,7 @@ impl Config {
                 .unwrap_or_else(|_| "24".to_string())
                 .parse()
                 .unwrap_or(24),
+            cors_allowed_origins,
         }
     }
 }

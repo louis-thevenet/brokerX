@@ -11,7 +11,7 @@ mod trade_validation;
 use api::ApiDoc;
 use axum::{
     Router,
-    http::Method,
+    http::{HeaderValue, Method},
     routing::{delete, get, post, put},
 };
 use config::Config;
@@ -122,15 +122,55 @@ fn create_router(app_state: AppState) -> Router {
             middleware::auth_middleware,
         ));
 
+    // Configure CORS with specific allowed origins from config
+    let cors_layer = if app_state.config.cors_allowed_origins.is_empty() {
+        tracing::warn!(
+            "No CORS origins configured, allowing all origins (insecure for production!)"
+        );
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers(Any)
+            .allow_credentials(true)
+    } else {
+        tracing::info!(
+            "CORS configured with allowed origins: {:?}",
+            app_state.config.cors_allowed_origins
+        );
+        let origins: Vec<HeaderValue> = app_state
+            .config
+            .cors_allowed_origins
+            .iter()
+            .filter_map(|origin| origin.parse().ok())
+            .collect();
+
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::OPTIONS,
+            ])
+            .allow_headers([
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::ACCEPT,
+            ])
+            .allow_credentials(true)
+    };
+
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-                .allow_headers(Any),
-        )
+        .layer(cors_layer)
         .with_state(app_state)
 }

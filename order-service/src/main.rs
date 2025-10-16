@@ -15,7 +15,6 @@ use axum::{
 use database_adapter::config::DatabaseConfig;
 use service::OrderService;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -102,7 +101,6 @@ async fn main() -> color_eyre::Result<()> {
             axum::routing::patch(api::update_order_execution),
         )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .layer(CorsLayer::permissive())
         .with_state(app_state);
 
     // Start server

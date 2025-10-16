@@ -13,7 +13,6 @@ use axum::{Router, routing::get, routing::post};
 use repository::MarketDataRepository;
 use service::MarketDataService;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -151,7 +150,6 @@ async fn main() -> color_eyre::Result<()> {
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Add state and middleware
         .with_state(app_state)
-        .layer(CorsLayer::permissive())
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port)).await?;

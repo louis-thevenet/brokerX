@@ -19,7 +19,7 @@
           pkgs = import inputs.nixpkgs {
             inherit system overlays;
           };
-          rustToolchain = pkgs.rust-bin.stable."1.88.0".default;
+          rustToolchain = pkgs.rust-bin.stable."1.89.0".default;
 
           rust-toolchain = pkgs.symlinkJoin {
             name = "rust-toolchain";
