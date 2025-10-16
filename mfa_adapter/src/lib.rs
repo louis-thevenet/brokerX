@@ -6,7 +6,7 @@ use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
-use tracing::{debug, error};
+use tracing::debug;
 use uuid::Uuid;
 
 pub mod mfa;
@@ -67,30 +67,6 @@ pub struct EmailConfig {
 }
 
 impl EmailConfig {
-    fn new() -> Result<Self, MfaError> {
-        if let Err(e) = dotenvy::dotenv() {
-            error!("Warning: Could not load .env file: {}", e);
-            return Err(MfaError::ServiceUnavailable);
-        }
-
-        Ok(Self {
-            smtp_server: std::env::var("SMTP_SERVER")
-                .unwrap_or_else(|_| "smtp.gmail.com".to_string()),
-            smtp_port: std::env::var("SMTP_PORT")
-                .unwrap_or_else(|_| "587".to_string())
-                .parse()
-                .unwrap_or(587),
-            username: std::env::var("SMTP_USERNAME")
-                .expect("SMTP_USERNAME environment variable must be set"),
-            password: std::env::var("SMTP_PASSWORD")
-                .expect("SMTP_PASSWORD environment variable must be set"),
-            from_email: std::env::var("SMTP_FROM_EMAIL")
-                .expect("SMTP_FROM_EMAIL environment variable must be set"),
-            from_name: std::env::var("SMTP_FROM_NAME")
-                .unwrap_or_else(|_| "BrokerX Security".to_string()),
-        })
-    }
-
     /// Create a test configuration that doesn't require environment variables
     pub fn new_test_config() -> Self {
         Self {
@@ -105,16 +81,16 @@ impl EmailConfig {
 }
 
 impl EmailConfig {
-    /// Create EmailConfig from environment variables
+    /// Create ``EmailConfig`` from environment variables
     /// Required environment variables:
-    /// - SMTP_USERNAME: SMTP username for authentication
-    /// - SMTP_PASSWORD: SMTP password for authentication  
-    /// - SMTP_FROM_EMAIL: Email address to send from
+    /// - ``SMTP_USERNAME``: SMTP username for authentication
+    /// - ``SMTP_PASSWORD``: SMTP password for authentication  
+    /// - ``SMTP_FROM_EMAIL``: Email address to send from
     ///
     /// Optional environment variables:
-    /// - SMTP_SERVER: SMTP server hostname (default: smtp.gmail.com)
-    /// - SMTP_PORT: SMTP server port (default: 587)
-    /// - SMTP_FROM_NAME: Display name for sender (default: BrokerX Security)
+    /// - ``SMTP_SERVER``: SMTP server hostname (default: smtp.gmail.com)
+    /// - ``SMTP_PORT``: SMTP server port (default: 587)
+    /// - ``SMTP_FROM_NAME``: Display name for sender (default: ``BrokerX`` Security)
     pub fn from_env() -> Result<Self, String> {
         let _ = dotenvy::dotenv();
 
@@ -151,38 +127,58 @@ impl EmailConfig {
 
 #[derive(Debug)]
 pub struct EmailOtpProvider {
-    config: EmailConfig,
+    config: Option<EmailConfig>,
     challenges: Arc<Mutex<HashMap<String, OtpChallenge>>>,
     challenge_duration: Duration,
 }
 
 impl EmailOtpProvider {
+    #[must_use]
     pub fn new(config: EmailConfig) -> Self {
         Self {
-            config,
+            config: Some(config),
             challenges: Arc::new(Mutex::new(HashMap::new())),
             challenge_duration: Duration::from_secs(300), // 5 minutes
         }
     }
 
     pub fn new_with_default_config() -> Self {
-        Self::new(EmailConfig::new().expect("Failed to load email config from environment"))
+        // Try to load config from env, fall back to console logging if not available
+        match EmailConfig::from_env() {
+            Ok(config) => Self::new(config),
+            Err(e) => {
+                tracing::warn!("Failed to load SMTP config ({}), will use console logging fallback for OTP codes", e);
+                Self::new_without_email()
+            }
+        }
     }
 
-    /// Create EmailOtpProvider with test configuration for testing purposes
+    /// Create `EmailOtpProvider` without email configuration (console logging only)
+    #[must_use]
+    pub fn new_without_email() -> Self {
+        Self {
+            config: None,
+            challenges: Arc::new(Mutex::new(HashMap::new())),
+            challenge_duration: Duration::from_secs(300), // 5 minutes
+        }
+    }
+
+    /// Create `EmailOtpProvider` with test configuration for testing purposes
+    #[must_use]
     pub fn new_for_testing() -> Self {
         Self::new(EmailConfig::new_test_config())
     }
 
-    /// Create EmailOtpProvider with test configuration and custom challenge duration
+    /// Create `EmailOtpProvider` with test configuration and custom challenge duration
     #[cfg(test)]
+    #[must_use]
     pub fn new_for_testing_with_duration(duration: Duration) -> Self {
         let mut provider = Self::new(EmailConfig::new_test_config());
         provider.challenge_duration = duration;
         provider
     }
 
-    /// Create EmailOtpProvider with configuration from environment variables
+    /// Create `EmailOtpProvider` with configuration from environment variables
     pub fn new_from_env() -> Result<Self, String> {
         let config = EmailConfig::from_env()?;
         Ok(Self::new(config))
@@ -194,6 +190,23 @@ impl EmailOtpProvider {
     }
 
     fn send_email(&self, to_email: &str, code: &str) -> Result<(), MfaError> {
+        // If no SMTP config, log to console instead
+        let Some(config) = &self.config else {
+            tracing::info!(
+                "📧 OTP Code for {}: {} (SMTP not configured, showing in console)",
+                to_email,
+                code
+            );
+            println!("\n╔══════════════════════════════════════════╗");
+            println!("║          OTP VERIFICATION CODE           ║");
+            println!("╠══════════════════════════════════════════╣");
+            println!("║  Email: {to_email:<32} ║");
+            println!("║  Code:  {code:<32} ║");
+            println!("║  Valid for: 5 minutes                    ║");
+            println!("╚══════════════════════════════════════════╝\n");
+            return Ok(());
+        };
+
         let email_body = format!(
             r#"
 <!DOCTYPE html>
@@ -231,7 +244,7 @@ impl EmailOtpProvider {
 
         let email = Message::builder()
             .from(
-                format!("{} <{}>", self.config.from_name, self.config.from_email)
+                format!("{} <{}>", config.from_name, config.from_email)
                     .parse()
                     .map_err(|e| MfaError::SendingFailed(format!("Invalid from address: {e}")))?,
             )
@@ -243,9 +256,9 @@ impl EmailOtpProvider {
             .body(email_body)
             .map_err(|e| MfaError::SendingFailed(format!("Failed to build email: {e}")))?;
 
-        let creds = Credentials::new(self.config.username.clone(), self.config.password.clone());
+        let creds = Credentials::new(config.username.clone(), config.password.clone());
 
-        let mailer = SmtpTransport::relay(&self.config.smtp_server)
+        let mailer = SmtpTransport::relay(&config.smtp_server)
             .map_err(|e| MfaError::SendingFailed(format!("SMTP relay error: {e}")))?
             .credentials(creds)
             .build();

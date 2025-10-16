@@ -1,0 +1,653 @@
+//! Trade Validation Module
+//!
+//! Provides comprehensive pre-trade and post-trade validation checks
+
+use crate::clients::{MarketDataClient, UserClient};
+use crate::models::{OrderSide, OrderType};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tracing::{debug, warn};
+use uuid::Uuid;
+
+/// Result of trade validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationResult {
+    pub valid: bool,
+    pub errors: Vec<ValidationError>,
+    pub warnings: Vec<String>,
+}
+
+impl ValidationResult {
+    pub fn valid() -> Self {
+        Self {
+            valid: true,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn invalid(error: ValidationError) -> Self {
+        Self {
+            valid: false,
+            errors: vec![error],
+            warnings: Vec::new(),
+        }
+    }
+
+    pub fn with_warning(mut self, warning: String) -> Self {
+        self.warnings.push(warning);
+        self
+    }
+
+    pub fn add_error(&mut self, error: ValidationError) {
+        self.valid = false;
+        self.errors.push(error);
+    }
+
+    pub fn first_error(&self) -> Option<&ValidationError> {
+        self.errors.first()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ValidationError {
+    InsufficientFunds {
+        required: f64,
+        available: f64,
+    },
+    InsufficientHoldings {
+        symbol: String,
+        required: u64,
+        available: u64,
+    },
+    InsufficientBuyingPower {
+        required: f64,
+        available: f64,
+    },
+    UserNotVerified {
+        user_id: Uuid,
+    },
+    InvalidSymbol {
+        symbol: String,
+    },
+    OrderTooLarge {
+        quantity: u64,
+        max_quantity: u64,
+    },
+    NotionalValueTooLarge {
+        notional_value: f64,
+        max_notional: f64,
+    },
+    OrderTooSmall {
+        quantity: u64,
+        min_quantity: u64,
+    },
+    PriceOutOfRange {
+        price: f64,
+        market_price: f64,
+        max_deviation_percent: f64,
+    },
+    InvalidTickSize {
+        price: f64,
+        tick_size: f64,
+    },
+    ConcentrationLimit {
+        symbol: String,
+        new_position_percent: f64,
+        max_position_percent: f64,
+    },
+    ShortSellingNotAllowed {
+        symbol: String,
+    },
+    DailyOrderLimitExceeded {
+        current_count: u32,
+        max_count: u32,
+    },
+    InstrumentNotActive {
+        symbol: String,
+    },
+    InvalidOrderData {
+        message: String,
+    },
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValidationError::InsufficientFunds {
+                required,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Insufficient funds: required ${required:.2}, available ${available:.2}"
+                )
+            }
+            ValidationError::InsufficientHoldings {
+                symbol,
+                required,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Insufficient holdings: need {required} shares of {symbol}, have {available} shares"
+                )
+            }
+            ValidationError::InsufficientBuyingPower {
+                required,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Insufficient buying power: required ${required:.2}, available ${available:.2}"
+                )
+            }
+            ValidationError::UserNotVerified { user_id } => {
+                write!(f, "User {user_id} is not verified")
+            }
+            ValidationError::InvalidSymbol { symbol } => {
+                write!(f, "Invalid or unknown symbol: {symbol}")
+            }
+            ValidationError::OrderTooLarge {
+                quantity,
+                max_quantity,
+            } => {
+                write!(
+                    f,
+                    "Order size {quantity} exceeds maximum allowed: {max_quantity}"
+                )
+            }
+            ValidationError::NotionalValueTooLarge {
+                notional_value,
+                max_notional,
+            } => {
+                write!(
+                    f,
+                    "Order notional value ${notional_value:.2} exceeds maximum allowed: ${max_notional:.2}"
+                )
+            }
+            ValidationError::OrderTooSmall {
+                quantity,
+                min_quantity,
+            } => {
+                write!(
+                    f,
+                    "Order size {quantity} is below minimum required: {min_quantity}"
+                )
+            }
+            ValidationError::PriceOutOfRange {
+                price,
+                market_price,
+                max_deviation_percent,
+            } => {
+                write!(
+                    f,
+                    "Limit price ${price:.2} deviates more than {max_deviation_percent:.1}% from market price ${market_price:.2}"
+                )
+            }
+            ValidationError::InvalidTickSize { price, tick_size } => {
+                write!(
+                    f,
+                    "Price ${price:.4} does not conform to tick size ${tick_size:.4}"
+                )
+            }
+            ValidationError::ConcentrationLimit {
+                symbol,
+                new_position_percent,
+                max_position_percent,
+            } => {
+                write!(
+                    f,
+                    "Position in {symbol} would be {new_position_percent:.1}% of portfolio, exceeding limit of {max_position_percent:.1}%"
+                )
+            }
+            ValidationError::ShortSellingNotAllowed { symbol } => {
+                write!(f, "Short selling is not allowed for symbol {symbol}")
+            }
+            ValidationError::DailyOrderLimitExceeded {
+                current_count,
+                max_count,
+            } => {
+                write!(
+                    f,
+                    "Daily order limit exceeded: {current_count} orders today, maximum allowed: {max_count}"
+                )
+            }
+            ValidationError::InstrumentNotActive { symbol } => {
+                write!(f, "Instrument {symbol} is not active for trading")
+            }
+            ValidationError::InvalidOrderData { message } => {
+                write!(f, "Invalid order data: {message}")
+            }
+        }
+    }
+}
+
+/// Configuration for trade validation rules
+#[derive(Debug, Clone)]
+pub struct ValidationConfig {
+    /// Maximum order size in shares
+    pub max_order_quantity: u64,
+    /// Maximum notional value per order (in dollars)
+    pub max_notional_value: f64,
+    /// Maximum percentage deviation for limit orders from market price
+    pub max_price_deviation_percent: f64,
+    /// Maximum position size as percentage of total portfolio value
+    pub max_position_percent: f64,
+    /// Minimum balance required after trade
+    pub min_balance_after_trade: f64,
+    /// Minimum tick size for price validation
+    pub min_tick_size: f64,
+    /// Enable short selling
+    pub allow_short_selling: bool,
+    /// Minimum order quantity
+    pub min_order_quantity: u64,
+    /// Maximum daily order count per user
+    pub max_daily_orders: u32,
+    /// Buying power multiplier (1.0 = cash only, 2.0 = 2x margin)
+    pub buying_power_multiplier: f64,
+}
+
+impl Default for ValidationConfig {
+    fn default() -> Self {
+        Self {
+            max_order_quantity: 10_000,
+            max_notional_value: 100_000.0, // $100k per order
+            max_price_deviation_percent: 10.0,
+            max_position_percent: 25.0,
+            min_balance_after_trade: 0.0,
+            min_tick_size: 0.01,        // $0.01 tick size
+            allow_short_selling: false, // Disabled by default for retail
+            min_order_quantity: 1,
+            max_daily_orders: 100,
+            buying_power_multiplier: 1.0, // Cash account only
+        }
+    }
+}
+
+/// Trade validator that performs pre-trade and post-trade checks
+pub struct TradeValidator {
+    user_client: Arc<UserClient>,
+    market_data_client: Arc<MarketDataClient>,
+    config: ValidationConfig,
+}
+
+impl TradeValidator {
+    pub fn new(
+        user_client: Arc<UserClient>,
+        market_data_client: Arc<MarketDataClient>,
+        config: ValidationConfig,
+    ) -> Self {
+        Self {
+            user_client,
+            market_data_client,
+            config,
+        }
+    }
+
+    /// Perform pre-trade validation
+    pub async fn validate_trade(
+        &self,
+        user_id: Uuid,
+        symbol: &str,
+        quantity: u64,
+        order_side: &OrderSide,
+        order_type: &OrderType,
+    ) -> ValidationResult {
+        debug!(
+            "Validating trade: user={}, symbol={}, qty={}, side={:?}",
+            user_id, symbol, quantity, order_side
+        );
+
+        let mut result = ValidationResult::valid();
+
+        // 1. Sanity check: quantity must be > 0 (already checked by caller but redundant safety)
+        if quantity == 0 {
+            result.add_error(ValidationError::InvalidOrderData {
+                message: "Quantity must be greater than 0".to_string(),
+            });
+            return result;
+        }
+
+        // 2. Validate order size (min and max)
+        if let Err(e) = self.validate_order_size(quantity) {
+            result.add_error(e);
+        }
+
+        // 3. Get user data
+        let user = match self.user_client.get_user(user_id).await {
+            Ok(user) => user,
+            Err(e) => {
+                warn!("Failed to fetch user {}: {}", user_id, e);
+                result.add_error(ValidationError::InvalidOrderData {
+                    message: "Unable to verify user data".to_string(),
+                });
+                return result;
+            }
+        };
+
+        // 4. Validate user is verified
+        if !user.is_verified {
+            result.add_error(ValidationError::UserNotVerified { user_id });
+        }
+
+        // 5. Get market price and validate symbol is active
+        let market_price = if let Ok(price_data) = self.market_data_client.get_price(symbol).await {
+            // Parse the price from the JSON response
+            if let Some(price_val) = price_data.get("price") {
+                if let Some(price) = price_val.as_f64() {
+                    price
+                } else {
+                    result.add_error(ValidationError::InstrumentNotActive {
+                        symbol: symbol.to_string(),
+                    });
+                    return result;
+                }
+            } else {
+                result.add_error(ValidationError::InvalidSymbol {
+                    symbol: symbol.to_string(),
+                });
+                return result;
+            }
+        } else {
+            result.add_error(ValidationError::InvalidSymbol {
+                symbol: symbol.to_string(),
+            });
+            return result;
+        };
+
+        // 6. Validate limit price if applicable (price bands and tick size)
+        if let OrderType::Limit { price } = order_type {
+            // Validate tick size
+            if let Err(e) = self.validate_tick_size(*price) {
+                result.add_error(e);
+            }
+
+            // Validate price is within acceptable bands
+            if let Err(e) = self.validate_limit_price(*price, market_price, order_side) {
+                result.add_error(e);
+            }
+        }
+
+        // 7. Validate funds/holdings based on order side
+        match order_side {
+            OrderSide::Buy => {
+                let estimated_cost =
+                    self.calculate_estimated_cost(quantity, market_price, order_type);
+
+                // Check notional value limits
+                if let Err(e) = self.validate_notional_value(estimated_cost) {
+                    result.add_error(e);
+                }
+
+                // Check buying power (includes margin)
+                if let Err(e) = self.validate_buying_power(&user, estimated_cost) {
+                    result.add_error(e);
+                }
+
+                // Check concentration limits for buy orders
+                if let Err(e) =
+                    self.validate_concentration_limit(&user, symbol, quantity, market_price)
+                {
+                    result.add_error(e);
+                }
+            }
+            OrderSide::Sell => {
+                // Check if user has sufficient holdings
+                if let Err(e) = self.validate_holdings(&user, symbol, quantity) {
+                    result.add_error(e);
+                } else {
+                    // If user doesn't have holdings, check if short selling is allowed
+                    let current_holdings = user
+                        .holdings
+                        .iter()
+                        .find(|(sym, _)| sym.eq_ignore_ascii_case(symbol))
+                        .map_or(0, |(_, h)| h.quantity);
+
+                    if current_holdings == 0 && !self.config.allow_short_selling {
+                        result.add_error(ValidationError::ShortSellingNotAllowed {
+                            symbol: symbol.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        debug!(
+            "Validation result for user {}: valid={}, errors={}",
+            user_id,
+            result.valid,
+            result.errors.len()
+        );
+
+        result
+    }
+
+    /// Validate order size is within limits
+    fn validate_order_size(&self, quantity: u64) -> Result<(), ValidationError> {
+        if quantity < self.config.min_order_quantity {
+            return Err(ValidationError::OrderTooSmall {
+                quantity,
+                min_quantity: self.config.min_order_quantity,
+            });
+        }
+
+        if quantity > self.config.max_order_quantity {
+            return Err(ValidationError::OrderTooLarge {
+                quantity,
+                max_quantity: self.config.max_order_quantity,
+            });
+        }
+        Ok(())
+    }
+
+    /// Validate notional value doesn't exceed limits
+    fn validate_notional_value(&self, notional_value: f64) -> Result<(), ValidationError> {
+        if notional_value > self.config.max_notional_value {
+            return Err(ValidationError::NotionalValueTooLarge {
+                notional_value,
+                max_notional: self.config.max_notional_value,
+            });
+        }
+        Ok(())
+    }
+
+    /// Validate tick size compliance
+    fn validate_tick_size(&self, price: f64) -> Result<(), ValidationError> {
+        let remainder = (price / self.config.min_tick_size).fract();
+        // Allow small floating point errors
+        if remainder.abs() > 0.0001 && (1.0 - remainder).abs() > 0.0001 {
+            return Err(ValidationError::InvalidTickSize {
+                price,
+                tick_size: self.config.min_tick_size,
+            });
+        }
+        Ok(())
+    }
+
+    /// Validate buying power (includes margin multiplier)
+    fn validate_buying_power(
+        &self,
+        user: &crate::models::UserResponse,
+        required_amount: f64,
+    ) -> Result<(), ValidationError> {
+        let buying_power = user.balance * self.config.buying_power_multiplier;
+
+        if buying_power < required_amount {
+            return Err(ValidationError::InsufficientBuyingPower {
+                required: required_amount,
+                available: buying_power,
+            });
+        }
+
+        // Check minimum balance after trade (for cash accounts)
+        if self.config.buying_power_multiplier == 1.0 {
+            let balance_after = user.balance - required_amount;
+            if balance_after < self.config.min_balance_after_trade {
+                return Err(ValidationError::InsufficientFunds {
+                    required: required_amount + self.config.min_balance_after_trade,
+                    available: user.balance,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate user has sufficient holdings for sell order
+    fn validate_holdings(
+        &self,
+        user: &crate::models::UserResponse,
+        symbol: &str,
+        required_quantity: u64,
+    ) -> Result<(), ValidationError> {
+        let available = user
+            .holdings
+            .iter()
+            .find(|(sym, _)| sym.eq_ignore_ascii_case(symbol))
+            .map_or(0, |(_, h)| h.quantity);
+
+        if available < required_quantity {
+            return Err(ValidationError::InsufficientHoldings {
+                symbol: symbol.to_string(),
+                required: required_quantity,
+                available,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Validate limit price is within acceptable range of market price
+    fn validate_limit_price(
+        &self,
+        limit_price: f64,
+        market_price: f64,
+        order_side: &OrderSide,
+    ) -> Result<(), ValidationError> {
+        let deviation_percent = ((limit_price - market_price).abs() / market_price) * 100.0;
+
+        if deviation_percent > self.config.max_price_deviation_percent {
+            // For buy orders, warn if limit price is too high
+            // For sell orders, warn if limit price is too low
+            let is_problematic = match order_side {
+                OrderSide::Buy => {
+                    limit_price
+                        > market_price * (1.0 + self.config.max_price_deviation_percent / 100.0)
+                }
+                OrderSide::Sell => {
+                    limit_price
+                        < market_price * (1.0 - self.config.max_price_deviation_percent / 100.0)
+                }
+            };
+
+            if is_problematic {
+                return Err(ValidationError::PriceOutOfRange {
+                    price: limit_price,
+                    market_price,
+                    max_deviation_percent: self.config.max_price_deviation_percent,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate position concentration limits
+    fn validate_concentration_limit(
+        &self,
+        user: &crate::models::UserResponse,
+        symbol: &str,
+        additional_quantity: u64,
+        market_price: f64,
+    ) -> Result<(), ValidationError> {
+        // Calculate total portfolio value
+        let mut portfolio_value = user.balance;
+        for holding in user.holdings.values() {
+            // We'd need market prices for all holdings in a real system
+            // For now, use average cost as approximation
+            portfolio_value += holding.quantity as f64 * holding.average_cost;
+        }
+
+        if portfolio_value <= 0.0 {
+            // Skip concentration check if portfolio is empty
+            return Ok(());
+        }
+
+        // Calculate new position value
+        let current_quantity = user
+            .holdings
+            .iter()
+            .find(|(sym, _)| sym.eq_ignore_ascii_case(symbol))
+            .map_or(0, |(_, h)| h.quantity);
+
+        let new_total_quantity = current_quantity + additional_quantity;
+        let new_position_value = new_total_quantity as f64 * market_price;
+        let new_position_percent = (new_position_value / portfolio_value) * 100.0;
+
+        if new_position_percent > self.config.max_position_percent {
+            return Err(ValidationError::ConcentrationLimit {
+                symbol: symbol.to_string(),
+                new_position_percent,
+                max_position_percent: self.config.max_position_percent,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Calculate estimated cost for an order
+    fn calculate_estimated_cost(
+        &self,
+        quantity: u64,
+        market_price: f64,
+        order_type: &OrderType,
+    ) -> f64 {
+        let price = match order_type {
+            OrderType::Market => market_price,
+            OrderType::Limit { price } => *price,
+        };
+
+        quantity as f64 * price
+    }
+
+    /// Post-trade validation: verify execution results are consistent
+    pub fn validate_execution_result(
+        &self,
+        order_quantity: u64,
+        filled_quantity: u64,
+        order_price: Option<f64>,
+        execution_price: Option<f64>,
+    ) -> ValidationResult {
+        let mut result = ValidationResult::valid();
+
+        // Filled quantity should not exceed order quantity
+        if filled_quantity > order_quantity {
+            result.add_error(ValidationError::InvalidOrderData {
+                message: format!(
+                    "Filled quantity {filled_quantity} exceeds order quantity {order_quantity}"
+                ),
+            });
+        }
+
+        // Execution price should be present for filled orders
+        if filled_quantity > 0 && execution_price.is_none() {
+            result.add_error(ValidationError::InvalidOrderData {
+                message: "Execution price missing for filled order".to_string(),
+            });
+        }
+
+        // For limit orders, check price was respected
+        if let (Some(limit_price), Some(exec_price)) = (order_price, execution_price) {
+            // This is a simplified check - in reality, we'd check based on order side
+            if (exec_price - limit_price).abs() / limit_price > 0.01 {
+                result = result.with_warning(format!(
+                    "Execution price ${exec_price:.2} differs from limit price ${limit_price:.2}"
+                ));
+            }
+        }
+
+        result
+    }
+}

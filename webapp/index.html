@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrokerX</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .hidden { display: none; }
+        form { margin: 10px 0; }
+        input, select, button { margin: 5px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007cba; color: white; border: none; cursor: pointer; transition: background-color 0.3s; }
+        button:hover { background: #005a8b; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .error { color: #d32f2f; padding: 10px; background: #ffebee; border-radius: 4px; margin: 10px 0; }
+        .success { color: #388e3c; padding: 10px; background: #e8f5e8; border-radius: 4px; margin: 10px 0; }
+        table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        
+        /* Market data styles */
+        .price-up { color: #4caf50; font-weight: bold; }
+        .price-down { color: #f44336; font-weight: bold; }
+        .price-neutral { color: #666; }
+        .symbol-cell { font-weight: bold; font-family: 'Courier New', monospace; }
+        .refresh-indicator { 
+            display: inline-block; 
+            animation: pulse 1s infinite; 
+            margin-left: 8px;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Holdings styles */
+        .holdings-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .summary-card h4 {
+            margin: 0 0 10px 0;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        .summary-card .value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin: 0;
+        }
+        .profit-positive { color: #4caf50; }
+        .profit-negative { color: #f44336; }
+        
+        /* MFA specific styles */
+        .info-box { background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        
+        /* Security notice styles */
+        .security-notice {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            border-left: 4px solid #f39c12;
+        }
+        
+        .demo-notice {
+            background: #ffe6e6;
+            border: 1px solid #ff9999;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+        #mfa-code { 
+            width: 200px; 
+            font-size: 1.5rem; 
+            text-align: center; 
+            letter-spacing: 0.5rem; 
+            padding: 12px;
+            border: 2px solid #2196f3;
+            border-radius: 8px;
+            background: #fff;
+        }
+        #mfa-code:focus {
+            outline: none;
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
+        }
+        
+        .mfa-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn-primary { background: #4caf50; }
+        .btn-primary:hover { background: #388e3c; }
+        .btn-secondary { background: #f44336; }
+        .btn-secondary:hover { background: #d32f2f; }
+        .btn-info { background: #2196f3; }
+        .btn-info:hover { background: #1976d2; }
+        
+        /* Chart modal styles */
+        .chart-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s;
+        }
+        
+        .chart-modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 1200px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #007cba;
+        }
+        
+        .chart-close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+        
+        .chart-close:hover {
+            color: #000;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏦 BrokerX Trading Platform</h1>
+        
+        <!-- Authentication Section -->
+        <div id="auth-section" class="section">
+            <h2>🔐 Authentication</h2>
+            
+            
+            <!-- Login Form -->
+            <div id="login-form">
+                <h3>Login</h3>
+                <form onsubmit="login(event)">
+                    <input type="email" id="login-email" placeholder="Email" required>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+                <p><a href="#" onclick="showRegister()">Don't have an account? Register</a></p>
+            </div>
+            
+            <!-- Register Form -->
+            <div id="register-form" class="hidden">
+                <h3>Register</h3>
+                <form onsubmit="register(event)">
+                    <input type="email" id="reg-email" placeholder="Email" required>
+                    <input type="password" id="reg-password" placeholder="Password" required>
+                    <input type="text" id="reg-firstname" placeholder="First Name" required>
+                    <input type="text" id="reg-surname" placeholder="Last Name" required>
+                    <button type="submit">Register</button>
+                </form>
+                <p><a href="#" onclick="showLogin()">Already have an account? Login</a></p>
+            </div>
+            
+            <div id="auth-message"></div>
+        </div>
+
+        <!-- MFA Verification Section -->
+        <div id="mfa-section" class="section hidden">
+            <h2 id="mfa-title">🔐 Multi-Factor Authentication</h2>
+            
+            <div class="info-box">
+                <p id="mfa-description" style="margin: 0;">Enter verification code to continue.</p>
+            </div>
+            
+            <form onsubmit="verifyMfa(event)">
+                <div style="text-align: center; margin: 30px 0;">
+                    <label for="mfa-code" style="display: block; margin-bottom: 15px; font-weight: bold; font-size: 1.1rem;">Enter Verification Code</label>
+                    <input type="text" 
+                           id="mfa-code" 
+                           placeholder="000000" 
+                           required 
+                           maxlength="6"
+                           pattern="[0-9]{6}"
+                           autocomplete="one-time-code">
+                    <div style="font-size: 0.9rem; color: #666; margin-top: 10px;">
+                        <strong>Demo code: 123456</strong>
+                    </div>
+                </div>
+                
+                <div class="mfa-buttons" style="justify-content: center;">
+                    <button type="submit" class="btn-primary">✅ Verify Code</button>
+                    <button type="button" onclick="cancelMfa()" class="btn-secondary">❌ Cancel</button>
+                </div>
+            </form>
+            
+            <div style="margin-top: 30px; text-align: center; padding-top: 20px; border-top: 1px solid #eee;">
+                <p style="color: #666; font-size: 0.9rem; margin-bottom: 15px;">Didn't receive the code?</p>
+                <button onclick="resendMfaCode()" class="btn-info" style="font-size: 0.9rem;">📨 Resend Code</button>
+            </div>
+            
+            <div id="mfa-message"></div>
+        </div>
+        
+        <!-- User Dashboard -->
+        <div id="dashboard-section" class="section hidden">
+            <h2>Dashboard</h2>
+            <div id="user-info"></div>
+            <button onclick="logout()">Logout</button>
+        </div>
+        
+        <!-- User Profile Section -->
+        <div id="profile-section" class="section hidden">
+            <h2>Profile Management</h2>
+            
+            <!-- Update Profile -->
+            <div>
+                <h3>Update Profile</h3>
+                <form onsubmit="updateProfile(event)">
+                    <input type="email" id="update-email" placeholder="New Email">
+                    <input type="text" id="update-firstname" placeholder="New First Name">
+                    <input type="text" id="update-surname" placeholder="New Last Name">
+                    <button type="submit">Update Profile</button>
+                </form>
+            </div>
+            
+            <!-- Deposit Funds -->
+            <div>
+                <h3>Deposit Funds</h3>
+                <form onsubmit="depositFunds(event)">
+                    <input type="number" id="deposit-amount" placeholder="Amount" step="0.01" min="0.01" required>
+                    <button type="submit">Deposit</button>
+                </form>
+            </div>
+            
+            <div id="profile-message"></div>
+        </div>
+        
+        <!-- Market Data Section -->
+        <div id="market-data-section" class="section hidden">
+            <h2>📊 Market Data</h2>
+            <button onclick="loadMarketData()" style="margin-bottom: 15px;">🔄 Refresh Prices</button>
+            
+            <!-- Market Prices Table -->
+            <div id="market-prices-table"></div>
+            
+            <div id="market-message"></div>
+        </div>
+        
+        <!-- Holdings Section -->
+        <div id="holdings-section" class="section hidden">
+            <h2>💼 My Holdings</h2>
+            <button onclick="refreshHoldings()" style="margin-bottom: 15px;">🔄 Refresh Holdings</button>
+            
+            <!-- Holdings Summary -->
+            <div id="holdings-summary" style="margin-bottom: 20px;"></div>
+            
+            <!-- Holdings Table -->
+            <div id="holdings-table"></div>
+            
+            <div id="holdings-message"></div>
+        </div>
+        
+        <!-- Trading Section -->
+        <div id="trading-section" class="section hidden">
+            <h2>Trading</h2>
+            
+            <!-- Place Order -->
+            <div>
+                <h3>Place Order</h3>
+                <form onsubmit="placeOrder(event)">
+                    <input type="text" id="order-symbol" placeholder="Symbol (e.g., AAPL)" list="available-symbols" required>
+                    <datalist id="available-symbols"></datalist>
+                    <input type="number" id="order-quantity" placeholder="Quantity" min="1" required>
+                    <select id="order-side" required>
+                        <option value="">Select Side</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
+                    </select>
+                    <select id="order-type" onchange="togglePriceField()" required>
+                        <option value="">Select Type</option>
+                        <option value="MARKET">Market</option>
+                        <option value="LIMIT">Limit</option>
+                    </select>
+                    <input type="number" id="order-price" placeholder="Price (for limit orders)" step="0.01" min="0.01" class="hidden">
+                    <button type="submit">Place Order</button>
+                </form>
+            </div>
+            
+            <div id="trading-message"></div>
+        </div>
+        
+        <!-- Orders Section -->
+        <div id="orders-section" class="section hidden">
+            <h2>My Orders</h2>
+            <button onclick="loadOrders()" style="margin-bottom: 15px;">Refresh Orders</button>
+            
+            <!-- Orders Table -->
+            <div id="orders-table"></div>
+            
+            <div id="orders-message"></div>
+        </div>
+        
+        <!-- Price History Chart Modal -->
+        <div id="chart-modal" class="chart-modal">
+            <div class="chart-modal-content">
+                <div class="chart-header">
+                    <h2 id="chart-title">Price History</h2>
+                    <span class="chart-close" onclick="closeChartModal()">&times;</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="price-chart"></canvas>
+                </div>
+                <div id="chart-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;"></div>
+            </div>
+        </div>
+
+        <!-- Update Order Modal -->
+        <div id="update-order-modal" class="chart-modal">
+            <div class="chart-modal-content" style="max-width: 500px;">
+                <div class="chart-header">
+                    <h2>Update Order</h2>
+                    <span class="chart-close" onclick="closeUpdateOrderModal()">&times;</span>
+                </div>
+                <form onsubmit="submitOrderUpdateFromModal(event)">
+                    <input type="hidden" id="update-order-id">
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label for="update-order-quantity" style="display: block; margin-bottom: 5px; font-weight: bold;">Quantity:</label>
+                        <input type="number" id="update-order-quantity" min="1" required style="width: 100%;">
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label for="update-order-type" style="display: block; margin-bottom: 5px; font-weight: bold;">Order Type:</label>
+                        <select id="update-order-type" onchange="toggleUpdatePriceField()" required style="width: 100%;">
+                            <option value="MARKET">Market</option>
+                            <option value="LIMIT">Limit</option>
+                        </select>
+                    </div>
+                    
+                    <div id="update-price-field" style="margin-bottom: 15px;" class="hidden">
+                        <label for="update-order-price" style="display: block; margin-bottom: 5px; font-weight: bold;">Price:</label>
+                        <input type="number" id="update-order-price" step="0.01" min="0.01" style="width: 100%;">
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button type="submit" class="btn-primary" style="flex: 1;">✅ Update Order</button>
+                        <button type="button" onclick="closeUpdateOrderModal()" class="btn-secondary" style="flex: 1;">❌ Cancel</button>
+                    </div>
+                </form>
+                <div id="update-order-message" style="margin-top: 15px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

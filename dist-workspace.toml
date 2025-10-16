@@ -1,5 +1,5 @@
 [workspace]
-members = ["cargo:."]
+members = ["cargo:user-service", "cargo:order-service", "cargo:market-data-service", "cargo:api_gateway"]
 
 # Config for 'dist'
 [dist]

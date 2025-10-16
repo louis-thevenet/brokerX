@@ -1,0 +1,902 @@
+use crate::AppState;
+use crate::auth::JwtService;
+use crate::error::{ApiError, ApiResult};
+use crate::middleware::AuthenticatedUser;
+use crate::models::{
+    CreateOrderRequest, DepositRequest, ErrorResponse, HealthResponse, HoldingResponse,
+    LoginRequest, LoginResponse, LogoutRequest, MarketPriceResponse, MarketPricesResponse,
+    MessageResponse, MfaChallengeResponse, OrderResponse, OrderSide, OrderStatus, OrderType,
+    PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest, RegisterResponse,
+    SymbolsResponse, UpdateOrderRequest, UpdateUserRequest, UserResponse, VerifyMfaRequest,
+    VerifyMfaResponse,
+};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::{IntoResponse, Json},
+};
+use tracing::{debug, error, info, warn};
+use utoipa::OpenApi;
+use uuid::Uuid;
+
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        health_check,
+        register,
+        login,
+        verify_login_mfa,
+        logout,
+        get_me,
+        update_me,
+        deposit_funds,
+        create_order,
+        get_my_orders,
+        get_order,
+        update_order,
+        cancel_order,
+        get_market_price,
+        get_market_prices,
+        get_market_symbols,
+        get_market_history,
+    ),
+    components(
+        schemas(
+            HealthResponse,
+            RegisterRequest,
+            RegisterResponse,
+            LoginRequest,
+            LoginResponse,
+            LogoutRequest,
+            UserResponse,
+            HoldingResponse,
+            UpdateUserRequest,
+            DepositRequest,
+            CreateOrderRequest,
+            UpdateOrderRequest,
+            OrderResponse,
+            OrderSide,
+            OrderType,
+            OrderStatus,
+            PaginationQuery,
+            PaginatedResponse<OrderResponse>,
+            PaginationInfo,
+            MessageResponse,
+            MfaChallengeResponse,
+            VerifyMfaRequest,
+            VerifyMfaResponse,
+            MarketPriceResponse,
+            MarketPricesResponse,
+            SymbolsResponse,
+            ErrorResponse
+        )
+    ),
+    tags(
+        (name = "health", description = "Health check endpoints"),
+        (name = "auth", description = "Authentication endpoints"),
+        (name = "user", description = "User management endpoints"),
+        (name = "orders", description = "Order management endpoints"),
+        (name = "market", description = "Market data endpoints")
+    )
+)]
+pub struct ApiDoc;
+
+/// Health check endpoint
+#[utoipa::path(
+    get,
+    path = "/v1/health",
+    responses(
+        (status = 200, description = "Service is healthy", body = HealthResponse)
+    ),
+    tag = "health"
+)]
+pub async fn health_check() -> impl IntoResponse {
+    Json(HealthResponse {
+        status: "healthy".to_string(),
+        service: "api-gateway".to_string(),
+        timestamp: chrono::Utc::now(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    })
+}
+
+/// Register a new user
+#[utoipa::path(
+    post,
+    path = "/v1/auth/register",
+    request_body = RegisterRequest,
+    responses(
+        (status = 201, description = "User registered successfully", body = RegisterResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 409, description = "User already exists")
+    ),
+    tag = "auth"
+)]
+pub async fn register(
+    State(state): State<AppState>,
+    Json(request): Json<RegisterRequest>,
+) -> ApiResult<impl IntoResponse> {
+    debug!("Register attempt for email: {}", request.email);
+
+    // Validate request
+    if request.email.is_empty() || request.password.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Email and password are required".to_string(),
+        ));
+    }
+
+    // Create user in user service
+    info!("Creating user for {}", request.email);
+    let user_id = state.user_client.create_user(&request).await?;
+    info!("User created with ID: {}", user_id);
+
+    Ok((
+        StatusCode::CREATED,
+        Json(RegisterResponse {
+            user_id: user_id.to_string(),
+            message: "Registration successful. Please login to verify your email and complete the process."
+                .to_string(),
+            requires_verification: true,
+        }),
+    ))
+}
+
+/// Login and get JWT token
+///
+/// MFA is required for all login attempts. A challenge ID will be returned
+/// that must be verified with /v1/auth/verify-login to complete authentication.
+#[utoipa::path(
+    post,
+    path = "/v1/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, description = "MFA challenge sent", body = LoginResponse),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "auth"
+)]
+pub async fn login(
+    State(state): State<AppState>,
+    Json(request): Json<LoginRequest>,
+) -> ApiResult<impl IntoResponse> {
+    info!("Login attempt for {}", request.email);
+
+    // Authenticate user credentials
+    let user_id = state
+        .user_client
+        .authenticate_user(&request.email, &request.password)
+        .await
+        .map_err(|e| {
+            error!("Authentication failed for {}: {}", request.email, e);
+            e
+        })?;
+
+    // Get user info
+    let user = state.user_client.get_user(user_id).await?;
+
+    // send MFA challenge
+    info!("Initiating MFA challenge for user {}", user_id);
+    let challenge_id = state.mfa_service.initiate_challenge(&user.email).await?;
+
+    Ok(Json(LoginResponse {
+        user_id,
+        challenge_id,
+        message: "Multi-factor authentication required. Please check your email for the verification code.".to_string(),
+    }))
+}
+
+/// Verify login MFA challenge
+///
+/// Complete the login process by verifying the MFA code sent to the user's email.
+#[utoipa::path(
+    post,
+    path = "/v1/auth/verify-login",
+    request_body = VerifyMfaRequest,
+    responses(
+        (status = 200, description = "MFA verification successful, token issued", body = VerifyMfaResponse),
+        (status = 400, description = "Invalid verification code or challenge"),
+        (status = 404, description = "Challenge not found or expired")
+    ),
+    tag = "auth"
+)]
+pub async fn verify_login_mfa(
+    State(state): State<AppState>,
+    Json(verify_request): Json<VerifyMfaRequest>,
+) -> ApiResult<impl IntoResponse> {
+    info!(
+        "Verifying MFA for challenge: {}",
+        verify_request.challenge_id
+    );
+
+    if verify_request.challenge_id.is_empty() {
+        return Err(ApiError::BadRequest("Challenge ID is required".to_string()));
+    }
+
+    // Verify the MFA challenge
+    let user_email = state
+        .mfa_service
+        .verify_challenge(&verify_request.challenge_id, &verify_request.code)
+        .await?;
+
+    // Get user by email (returns full user object, which includes the ID)
+    let user = state.user_client.get_user_by_email(&user_email).await?;
+    let user_id = user.id;
+
+    if user.is_verified {
+        info!("User {} completed MFA (already verified)", user_id);
+    } else {
+        state.user_client.verify_email(user_id).await?;
+        info!("User {} marked as verified (first login)", user_id);
+    }
+
+    // Issue JWT token
+    let jwt_service = JwtService::new(&state.config.jwt_secret, state.config.jwt_expiry_hours);
+    let (token, expires_at) = jwt_service.create_token(user_id)?;
+
+    Ok(Json(VerifyMfaResponse {
+        token,
+        user_id,
+        expires_at,
+        message: "Authentication successful. You are now logged in.".to_string(),
+    }))
+}
+
+/// Logout
+///
+/// Client-side logout. The client should delete its token.
+/// TODO: revoke token server-side ?
+#[utoipa::path(
+    post,
+    path = "/v1/auth/logout",
+    request_body = LogoutRequest,
+    responses(
+        (status = 200, description = "Logout successful", body = MessageResponse)
+    ),
+    tag = "auth"
+)]
+pub async fn logout() -> ApiResult<impl IntoResponse> {
+    Ok(Json(MessageResponse {
+        message: "Logout successful".to_string(),
+    }))
+}
+
+/// Get current user profile
+#[utoipa::path(
+    get,
+    path = "/v1/me",
+    responses(
+        (status = 200, description = "User profile", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "User not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user"
+)]
+pub async fn get_me(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+) -> ApiResult<impl IntoResponse> {
+    let user = state.user_client.get_user(user_id).await?;
+    Ok(Json(user))
+}
+
+/// Update current user profile
+#[utoipa::path(
+    put,
+    path = "/v1/me",
+    request_body = UpdateUserRequest,
+    responses(
+        (status = 200, description = "User updated successfully", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "User not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user"
+)]
+pub async fn update_me(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Json(update_request): Json<UpdateUserRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let user = state
+        .user_client
+        .update_user(user_id, &update_request)
+        .await?;
+    Ok(Json(user))
+}
+
+/// Deposit funds to user account
+#[utoipa::path(
+    post,
+    path = "/v1/me/deposit",
+    request_body = DepositRequest,
+    responses(
+        (status = 200, description = "Funds deposited successfully", body = UserResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid deposit amount")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user"
+)]
+pub async fn deposit_funds(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Json(deposit_request): Json<DepositRequest>,
+) -> ApiResult<impl IntoResponse> {
+    info!(
+        "User {} depositing amount: {}",
+        user_id, deposit_request.amount
+    );
+    if deposit_request.amount <= 0.0 {
+        error!(
+            "Invalid deposit amount: {} for user {}",
+            deposit_request.amount, user_id
+        );
+        return Err(ApiError::BadRequest(
+            "Deposit amount must be positive".to_string(),
+        ));
+    }
+
+    let user = state
+        .user_client
+        .deposit_funds(user_id, deposit_request.amount)
+        .await?;
+    info!("Deposit successful for user {}", user_id);
+    Ok(Json(user))
+}
+
+/// Create a new order
+/// Archestrates the full order lifecycle: validation, creation, execution, and updating user holdings.
+/// TODO: needs refactor
+#[utoipa::path(
+    post,
+    path = "/v1/orders",
+    request_body = CreateOrderRequest,
+    responses(
+        (status = 201, description = "Order created successfully", body = OrderResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid order request")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "orders"
+)]
+#[allow(clippy::too_many_lines)]
+pub async fn create_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Json(order_request): Json<CreateOrderRequest>,
+) -> ApiResult<impl IntoResponse> {
+    info!("User {} creating order: {:?}", user_id, order_request);
+
+    // PRE-TRADE VALIDATION
+    if order_request.symbol.is_empty() {
+        error!("Order creation failed: Symbol is required");
+        return Err(ApiError::BadRequest("Symbol is required".to_string()));
+    }
+
+    if order_request.quantity == 0 {
+        error!("Order creation failed: Quantity must be greater than 0");
+        return Err(ApiError::BadRequest(
+            "Quantity must be greater than 0".to_string(),
+        ));
+    }
+
+    if matches!(order_request.order_type, OrderType::Limit { .. }) && order_request.price.is_none()
+    {
+        error!("Order creation failed: Price is required for limit orders");
+        return Err(ApiError::BadRequest(
+            "Price is required for limit orders".to_string(),
+        ));
+    }
+
+    info!("Running pre-trade validation for user {}", user_id);
+    let validation_result = state
+        .trade_validator
+        .validate_trade(
+            user_id,
+            &order_request.symbol,
+            order_request.quantity,
+            &order_request.order_side,
+            &order_request.order_type,
+        )
+        .await;
+
+    if !validation_result.valid {
+        let error_msg = validation_result
+            .first_error()
+            .map_or_else(|| "Validation failed".to_string(), ToString::to_string);
+
+        error!(
+            "Pre-trade validation failed for user {}: {}",
+            user_id, error_msg
+        );
+
+        // Map validation errors to appropriate HTTP status codes
+        if let Some(first_error) = validation_result.first_error() {
+            use crate::trade_validation::ValidationError;
+            return Err(match first_error {
+                ValidationError::InsufficientFunds { .. }
+                | ValidationError::InsufficientHoldings { .. }
+                | ValidationError::InsufficientBuyingPower { .. }
+                | ValidationError::ShortSellingNotAllowed { .. } => ApiError::Forbidden(error_msg),
+                ValidationError::UserNotVerified { .. } => {
+                    ApiError::Forbidden("User account must be verified to trade".to_string())
+                }
+                ValidationError::InvalidSymbol { .. }
+                | ValidationError::InstrumentNotActive { .. }
+                | ValidationError::InvalidOrderData { .. } => ApiError::BadRequest(error_msg),
+                ValidationError::OrderTooLarge { .. }
+                | ValidationError::OrderTooSmall { .. }
+                | ValidationError::NotionalValueTooLarge { .. }
+                | ValidationError::PriceOutOfRange { .. }
+                | ValidationError::InvalidTickSize { .. }
+                | ValidationError::ConcentrationLimit { .. }
+                | ValidationError::DailyOrderLimitExceeded { .. } => {
+                    ApiError::UnprocessableEntity(error_msg)
+                }
+            });
+        }
+
+        return Err(ApiError::BadRequest(error_msg));
+    }
+
+    // Log any warnings
+    for warning in &validation_result.warnings {
+        warn!("Pre-trade warning for user {}: {}", user_id, warning);
+    }
+
+    info!("Pre-trade validation passed for user {}", user_id);
+
+    // ORDER CREATION AND EXECUTION
+    // Step 1: Create order in Order Service with Pending status
+    let order = match state
+        .order_client
+        .create_order(user_id, &order_request)
+        .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            error!("Order creation failed for user {}: {}", user_id, e);
+            return Err(e);
+        }
+    };
+    info!("Order {} created with status Pending", order.id);
+
+    // Step 2: Execute order with Market Data Service
+    let execution_request = crate::models::ExecuteOrderRequest {
+        order_id: order.id,
+        symbol: order_request.symbol.clone(),
+        side: order_request.order_side.clone(),
+        order_type: order_request.order_type.clone(),
+        quantity: order_request.quantity,
+    };
+
+    let execution_result = match state
+        .market_data_execution_client
+        .execute_order(execution_request)
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            error!("Order {} execution failed: {}", order.id, e);
+            // Order exists but execution failed - it remains Pending
+            // Return the order with pending status
+            return Ok((StatusCode::CREATED, Json(order))); // TODO: Retry ?
+        }
+    };
+
+    info!(
+        "Order {} execution result: {:?}, filled: {}/{}, price: {:?}",
+        order.id,
+        execution_result.status,
+        execution_result.filled_quantity,
+        order.quantity,
+        execution_result.average_price
+    );
+
+    // Step 3: Update order with execution results
+    let updated_order = match state
+        .order_client
+        .update_order_execution(
+            order.id,
+            execution_result.status.clone(),
+            execution_result.filled_quantity,
+            execution_result.average_price,
+        )
+        .await
+    {
+        Ok(updated) => updated,
+        Err(e) => {
+            error!(
+                "Failed to update order {} with execution results: {}",
+                order.id, e
+            );
+            // Return original order if update fails
+            return Ok((StatusCode::CREATED, Json(order)));
+        }
+    };
+
+    // Step 4: Update user holdings and balance if order was filled (fully or partially)
+    if matches!(
+        execution_result.status,
+        crate::models::ExecutionStatus::FullyFilled
+            | crate::models::ExecutionStatus::PartiallyFilled
+    ) && let Some(exec_price) = execution_result.average_price
+    {
+        let quantity_change = match order_request.order_side {
+            OrderSide::Buy => execution_result.filled_quantity as i64,
+            OrderSide::Sell => -(execution_result.filled_quantity as i64),
+        };
+
+        // Update holdings
+        if let Err(e) = state
+            .user_client
+            .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
+            .await
+        {
+            error!(
+                "Failed to update holdings for user {} after order {}: {}",
+                user_id, order.id, e
+            );
+        } else {
+            info!(
+                "Updated holdings for user {}: {} {} shares @ ${}",
+                user_id, quantity_change, order_request.symbol, exec_price
+            );
+        }
+
+        // Calculate total transaction amount
+        let transaction_amount = exec_price * execution_result.filled_quantity as f64;
+
+        // Debit/Credit user account based on order side
+        match order_request.order_side {
+            OrderSide::Buy => {
+                // Debit account for buy orders
+                if let Err(e) = state
+                    .user_client
+                    .withdraw_funds(user_id, transaction_amount)
+                    .await
+                {
+                    error!(
+                        "Failed to debit user {} account for order {}: {}",
+                        user_id, order.id, e
+                    );
+                    // Holdings were already updated, so we have an inconsistency
+                    // undo holdings update
+                    if let Err(e) = state
+                        .user_client
+                        .update_holdings(
+                            user_id,
+                            &order_request.symbol,
+                            -quantity_change,
+                            exec_price,
+                        )
+                        .await
+                    {
+                        error!(
+                            "Failed to rollback holdings for user {} after failed debit for order {}: {}",
+                            user_id, order.id, e
+                        );
+                    } else {
+                        info!(
+                            "Rolled back holdings for user {} after failed debit for order {}",
+                            user_id, order.id
+                        );
+                    }
+                } else {
+                    info!(
+                        "Debited ${:.2} from user {} for buy order {}",
+                        transaction_amount, user_id, order.id
+                    );
+                }
+            }
+            OrderSide::Sell => {
+                // Credit account for sell orders
+                if let Err(e) = state
+                    .user_client
+                    .deposit_funds(user_id, transaction_amount)
+                    .await
+                {
+                    error!(
+                        "Failed to credit user {} account for order {}: {}",
+                        user_id, order.id, e
+                    );
+                    // Holdings were already updated, so we have an inconsistency
+                    // undo holdings update
+                    if let Err(e) = state
+                        .user_client
+                        .update_holdings(
+                            user_id,
+                            &order_request.symbol,
+                            -quantity_change,
+                            exec_price,
+                        )
+                        .await
+                    {
+                        error!(
+                            "Failed to rollback holdings for user {} after failed credit for order {}: {}",
+                            user_id, order.id, e
+                        );
+                    } else {
+                        info!(
+                            "Rolled back holdings for user {} after failed credit for order {}",
+                            user_id, order.id
+                        );
+                    }
+                } else {
+                    info!(
+                        "Credited ${:.2} to user {} for sell order {}",
+                        transaction_amount, user_id, order.id
+                    );
+                }
+            }
+        }
+    }
+
+    info!("Order {} completed successfully", updated_order.id);
+    Ok((StatusCode::CREATED, Json(updated_order)))
+}
+
+/// Get user's orders with pagination and filtering
+#[utoipa::path(
+    get,
+    path = "/v1/orders",
+    params(PaginationQuery),
+    responses(
+        (status = 200, description = "List of user orders", body = PaginatedResponse<OrderResponse>),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "orders"
+)]
+pub async fn get_my_orders(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Query(pagination): Query<PaginationQuery>,
+) -> ApiResult<impl IntoResponse> {
+    // Validate pagination parameters
+    if pagination.limit > 100 {
+        return Err(ApiError::BadRequest("Limit cannot exceed 100".to_string()));
+    }
+
+    if pagination.page == 0 {
+        return Err(ApiError::BadRequest(
+            "Page must be greater than 0".to_string(),
+        ));
+    }
+
+    let orders = state
+        .order_client
+        .get_user_orders(user_id, &pagination)
+        .await?;
+
+    Ok(Json(orders))
+}
+
+/// Get specific order by ID
+#[utoipa::path(
+    get,
+    path = "/v1/orders/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Order ID")
+    ),
+    responses(
+        (status = 200, description = "Order details", body = OrderResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - order belongs to another user"),
+        (status = 404, description = "Order not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "orders"
+)]
+pub async fn get_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(order_id): Path<Uuid>,
+) -> ApiResult<impl IntoResponse> {
+    let order = state.order_client.get_order(user_id, order_id).await?;
+    Ok(Json(order))
+}
+
+/// Update an existing order
+#[utoipa::path(
+    put,
+    path = "/v1/orders/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Order ID")
+    ),
+    request_body = UpdateOrderRequest,
+    responses(
+        (status = 200, description = "Order updated successfully", body = OrderResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - order belongs to another user"),
+        (status = 404, description = "Order not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "orders"
+)]
+pub async fn update_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(order_id): Path<Uuid>,
+    Json(update_request): Json<UpdateOrderRequest>,
+) -> ApiResult<impl IntoResponse> {
+    let order = state
+        .order_client
+        .update_order(user_id, order_id, &update_request)
+        .await?;
+    Ok(Json(order))
+}
+
+/// Cancel an order
+#[utoipa::path(
+    delete,
+    path = "/v1/orders/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Order ID")
+    ),
+    responses(
+        (status = 200, description = "Order cancelled successfully", body = MessageResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - order belongs to another user"),
+        (status = 404, description = "Order not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "orders"
+)]
+pub async fn cancel_order(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Path(order_id): Path<Uuid>,
+) -> ApiResult<impl IntoResponse> {
+    state.order_client.cancel_order(user_id, order_id).await?;
+
+    Ok(Json(MessageResponse {
+        message: "Order cancelled successfully".to_string(),
+    }))
+}
+
+// ============================================================================
+// Market Data Endpoints
+// ============================================================================
+
+/// Get current price for a specific symbol
+///
+/// Returns the current market price and OHLCV data for the requested symbol.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/v1/market/prices/{symbol}",
+    params(
+        ("symbol" = String, Path, description = "Stock symbol (e.g., AAPL, GOOGL)")
+    ),
+    responses(
+        (status = 200, description = "Current price data"),
+        (status = 404, description = "Symbol not found"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_price(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+) -> ApiResult<impl IntoResponse> {
+    info!("Fetching market price for symbol: {}", symbol);
+    let price = state.market_data_client.get_price(&symbol).await?;
+    info!("Price for {}: {:?}", symbol, price);
+    Ok(Json(price))
+}
+
+/// Get current prices for multiple symbols
+///
+/// Returns current market prices for multiple symbols in a single request.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/v1/market/prices",
+    params(
+        ("symbols" = String, Query, description = "Comma-separated list of symbols (e.g., AAPL,GOOGL,MSFT)")
+    ),
+    responses(
+        (status = 200, description = "List of current prices"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_prices(
+    State(state): State<AppState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<impl IntoResponse> {
+    if let Some(symbols_str) = params.get("symbols") {
+        // If symbols are specified, fetch only those
+        let symbols: Vec<String> = symbols_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if !symbols.is_empty() {
+            info!(
+                "Fetching market prices for {} specific symbols",
+                symbols.len()
+            );
+            let prices = state.market_data_client.get_prices(&symbols).await?;
+            return Ok(Json(prices));
+        }
+    }
+
+    // No symbols specified or empty list - fetch all prices
+    info!("Fetching all market prices");
+    let prices = state.market_data_client.get_all_prices().await?;
+    Ok(Json(prices))
+}
+
+/// Get list of available trading symbols
+///
+/// Returns all symbols available for trading.
+/// This endpoint is public and does not require authentication.
+#[utoipa::path(
+    get,
+    path = "/v1/market/symbols",
+    responses(
+        (status = 200, description = "List of available symbols"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_symbols(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
+    info!("Fetching available market symbols");
+    let symbols = state.market_data_client.get_symbols().await?;
+    Ok(Json(symbols))
+}
+
+/// Get historical prices for a symbol
+///
+/// Returns historical price data for charting and analysis.
+#[utoipa::path(
+    get,
+    path = "/v1/market/prices/{symbol}/history",
+    params(
+        ("symbol" = String, Path, description = "Stock symbol (e.g., AAPL)"),
+        ("limit" = Option<i64>, Query, description = "Maximum number of historical records (default: 100)")
+    ),
+    responses(
+        (status = 200, description = "Historical price data"),
+        (status = 404, description = "Symbol not found"),
+        (status = 503, description = "Market data service unavailable")
+    ),
+    tag = "market"
+)]
+pub async fn get_market_history(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<impl IntoResponse> {
+    let limit = params.get("limit").and_then(|s| s.parse().ok());
+
+    info!(
+        "Fetching historical prices for symbol: {} (limit: {:?})",
+        symbol, limit
+    );
+    let history = state
+        .market_data_client
+        .get_historical_prices(&symbol, limit)
+        .await?;
+    Ok(Json(history))
+}
