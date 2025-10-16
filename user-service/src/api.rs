@@ -221,10 +221,10 @@ pub async fn update_user(
                 if !email.contains('@') {
                     return (StatusCode::BAD_REQUEST, "Invalid email format").into_response();
                 }
-                if email != &user.email {
-                    if let Ok(Some(_)) = state.user_service.get_user_by_email(email).await {
-                        return (StatusCode::CONFLICT, "Email already in use").into_response();
-                    }
+                if email != &user.email
+                    && let Ok(Some(_)) = state.user_service.get_user_by_email(email).await
+                {
+                    return (StatusCode::CONFLICT, "Email already in use").into_response();
                 }
                 debug!("Updating email for user {}: {}", user_id, email);
                 user.email = email.to_string();
