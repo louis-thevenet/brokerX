@@ -1,0 +1,13 @@
+# Simple Python-based static file server for the webapp
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copy webapp files
+COPY webapp/ .
+
+# Expose port 8000
+EXPOSE 8000
+
+# Run Python's built-in HTTP server
+CMD ["python", "-m", "http.server", "8000"]

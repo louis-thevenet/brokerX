@@ -1,6 +1,8 @@
 version: '3.8'
 
 services:
+  # ========== DATABASES ==========
+  
   # User Service Database
   user-db:
     image: postgres:15
@@ -31,7 +33,7 @@ services:
       POSTGRES_USER: brokerx_user
       POSTGRES_PASSWORD: password123
     ports:
-      - "5433:5432"  # Different port to avoid conflicts
+      - "5433:5432"
     volumes:
       - order_db_data:/var/lib/postgresql/data
       - ./docker/init-order-db.sql:/docker-entrypoint-initdb.d/init.sql
@@ -52,7 +54,7 @@ services:
       POSTGRES_USER: brokerx_user
       POSTGRES_PASSWORD: password123
     ports:
-      - "5434:5432"  # Different port to avoid conflicts
+      - "5434:5432"
     volumes:
       - market_data_db_data:/var/lib/postgresql/data
       - ./docker/init-market-data-db.sql:/docker-entrypoint-initdb.d/init.sql
@@ -64,7 +66,159 @@ services:
       timeout: 5s
       retries: 5
 
-  # Optional: PostgreSQL Admin Interface
+  # ========== MICROSERVICES ==========
+
+  # User Service
+  user-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.user-service
+    container_name: brokerx-user-service
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - USER_DATABASE_URL=postgres://brokerx_user:password123@user-db:5432/brokerx_users
+      - USER_SERVICE_PORT=3001
+    ports:
+      - "3001:3001"
+    networks:
+      - brokerx-network
+    depends_on:
+      user-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Order Service
+  order-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.order-service
+    container_name: brokerx-order-service
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - ORDER_DATABASE_URL=postgres://brokerx_user:password123@order-db:5432/brokerx_orders
+      - ORDER_SERVICE_PORT=3002
+    ports:
+      - "3002:3002"
+    networks:
+      - brokerx-network
+    depends_on:
+      order-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Market Data Service
+  market-data-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.market-data-service
+    container_name: brokerx-market-data-service
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - MARKET_DATA_DATABASE_URL=postgres://brokerx_user:password123@market-data-db:5432/brokerx_market_data
+      - MARKET_DATA_SERVICE_PORT=3003
+    ports:
+      - "3003:3003"
+    networks:
+      - brokerx-network
+    depends_on:
+      market-data-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api-gateway
+    container_name: brokerx-api-gateway
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - API_GATEWAY_ADDRESS=0.0.0.0:8080
+      - USER_SERVICE_URL=http://user-service:3001
+      - ORDER_SERVICE_URL=http://order-service:3002
+      - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
+      - JWT_SECRET=docker-jwt-secret-change-in-production-please
+      - JWT_EXPIRY_HOURS=24
+      - CORS_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000
+    ports:
+      - "8080:8080"
+    networks:
+      - brokerx-network
+    depends_on:
+      - user-service
+      - order-service
+      - market-data-service
+    restart: unless-stopped
+
+  # Web Application
+  webapp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.webapp
+    container_name: brokerx-webapp
+    ports:
+      - "8000:8000"
+    networks:
+      - brokerx-network
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
+
+  # ========== MONITORING ==========
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: brokerx-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - brokerx-network
+    depends_on:
+      - api-gateway
+      - user-service
+      - order-service
+      - market-data-service
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: brokerx-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - brokerx-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ========== OPTIONAL TOOLS ==========
+
+  # PostgreSQL Admin Interface
   pgadmin:
     image: dpage/pgadmin4
     container_name: brokerx-pgadmin
@@ -72,18 +226,23 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@brokerx.local
       PGADMIN_DEFAULT_PASSWORD: admin123
     ports:
-      - "8080:80"
+      - "5050:80"
     networks:
       - brokerx-network
     depends_on:
       - user-db
       - order-db
       - market-data-db
+    restart: unless-stopped
+    profiles:
+      - tools
 
 volumes:
   user_db_data:
   order_db_data:
   market_data_db_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   brokerx-network:

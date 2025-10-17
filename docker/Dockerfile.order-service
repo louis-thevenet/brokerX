@@ -1,0 +1,45 @@
+# Multi-stage build for Order Service
+FROM rust:1.88-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy workspace files (need all members for workspace to work)
+COPY Cargo.toml Cargo.lock ./
+COPY database_adapter ./database_adapter
+COPY mfa_adapter ./mfa_adapter
+COPY user-service ./user-service
+COPY order-service ./order-service
+COPY market-data-service ./market-data-service
+COPY api_gateway ./api_gateway
+
+# Build the application
+RUN cargo build --release -p order-service
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /app/target/release/order-service /app/order-service
+
+# Create non-root user
+RUN useradd -m -u 1000 brokerx && chown -R brokerx:brokerx /app
+USER brokerx
+
+EXPOSE 3002
+
+CMD ["/app/order-service"]

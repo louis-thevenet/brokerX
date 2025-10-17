@@ -33,6 +33,7 @@
               pkgs.cargo-machete
               pkgs.cargo-edit
               pkgs.cargo-flamegraph
+              pkgs.cargo-audit
             ];
           };
         in
