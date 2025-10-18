@@ -13,7 +13,7 @@ use axum::{
 };
 
 use axum_prometheus::PrometheusMetricLayer;
-use database_adapter::config::DatabaseConfig;
+use config::DatabaseConfig;
 use service::OrderService;
 use std::sync::Arc;
 use tracing::info;

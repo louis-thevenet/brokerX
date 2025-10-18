@@ -38,5 +38,5 @@ pub enum AuthError {
     #[error("Not enough money")]
     NotEnoughMoneyError,
     #[error("Repository error: {0}")]
-    UserRepo(#[from] database_adapter::db::DbError),
+    UserRepo(#[from] sqlx::Error),
 }

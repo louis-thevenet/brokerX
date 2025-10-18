@@ -12,7 +12,8 @@ use axum::{
     routing::{get, post, put},
 };
 use axum_prometheus::PrometheusMetricLayer;
-use database_adapter::config::DatabaseConfig;
+use sqlx::postgres::PgPoolOptions;
+use crate::repository::UserRepository;
 use service::UserService;
 use std::sync::Arc;
 use tracing::info;
@@ -79,17 +80,13 @@ async fn main() -> color_eyre::Result<()> {
     let user_db_url = std::env::var("USER_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("Either USER_DATABASE_URL or DATABASE_URL must be set");
-    let db_config = DatabaseConfig::from_url(user_db_url);
-
-    info!("Starting User Service on port {}", config.port);
-
-    // Initialize user service with dedicated database
-    let user_service = Arc::new(
-        UserService::new_with_config("users", &db_config)
-            .await
-            .expect("Failed to initialize user service"),
-    );
-
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&user_db_url)
+        .await?;
+    let table_name = "users".to_string();
+    let user_repo = UserRepository::new(pool, table_name);
+    let user_service = Arc::new(UserService::new(user_repo));
     let app_state = AppState { user_service };
 
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();

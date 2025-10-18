@@ -1,7 +1,8 @@
-use crate::models::{Order, OrderError, OrderId, OrderSide, OrderStatus, OrderType, UserId};
+use crate::models::{
+    DbError, Order, OrderError, OrderId, OrderSide, OrderStatus, OrderType, UserId,
+};
 use chrono::{DateTime, Utc};
 use color_eyre::Result;
-use database_adapter::db::DbError;
 use sqlx::{PgPool, Row};
 use tracing::debug;
 use uuid::Uuid;
@@ -42,14 +43,14 @@ impl OrderRepository {
         };
 
         sqlx::query(
-            r#"
+            r"
             INSERT INTO orders (
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
                 status_variant, status_filled_quantity, status_date,
                 filled_price
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-            "#,
+            ",
         )
         .bind(order_id)
         .bind(order.client_id)
@@ -84,7 +85,7 @@ impl OrderRepository {
         let offset = ((page - 1) * limit) as i64;
 
         let rows = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
@@ -94,7 +95,7 @@ impl OrderRepository {
             WHERE client_id = $1
             ORDER BY date DESC
             LIMIT $2 OFFSET $3
-            "#,
+            ",
         )
         .bind(user_id)
         .bind(limit as i64)
@@ -172,11 +173,11 @@ impl OrderRepository {
         debug!("Counting orders for user: {}", user_id);
 
         let row = sqlx::query(
-            r#"
+            r"
             SELECT COUNT(*) as count
             FROM orders
             WHERE client_id = $1
-            "#,
+            ",
         )
         .bind(user_id)
         .fetch_one(&self.pool)
@@ -191,7 +192,7 @@ impl OrderRepository {
         debug!("Getting order by ID: {}", order_id);
 
         let row = sqlx::query(
-            r#"
+            r"
             SELECT 
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
@@ -199,7 +200,7 @@ impl OrderRepository {
                 filled_price
             FROM orders
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(order_id)
         .fetch_optional(&self.pool)
@@ -294,7 +295,7 @@ impl OrderRepository {
         };
 
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE orders
             SET 
                 client_id = $2,
@@ -309,7 +310,7 @@ impl OrderRepository {
                 status_date = $11,
                 filled_price = $12
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(order_id)
         .bind(order.client_id)
@@ -361,14 +362,14 @@ impl OrderRepository {
         };
 
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE orders
             SET 
                 status_variant = $2,
                 status_filled_quantity = $3,
                 status_date = $4
             WHERE id = $1
-            "#,
+            ",
         )
         .bind(order_id)
         .bind(status_variant)

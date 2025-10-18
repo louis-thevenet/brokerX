@@ -1,10 +1,78 @@
 use crate::models::{AuthError, Holding, User, UserId};
 use color_eyre::Result;
-use database_adapter::db::{PostgresRepo, Repository};
+use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use tracing::error;
 
-pub type UserRepo = PostgresRepo<User, UserId>;
+#[derive(Clone, Debug)]
+pub struct UserRepository {
+    pub pool: PgPool,
+    pub table_name: String,
+}
+
+impl UserRepository {
+    pub fn new(pool: PgPool, table_name: String) -> Self {
+        Self { pool, table_name }
+    }
+
+    pub async fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError> {
+        let query = format!(
+            "SELECT id, email, password_hash, firstname, surname, balance, is_verified, created_at, holdings FROM {} WHERE id = $1",
+            self.table_name
+        );
+        let row = sqlx::query(&query)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| AuthError::UserRepo(e.into()))?;
+        if let Some(row) = row {
+            let id: Option<UserId> = row.try_get("id").ok();
+            let email: String = row.try_get("email").unwrap();
+            let password_hash: String = row.try_get("password_hash").unwrap();
+            let firstname: String = row.try_get("firstname").unwrap();
+            let surname: String = row.try_get("surname").unwrap();
+            let balance: f64 = row.try_get("balance").unwrap();
+            let is_verified: bool = row.try_get("is_verified").unwrap();
+            let created_at: chrono::DateTime<chrono::Utc> = row.try_get("created_at").unwrap();
+            let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
+            let holdings: HashMap<String, Holding> = serde_json::from_value(holdings_json).unwrap_or_default();
+            Ok(Some(User {
+                id,
+                email,
+                password_hash,
+                firstname,
+                surname,
+                balance,
+                is_verified,
+                created_at,
+                holdings,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn update_user(&self, user_id: &UserId, user: &User) -> Result<(), AuthError> {
+        let holdings_json = serde_json::to_value(&user.holdings).unwrap();
+        let query = format!(
+            "UPDATE {} SET email = $1, password_hash = $2, firstname = $3, surname = $4, balance = $5, is_verified = $6, holdings = $7 WHERE id = $8",
+            self.table_name
+        );
+        sqlx::query(&query)
+            .bind(&user.email)
+            .bind(&user.password_hash)
+            .bind(&user.firstname)
+            .bind(&user.surname)
+            .bind(user.balance)
+            .bind(user.is_verified)
+            .bind(holdings_json)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AuthError::UserRepo(e.into()))?;
+        Ok(())
+    }
+}
 
 #[allow(async_fn_in_trait)]
 pub trait UserRepoExt {
@@ -38,7 +106,7 @@ pub trait UserRepoExt {
     ) -> Result<(), AuthError>;
 }
 
-impl UserRepoExt for UserRepo {
+impl UserRepoExt for UserRepository {
     async fn create_user(
         &self,
         email: String,
@@ -48,7 +116,7 @@ impl UserRepoExt for UserRepo {
         initial_balance: f64,
     ) -> Result<UserId, AuthError> {
         // Check if user already exists
-        if (self.get_user_by_email(&email).await?).is_some() {
+        if self.get_user_by_email(&email).await?.is_some() {
             return Err(AuthError::UserAlreadyExists);
         }
 
@@ -57,28 +125,28 @@ impl UserRepoExt for UserRepo {
             return Err(AuthError::WeakPassword);
         }
 
-        // Check if email already exists
-        if (self.get_user_by_email(&email).await?).is_some() {
-            return Err(AuthError::UserAlreadyExists);
-        }
-
-        let mut user = User {
-            id: None,
-            email,
-            password_hash: format!("hash_{password}"), // TODO: proper hashing
-            firstname,
-            surname,
-            balance: initial_balance,
-            is_verified: false,
-            created_at: chrono::Utc::now(),
-            holdings: HashMap::new(),
-        };
-
         let user_id = uuid::Uuid::new_v4();
-        user.id = Some(user_id);
-        self.insert(user_id, user)
+        let now = chrono::Utc::now();
+        let password_hash = format!("hash_{password}"); // TODO: proper hashing
+        let holdings: HashMap<String, Holding> = HashMap::new();
+        let holdings_json = serde_json::to_value(&holdings).unwrap();
+        let query = format!(
+            "INSERT INTO {} (id, email, password_hash, firstname, surname, balance, is_verified, created_at, holdings) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+            self.table_name
+        );
+        sqlx::query(&query)
+            .bind(user_id)
+            .bind(&email)
+            .bind(&password_hash)
+            .bind(&firstname)
+            .bind(&surname)
+            .bind(initial_balance)
+            .bind(false)
+            .bind(now)
+            .bind(holdings_json)
+            .execute(&self.pool)
             .await
-            .map_err(AuthError::UserRepo)?;
+            .map_err(|e| AuthError::UserRepo(e.into()))?;
         Ok(user_id)
     }
 
@@ -87,65 +155,68 @@ impl UserRepoExt for UserRepo {
         email: &str,
         password: &str,
     ) -> Result<Option<UserId>, AuthError> {
-        let user = self
-            .get_user_by_email(email)
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-
-        // Simple password check (TODO: proper verification)
+        let user = self.get_user_by_email(email).await?.ok_or(AuthError::UserNotFound)?;
         let expected_hash = format!("hash_{password}");
         if user.password_hash != expected_hash {
             return Ok(None);
         }
-
-        // Note: We no longer check is_verified here
-        // The API Gateway will handle MFA verification enforcement
-        // This allows the gateway to send MFA challenges to unverified users
-
         Ok(user.id)
     }
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
-        match self.find_by_field("email", email).await {
-            Ok(res) => Ok(res),
-            Err(e) => {
+        let query = format!(
+            "SELECT id, email, password_hash, firstname, surname, balance, is_verified, created_at, holdings FROM {} WHERE email = $1",
+            self.table_name
+        );
+        let row = sqlx::query(&query)
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| {
                 error!("Error fetching user by email {}: {:?}", email, e);
-                Err(AuthError::UserRepo(e))
-            }
+                AuthError::UserRepo(e.into())
+            })?;
+        if let Some(row) = row {
+            let id: Option<UserId> = row.try_get("id").ok();
+            let email: String = row.try_get("email").unwrap();
+            let password_hash: String = row.try_get("password_hash").unwrap();
+            let firstname: String = row.try_get("firstname").unwrap();
+            let surname: String = row.try_get("surname").unwrap();
+            let balance: f64 = row.try_get("balance").unwrap();
+            let is_verified: bool = row.try_get("is_verified").unwrap();
+            let created_at: chrono::DateTime<chrono::Utc> = row.try_get("created_at").unwrap();
+            let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
+            let holdings: HashMap<String, Holding> = serde_json::from_value(holdings_json).unwrap_or_default();
+            Ok(Some(User {
+                id,
+                email,
+                password_hash,
+                firstname,
+                surname,
+                balance,
+                is_verified,
+                created_at,
+                holdings,
+            }))
+        } else {
+            Ok(None)
         }
     }
 
     async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        let mut user = self
-            .get(user_id)
-            .await
-            .map_err(AuthError::UserRepo)?
-            .ok_or(AuthError::UserNotFound)?;
-
+        let mut user = self.get_user_by_id(user_id).await?.ok_or(AuthError::UserNotFound)?;
         if user.balance < amount {
             return Err(AuthError::NotEnoughMoneyError);
         }
-
         user.balance -= amount;
-        self.update(*user_id, user)
-            .await
-            .map_err(AuthError::UserRepo)?;
-
+        self.update_user(user_id, &user).await?;
         Ok(())
     }
 
     async fn deposit_to_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        let mut user = self
-            .get(user_id)
-            .await
-            .map_err(AuthError::UserRepo)?
-            .ok_or(AuthError::UserNotFound)?;
-
+        let mut user = self.get_user_by_id(user_id).await?.ok_or(AuthError::UserNotFound)?;
         user.balance += amount;
-        self.update(*user_id, user)
-            .await
-            .map_err(AuthError::UserRepo)?;
-
+        self.update_user(user_id, &user).await?;
         Ok(())
     }
 
@@ -156,13 +227,7 @@ impl UserRepoExt for UserRepo {
         quantity_change: i64,
         execution_price: f64,
     ) -> Result<(), AuthError> {
-        let mut user = self
-            .get(user_id)
-            .await
-            .map_err(AuthError::UserRepo)?
-            .ok_or(AuthError::UserNotFound)?;
-
-        // Update holdings
+        let mut user = self.get_user_by_id(user_id).await?.ok_or(AuthError::UserNotFound)?;
         let holding = user
             .holdings
             .entry(symbol.to_string())
@@ -171,32 +236,23 @@ impl UserRepoExt for UserRepo {
                 quantity: 0,
                 average_cost: 0.0,
             });
-
         if quantity_change > 0 {
-            // Buy: update average price
             let new_quantity = holding.quantity + quantity_change as u64;
             let total_cost = (holding.quantity as f64 * holding.average_cost)
                 + (quantity_change as f64 * execution_price);
             holding.average_cost = total_cost / new_quantity as f64;
             holding.quantity = new_quantity;
         } else {
-            // Sell: just reduce quantity
             let abs_change = (-quantity_change) as u64;
             if holding.quantity < abs_change {
-                return Err(AuthError::NotEnoughMoneyError); // Not enough shares
+                return Err(AuthError::NotEnoughMoneyError);
             }
             holding.quantity -= abs_change;
         }
-
-        // Remove holding if quantity becomes 0
         if holding.quantity == 0 {
             user.holdings.remove(symbol);
         }
-
-        self.update(*user_id, user)
-            .await
-            .map_err(AuthError::UserRepo)?;
-
+        self.update_user(user_id, &user).await?;
         Ok(())
     }
 }

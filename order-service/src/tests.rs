@@ -8,11 +8,10 @@ use std::sync::Arc;
 use tower::ServiceExt; // for `oneshot`
 use uuid::Uuid;
 
-use crate::api::{CreateOrderRequest, OrderResponse};
+use crate::{api::{CreateOrderRequest, OrderResponse}, config::DatabaseConfig};
 use crate::models::{OrderSide, OrderType};
 use crate::service::OrderService;
 use crate::{ApiDoc, AppState};
-use database_adapter::config::DatabaseConfig;
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;

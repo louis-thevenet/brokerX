@@ -1,28 +1,22 @@
 use crate::models::{AuthError, User, UserId};
-use crate::repository::{UserRepo, UserRepoExt};
+use crate::repository::{UserRepository, UserRepoExt};
 use color_eyre::Result;
-use database_adapter::config::DatabaseConfig;
-use database_adapter::db::{DbError, PostgresRepo, Repository};
 
 /// User service that provides API interface for user operations
 #[derive(Debug, Clone)]
 pub struct UserService {
-    user_repo: UserRepo,
+    user_repo: UserRepository,
 }
 
 impl UserService {
     /// Create `UserService` with dedicated user database
-    pub async fn new_with_config(
-        table_name: &str,
-        db_config: &DatabaseConfig,
-    ) -> Result<Self, DbError> {
-        let user_repo = PostgresRepo::new_with_url(table_name, &db_config.database_url).await?;
-        Ok(Self { user_repo })
+    pub fn new(user_repo: UserRepository) -> Self {
+        Self { user_repo }
     }
 
     /// Get user by ID
-    pub async fn get_user(&self, user_id: &UserId) -> Result<Option<User>, DbError> {
-        self.user_repo.get(user_id).await
+    pub async fn get_user(&self, user_id: &UserId) -> Result<Option<User>, AuthError> {
+        self.user_repo.get_user_by_id(user_id).await
     }
 
     /// Create a new user
@@ -57,17 +51,13 @@ impl UserService {
     pub async fn verify_user_email(&self, user_id: &UserId) -> Result<(), AuthError> {
         let mut user = self
             .user_repo
-            .get(user_id)
-            .await
-            .map_err(AuthError::UserRepo)?
+            .get_user_by_id(user_id)
+            .await?
             .ok_or(AuthError::UserNotFound)?;
-
         user.is_verified = true;
         self.user_repo
-            .update(*user_id, user)
-            .await
-            .map_err(AuthError::UserRepo)?;
-
+            .update_user(user_id, &user)
+            .await?;
         Ok(())
     }
 
@@ -97,8 +87,7 @@ impl UserService {
     /// Update user details
     pub async fn update_user(&self, user_id: &UserId, updated_user: User) -> Result<(), AuthError> {
         self.user_repo
-            .update(*user_id, updated_user)
+            .update_user(user_id, &updated_user)
             .await
-            .map_err(AuthError::UserRepo)
     }
 }

@@ -20,9 +20,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy = "0.15"
 color-eyre = "0.6"
 
-# Local dependencies
-database_adapter = { path = "../database_adapter" }
-
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "uuid"] }
 validator = { version = "0.20.0", features = ["derive"] }
 serde_json = "1.0.145"

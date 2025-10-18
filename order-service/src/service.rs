@@ -1,6 +1,6 @@
+use crate::config::DatabaseConfig;
 use crate::models::{Order, OrderError, OrderId, OrderStatus, UserId};
 use crate::repository::OrderRepository;
-use database_adapter::config::DatabaseConfig;
 use sqlx::postgres::PgPoolOptions;
 use tracing::debug;
 
