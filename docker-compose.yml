@@ -140,6 +140,7 @@ services:
     env_file:
       - .env
     environment:
+      - MFA_BYPASS=false
       - RUST_LOG=info
       - API_GATEWAY_ADDRESS=0.0.0.0:8080
       - USER_SERVICE_URL=http://user-service:3001
@@ -210,6 +211,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
     networks:
       - brokerx-network
     depends_on:

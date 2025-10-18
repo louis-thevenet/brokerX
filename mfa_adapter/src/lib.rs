@@ -7,9 +7,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tracing::debug;
-use uuid::Uuid;
-
-pub mod mfa;
 
 // MFA Error types
 #[derive(Debug, Clone)]
@@ -48,12 +45,24 @@ pub struct OtpChallenge {
 
 // MFA Provider trait
 pub trait MfaProvider: Send + Sync {
-    fn send_otp(
+    fn generate_otp(
         &self,
+        challenge_id: String,
         user_email: &str,
     ) -> impl std::future::Future<Output = Result<String, MfaError>> + Send;
+    fn generate_otp_no_email(
+        &self,
+        challenge_id: String,
+        user_email: &str,
+    ) -> Result<String, MfaError>;
     fn verify_otp(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError>;
     fn get_challenge(&self, challenge_id: &str) -> Result<OtpChallenge, MfaError>;
+
+    fn generate_challenge(
+        &self,
+        challenge_id: String,
+        user_email: &str,
+    ) -> Result<OtpChallenge, MfaError>;
 }
 
 #[derive(Debug, Clone)]
@@ -272,22 +281,36 @@ impl EmailOtpProvider {
 }
 
 impl MfaProvider for EmailOtpProvider {
-    async fn send_otp(&self, user_email: &str) -> Result<String, MfaError> {
-        let challenge_id = Uuid::new_v4().to_string();
-        let code = if user_email == "test@test.com" {
-            String::from("000000")
-        } else {
-            self.generate_otp_code()
-        };
+    async fn generate_otp(
+        &self,
+        challenge_id: String,
+        user_email: &str,
+    ) -> Result<String, MfaError> {
+        let challenge = self.generate_challenge(challenge_id.clone(), user_email)?;
+        let code = challenge.code.clone();
+        self.send_email(user_email, &code)?;
+        Ok(code)
+    }
+    fn generate_otp_no_email(
+        &self,
+        challenge_id: String,
+        user_email: &str,
+    ) -> Result<String, MfaError> {
+        let challenge = self.generate_challenge(challenge_id.clone(), user_email)?;
+        Ok(challenge.code)
+    }
+    fn generate_challenge(
+        &self,
+        challenge_id: String,
+        user_email: &str,
+    ) -> Result<OtpChallenge, MfaError> {
+        let code = self.generate_otp_code();
         debug!(
             "Generated OTP code: {} for challenge ID: {}",
             code, challenge_id
         );
         let now = SystemTime::now();
         let expires_at = now + self.challenge_duration;
-
-        // Send the email to the target address
-        self.send_email(user_email, &code)?;
 
         // Store the challenge with the user's actual email for identification
         let challenge = OtpChallenge {
@@ -300,9 +323,9 @@ impl MfaProvider for EmailOtpProvider {
         };
 
         let mut challenges = self.challenges.lock().unwrap();
-        challenges.insert(challenge_id.clone(), challenge);
+        challenges.insert(challenge_id.clone(), challenge.clone());
 
-        Ok(challenge_id)
+        Ok(challenge)
     }
 
     fn verify_otp(&self, challenge_id: &str, code: &str) -> Result<bool, MfaError> {
@@ -350,6 +373,8 @@ impl MfaProvider for EmailOtpProvider {
 
 #[cfg(test)]
 mod tests {
+    use uuid::Uuid;
+
     use super::*;
 
     #[test]

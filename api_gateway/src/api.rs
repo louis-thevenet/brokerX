@@ -176,7 +176,15 @@ pub async fn login(
 
     // send MFA challenge
     info!("Initiating MFA challenge for user {}", user_id);
-    let challenge_id = state.mfa_service.initiate_challenge(&user.email).await?;
+    let challenge_id = if state.config.mfa_bypass {
+        info!("MFA bypass enabled, no email sent");
+        state
+            .mfa_service
+            .initiate_challenge_no_email(&user.email)
+            .await?
+    } else {
+        state.mfa_service.initiate_challenge(&user.email).await?
+    };
 
     Ok(Json(LoginResponse {
         user_id,
@@ -213,10 +221,18 @@ pub async fn verify_login_mfa(
     }
 
     // Verify the MFA challenge
-    let user_email = state
-        .mfa_service
-        .verify_challenge(&verify_request.challenge_id, &verify_request.code)
-        .await?;
+    let user_email = if state.config.mfa_bypass {
+        info!("MFA bypass enabled, skipping verification");
+        state
+            .mfa_service
+            .verify_challenge_bypass(&verify_request.challenge_id)
+            .await?
+    } else {
+        state
+            .mfa_service
+            .verify_challenge(&verify_request.challenge_id, &verify_request.code)
+            .await?
+    };
 
     // Get user by email (returns full user object, which includes the ID)
     let user = state.user_client.get_user_by_email(&user_email).await?;

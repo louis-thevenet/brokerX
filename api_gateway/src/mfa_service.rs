@@ -5,6 +5,8 @@
 use crate::error::{ApiError, ApiResult};
 use mfa_adapter::{EmailOtpProvider, MfaError, MfaProvider};
 use std::sync::Arc;
+use std::time::SystemTime;
+use uuid::Uuid;
 
 /// MFA Service for handling all MFA-related operations
 #[derive(Clone)]
@@ -22,8 +24,9 @@ impl MfaService {
     /// # Returns
     /// The challenge ID that must be used to verify the OTP
     pub async fn initiate_challenge(&self, email: &str) -> ApiResult<String> {
+        let challenge_id = Uuid::new_v4().to_string();
         self.provider
-            .send_otp(email)
+            .generate_otp(challenge_id, email)
             .await
             .map_err(Self::map_mfa_error)
     }
@@ -51,6 +54,44 @@ impl MfaService {
             .provider
             .get_challenge(challenge_id)
             .map_err(Self::map_mfa_error)?;
+
+        Ok(challenge.user_email)
+    }
+
+    /// Initiate an MFA challenge without sending an email (for load testing)
+    /// # Returns
+    /// The challenge ID that must be used to verify the OTP
+    pub async fn initiate_challenge_no_email(&self, email: &str) -> ApiResult<String> {
+        let challenge_id = Uuid::new_v4().to_string();
+        self.provider
+            .generate_otp_no_email(challenge_id.clone(), email)
+            .map_err(Self::map_mfa_error)?;
+
+        ApiResult::Ok(challenge_id)
+    }
+
+    /// Verify an MFA challenge in bypass mode (for load testing)
+    ///
+    /// This method accepts any code when MFA_BYPASS is enabled and returns the user's email.
+    ///
+    /// # Returns
+    /// - `Ok(user_email)` if the challenge exists and is not expired
+    /// - Err if challenge not found or expired
+    pub async fn verify_challenge_bypass(&self, challenge_id: &str) -> ApiResult<String> {
+        // Get the challenge to extract user information
+        // We don't verify the code, just check if the challenge exists and is valid
+        let challenge = self
+            .provider
+            .get_challenge(challenge_id)
+            .map_err(Self::map_mfa_error)?;
+
+        // Check if challenge has expired
+        let now = SystemTime::now();
+        if now > challenge.expires_at {
+            return Err(ApiError::BadRequest(
+                "MFA challenge has expired. Please request a new code.".to_string(),
+            ));
+        }
 
         Ok(challenge.user_email)
     }

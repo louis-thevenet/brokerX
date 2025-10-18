@@ -9,6 +9,7 @@ pub struct Config {
     pub jwt_secret: String,
     pub jwt_expiry_hours: i64,
     pub cors_allowed_origins: Vec<String>,
+    pub mfa_bypass: bool,
 }
 
 impl Config {
@@ -40,6 +41,10 @@ impl Config {
                 .parse()
                 .unwrap_or(24),
             cors_allowed_origins,
+            mfa_bypass: env::var("MFA_BYPASS")
+                .unwrap_or_else(|_| "false".to_string())
+                .to_lowercase()
+                == "true",
         }
     }
 }
