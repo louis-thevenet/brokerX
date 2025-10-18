@@ -60,6 +60,8 @@
               just
 
               prometheus
+              k6
+              jq
 
               rust-toolchain
 

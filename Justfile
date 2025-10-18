@@ -220,6 +220,34 @@ help:
     @echo "  just market                 - Run market data service"
     @echo "  just gateway                - Run API gateway"
     @echo ""
+    @echo "🧪 Load Testing Commands:"
+    @echo "  just load-test-setup        - Setup k6 load testing"
+    @echo "  just load-test [scenario]   - Run load tests"
+    @echo "  just load-test-all          - Run all load test scenarios"
+    @echo ""
     @echo "For full list: just --list"
+
+# ========== LOAD TESTING COMMANDS ==========
+
+# Setup k6 load testing environment
+load-test-setup:
+    @echo "🧪 Setting up load testing..."
+    cd load-tests && ./setup.fish
+
+# Run load tests (market-data, high-frequency, user-journey, report-generation, stress, all)
+load-test scenario="market-data":
+    @echo "🧪 Running load test: {{scenario}}..."
+    cd load-tests && ./run-tests.fish {{scenario}} local
+
+# Run all load test scenarios
+load-test-all:
+    @echo "🧪 Running all load test scenarios..."
+    cd load-tests && ./run-tests.fish all local
+
+# Run smoke test (quick validation)
+load-test-smoke:
+    @echo "🧪 Running smoke test..."
+    cd load-tests && k6 run --vus 1 --duration 30s -e BASE_URL=http://localhost:8080 scenarios/market-data-consultation.js
+
 
 

@@ -1,0 +1,23 @@
+# Ignore test results
+results/
+*.json
+
+# Ignore logs
+*.log
+
+# Node modules (if using any JS dependencies)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test data
+test-data/
