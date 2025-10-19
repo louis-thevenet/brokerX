@@ -9,11 +9,14 @@ mod service;
 mod tests;
 
 use api::AppState;
-use axum::{Router, routing::get, routing::post};
+use axum::{Router, routing::get, routing::post, response::{IntoResponse, Response}};
 use axum_prometheus::PrometheusMetricLayer;
 use repository::MarketDataRepository;
 use service::MarketDataService;
+use serde::Serialize;
 use std::sync::Arc;
+use sysinfo::{System, SystemExt, CpuExt};
+use axum::http::HeaderValue;
 use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -55,6 +58,32 @@ use utoipa_swagger_ui::SwaggerUi;
     )
 )]
 struct ApiDoc;
+
+#[derive(Serialize)]
+struct SystemMetrics {
+    cpu_usage: f32,
+    ram_used: u64,
+    ram_total: u64,
+    thread_count: usize,
+}
+
+async fn system_metrics_handler() -> Response {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    let cpu_usage = sys.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / sys.cpus().len() as f32;
+    let ram_used = sys.used_memory();
+    let ram_total = sys.total_memory();
+    let thread_count: usize = sys.processes().values().map(|p| p.threads().len()).sum();
+    let body = format!(
+        "cpu_usage {}\nram_used {}\nram_total {}\nthread_count {}\n",
+        cpu_usage, ram_used, ram_total, thread_count
+    );
+    (
+        axum::http::StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
+        body
+    ).into_response()
+}
 
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
@@ -152,6 +181,7 @@ async fn main() -> color_eyre::Result<()> {
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/v1/metrics", get(|| async move { metric_handle.render() }))
+        .route("/v1/metrics/system", get(system_metrics_handler))
         .layer(prometheus_layer)
         // Add state and middleware
         .with_state(app_state)
