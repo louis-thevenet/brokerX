@@ -1,18 +1,25 @@
 use crate::models::{AuthError, Holding, User, UserId};
 use color_eyre::Result;
+use dashmap::DashMap;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::error;
 
 #[derive(Clone, Debug)]
 pub struct UserRepository {
     pub pool: PgPool,
     pub table_name: String,
+    pub auth_cache: Arc<DashMap<String, (UserId, String)>>,
 }
 
 impl UserRepository {
     pub fn new(pool: PgPool, table_name: String) -> Self {
-        Self { pool, table_name }
+        Self {
+            pool,
+            table_name,
+            auth_cache: Arc::new(DashMap::new()),
+        }
     }
 
     pub async fn get_user_by_id(&self, user_id: &UserId) -> Result<Option<User>, AuthError> {
@@ -155,12 +162,40 @@ impl UserRepoExt for UserRepository {
         email: &str,
         password: &str,
     ) -> Result<Option<UserId>, AuthError> {
-        let user = self.get_user_by_email(email).await?.ok_or(AuthError::UserNotFound)?;
-        let expected_hash = format!("hash_{password}");
-        if user.password_hash != expected_hash {
+        // Check cache first
+        if let Some(entry) = self.auth_cache.get(email) {
+            let (user_id, cached_hash) = entry.value();
+            let expected_hash = format!("hash_{password}");
+            if cached_hash == &expected_hash {
+                return Ok(Some(*user_id));
+            } else {
+                return Ok(None);
+            }
+        }
+        // Only fetch id, email, password_hash for authentication
+        let query = format!(
+            "SELECT id, email, password_hash FROM {} WHERE email = $1",
+            self.table_name
+        );
+        let row = sqlx::query(&query)
+            .bind(email)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| AuthError::UserRepo(e.into()))?;
+        if let Some(row) = row {
+            let id: Option<UserId> = row.try_get("id").ok();
+            let password_hash: String = row.try_get("password_hash").unwrap();
+            let expected_hash = format!("hash_{password}");
+            if password_hash == expected_hash {
+                // Cache result for future
+                if let Some(uid) = id {
+                    self.auth_cache.insert(email.to_string(), (uid, password_hash.clone()));
+                }
+                return Ok(id);
+            }
             return Ok(None);
         }
-        Ok(user.id)
+        Ok(None)
     }
 
     async fn get_user_by_email(&self, email: &str) -> Result<Option<User>, AuthError> {
@@ -227,9 +262,23 @@ impl UserRepoExt for UserRepository {
         quantity_change: i64,
         execution_price: f64,
     ) -> Result<(), AuthError> {
-        let mut user = self.get_user_by_id(user_id).await?.ok_or(AuthError::UserNotFound)?;
-        let holding = user
-            .holdings
+        let mut tx = self.pool.begin().await.map_err(|e| AuthError::UserRepo(e.into()))?;
+        let query = format!(
+            "SELECT holdings FROM {} WHERE id = $1 FOR UPDATE",
+            self.table_name
+        );
+        let row = sqlx::query(&query)
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| AuthError::UserRepo(e.into()))?;
+        let row = match row {
+            Some(row) => row,
+            None => return Err(AuthError::UserNotFound),
+        };
+        let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
+        let mut holdings: HashMap<String, Holding> = serde_json::from_value(holdings_json).unwrap_or_default();
+        let holding = holdings
             .entry(symbol.to_string())
             .or_insert_with(|| Holding {
                 symbol: symbol.to_string(),
@@ -250,9 +299,20 @@ impl UserRepoExt for UserRepository {
             holding.quantity -= abs_change;
         }
         if holding.quantity == 0 {
-            user.holdings.remove(symbol);
+            holdings.remove(symbol);
         }
-        self.update_user(user_id, &user).await?;
+        let holdings_json = serde_json::to_value(&holdings).unwrap();
+        let update_query = format!(
+            "UPDATE {} SET holdings = $1 WHERE id = $2",
+            self.table_name
+        );
+        sqlx::query(&update_query)
+            .bind(holdings_json)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AuthError::UserRepo(e.into()))?;
+        tx.commit().await.map_err(|e| AuthError::UserRepo(e.into()))?;
         Ok(())
     }
 }
