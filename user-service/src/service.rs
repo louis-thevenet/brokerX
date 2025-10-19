@@ -1,5 +1,5 @@
 use crate::models::{AuthError, User, UserId};
-use crate::repository::{UserRepository, UserRepoExt};
+use crate::repository::{UserRepoExt, UserRepository};
 use color_eyre::Result;
 
 /// User service that provides API interface for user operations
@@ -55,9 +55,7 @@ impl UserService {
             .await?
             .ok_or(AuthError::UserNotFound)?;
         user.is_verified = true;
-        self.user_repo
-            .update_user(user_id, &user)
-            .await?;
+        self.user_repo.update_user(user_id, &user).await?;
         Ok(())
     }
 
@@ -86,8 +84,6 @@ impl UserService {
 
     /// Update user details
     pub async fn update_user(&self, user_id: &UserId, updated_user: User) -> Result<(), AuthError> {
-        self.user_repo
-            .update_user(user_id, &updated_user)
-            .await
+        self.user_repo.update_user(user_id, &updated_user).await
     }
 }

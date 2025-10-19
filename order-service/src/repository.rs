@@ -66,7 +66,7 @@ impl OrderRepository {
         .bind(order.filled_price)
         .execute(&self.pool)
         .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
 
         Ok((order_id, order))
     }
@@ -102,7 +102,7 @@ impl OrderRepository {
         .bind(offset)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
 
         let orders = rows
             .into_iter()
@@ -182,7 +182,7 @@ impl OrderRepository {
         .bind(user_id)
         .fetch_one(&self.pool)
         .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
 
         let count: i64 = row.get("count");
         Ok(count)
@@ -205,7 +205,7 @@ impl OrderRepository {
         .bind(order_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
 
         match row {
             None => Ok(None),
@@ -326,7 +326,7 @@ impl OrderRepository {
         .bind(order.filled_price)
         .execute(&self.pool)
         .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
 
         if result.rows_affected() == 0 {
             return Err(OrderError::OrderNotFound);
@@ -377,7 +377,7 @@ impl OrderRepository {
         .bind(status_date)
         .execute(&self.pool)
         .await
-        .map_err(|e| OrderError::Repository(DbError::SqlxError(e)))?;
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
 
         if result.rows_affected() == 0 {
             return Err(OrderError::OrderNotFound);

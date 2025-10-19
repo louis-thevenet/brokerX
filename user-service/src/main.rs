@@ -9,16 +9,15 @@ mod tests;
 
 use crate::repository::UserRepository;
 use axum::{
-    response::IntoResponse,
     Router,
+    response::IntoResponse,
     routing::{get, post, put},
 };
 use axum_prometheus::PrometheusMetricLayer;
 use service::UserService;
-use serde::Serialize;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
-use sysinfo::{System, SystemExt, CpuExt};
+use sysinfo::{System, SystemExt};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -64,30 +63,30 @@ pub struct AppState {
 )]
 struct ApiDoc;
 
-#[derive(Serialize)]
-struct SystemMetrics {
-    cpu_usage: f32,
-    ram_used: u64,
-    ram_total: u64,
-    thread_count: usize,
-}
-
 async fn system_metrics_handler() -> axum::response::Response {
     let mut sys = System::new_all();
     sys.refresh_all();
-    let cpu_usage = sys.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / sys.cpus().len() as f32;
+    let cpu_usage = sys
+        .cpus()
+        .iter()
+        .map(sysinfo::CpuExt::cpu_usage)
+        .sum::<f32>()
+        / sys.cpus().len() as f32;
     let ram_used = sys.used_memory();
     let ram_total = sys.total_memory();
     let thread_count = sys.processes().len();
     let body = format!(
-        "cpu_usage {}\nram_used {}\nram_total {}\nthread_count {}\n",
-        cpu_usage, ram_used, ram_total, thread_count
+        "cpu_usage {cpu_usage}\nram_used {ram_used}\nram_total {ram_total}\nthread_count {thread_count}\n"
     );
     (
         axum::http::StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        body
-    ).into_response()
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
+        body,
+    )
+        .into_response()
 }
 
 #[tokio::main]
@@ -110,7 +109,7 @@ async fn main() -> color_eyre::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("Either USER_DATABASE_URL or DATABASE_URL must be set");
     let pool = PgPoolOptions::new()
-        .max_connections(100) 
+        .max_connections(100)
         .connect(&user_db_url)
         .await?;
     let table_name = "users".to_string();

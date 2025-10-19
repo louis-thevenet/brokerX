@@ -10,16 +10,15 @@ mod trade_validation;
 
 use api::ApiDoc;
 use axum::{
-    response::IntoResponse,
     Router,
     http::{HeaderValue, Method},
+    response::IntoResponse,
     routing::{delete, get, post, put},
 };
 use axum_prometheus::PrometheusMetricLayer;
 use config::Config;
-use serde::Serialize;
 use std::sync::Arc;
-use sysinfo::{CpuExt, System, SystemExt};
+use sysinfo::{System, SystemExt};
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -34,14 +33,6 @@ pub struct AppState {
     pub market_data_execution_client: Arc<clients::MarketDataExecutionClient>,
     pub mfa_service: mfa_service::MfaService,
     pub trade_validator: Arc<trade_validation::TradeValidator>,
-}
-
-#[derive(Serialize)]
-struct SystemMetrics {
-    cpu_usage: f32,
-    ram_used: u64,
-    ram_total: u64,
-    thread_count: usize,
 }
 
 #[tokio::main]
@@ -105,19 +96,27 @@ async fn main() -> anyhow::Result<()> {
 async fn system_metrics_handler() -> axum::response::Response {
     let mut sys = System::new_all();
     sys.refresh_all();
-    let cpu_usage = sys.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / sys.cpus().len() as f32;
+    let cpu_usage = sys
+        .cpus()
+        .iter()
+        .map(sysinfo::CpuExt::cpu_usage)
+        .sum::<f32>()
+        / sys.cpus().len() as f32;
     let ram_used = sys.used_memory();
     let ram_total = sys.total_memory();
     let thread_count = sys.processes().len();
     let body = format!(
-        "cpu_usage {}\nram_used {}\nram_total {}\nthread_count {}\n",
-        cpu_usage, ram_used, ram_total, thread_count
+        "cpu_usage {cpu_usage}\nram_used {ram_used}\nram_total {ram_total}\nthread_count {thread_count}\n"
     );
     (
         axum::http::StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        body
-    ).into_response()
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4",
+        )],
+        body,
+    )
+        .into_response()
 }
 
 fn create_router(app_state: AppState) -> Router {

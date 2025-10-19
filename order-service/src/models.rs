@@ -58,16 +58,16 @@ pub struct User {
 }
 #[derive(Debug)]
 pub enum DbError {
-    SqlxError(sqlx::Error),
-    SerdeError(serde_json::Error),
-    TokioError(std::io::Error),
+    Sqlx(sqlx::Error),
+    Serde(serde_json::Error),
+    Tokio(std::io::Error),
 }
 impl fmt::Display for DbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DbError::SqlxError(e) => write!(f, "Database error: {e}"),
-            DbError::SerdeError(e) => write!(f, "Serialization error: {e}"),
-            DbError::TokioError(e) => write!(f, "Runtime error: {e}"),
+            DbError::Sqlx(e) => write!(f, "Database error: {e}"),
+            DbError::Serde(e) => write!(f, "Serialization error: {e}"),
+            DbError::Tokio(e) => write!(f, "Runtime error: {e}"),
         }
     }
 }
@@ -76,19 +76,19 @@ impl std::error::Error for DbError {}
 
 impl From<sqlx::Error> for DbError {
     fn from(error: sqlx::Error) -> Self {
-        DbError::SqlxError(error)
+        DbError::Sqlx(error)
     }
 }
 
 impl From<serde_json::Error> for DbError {
     fn from(error: serde_json::Error) -> Self {
-        DbError::SerdeError(error)
+        DbError::Serde(error)
     }
 }
 
 impl From<std::io::Error> for DbError {
     fn from(error: std::io::Error) -> Self {
-        DbError::TokioError(error)
+        DbError::Tokio(error)
     }
 }
 #[derive(Debug)]

@@ -33,7 +33,7 @@ async fn create_test_setup() -> (Router, Uuid, String) {
         .unwrap();
     // Create the test table
     sqlx::query(&format!(
-        r#"CREATE TABLE IF NOT EXISTS {table} (
+        r#"CREATE TABLE IF NOT EXISTS {test_table_name} (
             id UUID PRIMARY KEY,
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
@@ -43,8 +43,7 @@ async fn create_test_setup() -> (Router, Uuid, String) {
             is_verified BOOLEAN NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
             holdings JSONB NOT NULL
-        )"#,
-        table = test_table_name
+        )"#
     ))
     .execute(&pool)
     .await
@@ -67,17 +66,29 @@ async fn create_test_setup() -> (Router, Uuid, String) {
             let _ = user_service.verify_user_email(&id).await;
             id
         }
-        Err(e) => panic!("Failed to create test user: {e}")
+        Err(e) => panic!("Failed to create test user: {e}"),
     };
     let app_state = AppState { user_service };
     let app = Router::new()
         .route("/v1/health", axum::routing::get(crate::api::health_check))
         .route("/v1/users", axum::routing::post(crate::api::create_user))
         .route("/v1/users/{id}", axum::routing::get(crate::api::get_user))
-        .route("/v1/users/{id}", axum::routing::put(crate::api::update_user))
-        .route("/v1/users/by-email/{email}", axum::routing::get(crate::api::get_user_by_email))
-        .route("/v1/users/{id}/verify", axum::routing::post(crate::api::verify_user_email))
-        .route("/v1/auth/login", axum::routing::post(crate::api::authenticate_user))
+        .route(
+            "/v1/users/{id}",
+            axum::routing::put(crate::api::update_user),
+        )
+        .route(
+            "/v1/users/by-email/{email}",
+            axum::routing::get(crate::api::get_user_by_email),
+        )
+        .route(
+            "/v1/users/{id}/verify",
+            axum::routing::post(crate::api::verify_user_email),
+        )
+        .route(
+            "/v1/auth/login",
+            axum::routing::post(crate::api::authenticate_user),
+        )
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(app_state);

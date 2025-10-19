@@ -31,7 +31,7 @@ impl UserRepository {
             .bind(user_id)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| AuthError::UserRepo(e.into()))?;
+            .map_err(AuthError::UserRepo)?;
         if let Some(row) = row {
             let id: Option<UserId> = row.try_get("id").ok();
             let email: String = row.try_get("email").unwrap();
@@ -42,7 +42,8 @@ impl UserRepository {
             let is_verified: bool = row.try_get("is_verified").unwrap();
             let created_at: chrono::DateTime<chrono::Utc> = row.try_get("created_at").unwrap();
             let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
-            let holdings: HashMap<String, Holding> = serde_json::from_value(holdings_json).unwrap_or_default();
+            let holdings: HashMap<String, Holding> =
+                serde_json::from_value(holdings_json).unwrap_or_default();
             Ok(Some(User {
                 id,
                 email,
@@ -76,7 +77,7 @@ impl UserRepository {
             .bind(user_id)
             .execute(&self.pool)
             .await
-            .map_err(|e| AuthError::UserRepo(e.into()))?;
+            .map_err(AuthError::UserRepo)?;
         Ok(())
     }
 }
@@ -153,7 +154,7 @@ impl UserRepoExt for UserRepository {
             .bind(holdings_json)
             .execute(&self.pool)
             .await
-            .map_err(|e| AuthError::UserRepo(e.into()))?;
+            .map_err(AuthError::UserRepo)?;
         Ok(user_id)
     }
 
@@ -181,7 +182,7 @@ impl UserRepoExt for UserRepository {
             .bind(email)
             .fetch_optional(&self.pool)
             .await
-            .map_err(|e| AuthError::UserRepo(e.into()))?;
+            .map_err(AuthError::UserRepo)?;
         if let Some(row) = row {
             let id: Option<UserId> = row.try_get("id").ok();
             let password_hash: String = row.try_get("password_hash").unwrap();
@@ -189,7 +190,8 @@ impl UserRepoExt for UserRepository {
             if password_hash == expected_hash {
                 // Cache result for future
                 if let Some(uid) = id {
-                    self.auth_cache.insert(email.to_string(), (uid, password_hash.clone()));
+                    self.auth_cache
+                        .insert(email.to_string(), (uid, password_hash.clone()));
                 }
                 return Ok(id);
             }
@@ -209,7 +211,7 @@ impl UserRepoExt for UserRepository {
             .await
             .map_err(|e| {
                 error!("Error fetching user by email {}: {:?}", email, e);
-                AuthError::UserRepo(e.into())
+                AuthError::UserRepo(e)
             })?;
         if let Some(row) = row {
             let id: Option<UserId> = row.try_get("id").ok();
@@ -221,7 +223,8 @@ impl UserRepoExt for UserRepository {
             let is_verified: bool = row.try_get("is_verified").unwrap();
             let created_at: chrono::DateTime<chrono::Utc> = row.try_get("created_at").unwrap();
             let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
-            let holdings: HashMap<String, Holding> = serde_json::from_value(holdings_json).unwrap_or_default();
+            let holdings: HashMap<String, Holding> =
+                serde_json::from_value(holdings_json).unwrap_or_default();
             Ok(Some(User {
                 id,
                 email,
@@ -239,7 +242,10 @@ impl UserRepoExt for UserRepository {
     }
 
     async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        let mut user = self.get_user_by_id(user_id).await?.ok_or(AuthError::UserNotFound)?;
+        let mut user = self
+            .get_user_by_id(user_id)
+            .await?
+            .ok_or(AuthError::UserNotFound)?;
         if user.balance < amount {
             return Err(AuthError::NotEnoughMoneyError);
         }
@@ -249,7 +255,10 @@ impl UserRepoExt for UserRepository {
     }
 
     async fn deposit_to_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        let mut user = self.get_user_by_id(user_id).await?.ok_or(AuthError::UserNotFound)?;
+        let mut user = self
+            .get_user_by_id(user_id)
+            .await?
+            .ok_or(AuthError::UserNotFound)?;
         user.balance += amount;
         self.update_user(user_id, &user).await?;
         Ok(())
@@ -262,7 +271,7 @@ impl UserRepoExt for UserRepository {
         quantity_change: i64,
         execution_price: f64,
     ) -> Result<(), AuthError> {
-        let mut tx = self.pool.begin().await.map_err(|e| AuthError::UserRepo(e.into()))?;
+        let mut tx = self.pool.begin().await.map_err(AuthError::UserRepo)?;
         let query = format!(
             "SELECT holdings FROM {} WHERE id = $1 FOR UPDATE",
             self.table_name
@@ -271,13 +280,14 @@ impl UserRepoExt for UserRepository {
             .bind(user_id)
             .fetch_optional(&mut *tx)
             .await
-            .map_err(|e| AuthError::UserRepo(e.into()))?;
+            .map_err(AuthError::UserRepo)?;
         let row = match row {
             Some(row) => row,
             None => return Err(AuthError::UserNotFound),
         };
         let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
-        let mut holdings: HashMap<String, Holding> = serde_json::from_value(holdings_json).unwrap_or_default();
+        let mut holdings: HashMap<String, Holding> =
+            serde_json::from_value(holdings_json).unwrap_or_default();
         let holding = holdings
             .entry(symbol.to_string())
             .or_insert_with(|| Holding {
@@ -302,17 +312,14 @@ impl UserRepoExt for UserRepository {
             holdings.remove(symbol);
         }
         let holdings_json = serde_json::to_value(&holdings).unwrap();
-        let update_query = format!(
-            "UPDATE {} SET holdings = $1 WHERE id = $2",
-            self.table_name
-        );
+        let update_query = format!("UPDATE {} SET holdings = $1 WHERE id = $2", self.table_name);
         sqlx::query(&update_query)
             .bind(holdings_json)
             .bind(user_id)
             .execute(&mut *tx)
             .await
-            .map_err(|e| AuthError::UserRepo(e.into()))?;
-        tx.commit().await.map_err(|e| AuthError::UserRepo(e.into()))?;
+            .map_err(AuthError::UserRepo)?;
+        tx.commit().await.map_err(AuthError::UserRepo)?;
         Ok(())
     }
 }
