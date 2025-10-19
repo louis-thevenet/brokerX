@@ -90,9 +90,16 @@ export default function(data) {
   sleep(0.5);
 
   // Rapid trading cycle
+  let lastSymbol = null;
   for (let i = 0; i < 10; i++) {
     // Get current market price
     const symbol = getRandomSymbol();
+    // Ensure we don't repeat the same symbol in immediate succession
+    if (symbol === lastSymbol) {
+      sleep(0.5); // Wait a bit longer before retrying a new symbol
+      continue;
+    }
+    lastSymbol = symbol;
     const priceData = client.getCurrentPrice(symbol);
 
     if (!priceData || !priceData.price) {
@@ -121,7 +128,7 @@ export default function(data) {
     }
 
     // Wait for holdings to update after buy order
-    let maxRetries = 10;
+    let maxRetries = 20; // Increased retries for backend consistency
     let retry = 0;
     let sharesOwned = 0;
     while (retry < maxRetries) {
@@ -137,7 +144,7 @@ export default function(data) {
         }
       }
       if (sharesOwned >= 2) break;
-      sleep(0.2); // Wait a bit before retrying
+      sleep(0.3); // Slightly longer wait for backend update
       retry++;
     }
 

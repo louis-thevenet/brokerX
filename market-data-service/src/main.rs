@@ -85,7 +85,7 @@ async fn main() -> color_eyre::Result<()> {
     // Initialize database connection using sqlx
     info!("Connecting to database...");
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(100)
         .connect(&market_data_db_url)
         .await?;
     info!("Database connection established");

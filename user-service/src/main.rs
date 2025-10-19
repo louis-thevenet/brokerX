@@ -7,14 +7,14 @@ mod service;
 #[cfg(test)]
 mod tests;
 
+use crate::repository::UserRepository;
 use axum::{
     Router,
     routing::{get, post, put},
 };
 use axum_prometheus::PrometheusMetricLayer;
-use sqlx::postgres::PgPoolOptions;
-use crate::repository::UserRepository;
 use service::UserService;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -81,7 +81,7 @@ async fn main() -> color_eyre::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("Either USER_DATABASE_URL or DATABASE_URL must be set");
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(100) 
         .connect(&user_db_url)
         .await?;
     let table_name = "users".to_string();

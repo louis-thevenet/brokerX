@@ -189,7 +189,7 @@ pub async fn create_order(
 
     match state.order_service.create_order(order).await {
         Ok((order_id, order)) => {
-            info!("Order created successfully: {}", order_id);
+            info!("Order {} created successfully for {}", order_id, payload.client_id);
             (
                 StatusCode::CREATED,
                 Json(OrderResponse::from((order_id, order))),

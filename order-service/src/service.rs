@@ -14,7 +14,7 @@ impl OrderService {
         db_config: &DatabaseConfig,
     ) -> color_eyre::Result<Self> {
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            .max_connections(100)
             .connect(&db_config.database_url)
             .await?;
 
