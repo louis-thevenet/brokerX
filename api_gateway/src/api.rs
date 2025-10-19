@@ -552,107 +552,71 @@ pub async fn create_order(
             OrderSide::Sell => -(execution_result.filled_quantity as i64),
         };
 
-        // Update holdings
-        if let Err(e) = state
-            .user_client
-            .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
-            .await
-        {
-            error!(
-                "Failed to update holdings for user {} after order {}: {}",
-                user_id, order.id, e
-            );
-        } else {
-            info!(
-                "Updated holdings for user {}: {} {} shares @ ${}",
-                user_id, quantity_change, order_request.symbol, exec_price
-            );
-        }
-
         // Calculate total transaction amount
         let transaction_amount = exec_price * execution_result.filled_quantity as f64;
 
         // Debit/Credit user account based on order side
-        match order_request.order_side {
+        let funds_result = match order_request.order_side {
             OrderSide::Buy => {
-                // Debit account for buy orders
-                if let Err(e) = state
+                state
                     .user_client
                     .withdraw_funds(user_id, transaction_amount)
                     .await
-                {
-                    error!(
-                        "Failed to debit user {} account for order {}: {}",
-                        user_id, order.id, e
-                    );
-                    // Holdings were already updated, so we have an inconsistency
-                    // undo holdings update
-                    if let Err(e) = state
-                        .user_client
-                        .update_holdings(
-                            user_id,
-                            &order_request.symbol,
-                            -quantity_change,
-                            exec_price,
-                        )
-                        .await
-                    {
-                        error!(
-                            "Failed to rollback holdings for user {} after failed debit for order {}: {}",
-                            user_id, order.id, e
-                        );
-                    } else {
-                        info!(
-                            "Rolled back holdings for user {} after failed debit for order {}",
-                            user_id, order.id
-                        );
-                    }
-                } else {
-                    info!(
-                        "Debited ${:.2} from user {} for buy order {}",
-                        transaction_amount, user_id, order.id
-                    );
-                }
             }
             OrderSide::Sell => {
-                // Credit account for sell orders
-                if let Err(e) = state
+                state
                     .user_client
                     .deposit_funds(user_id, transaction_amount)
                     .await
-                {
-                    error!(
-                        "Failed to credit user {} account for order {}: {}",
-                        user_id, order.id, e
-                    );
-                    // Holdings were already updated, so we have an inconsistency
-                    // undo holdings update
-                    if let Err(e) = state
-                        .user_client
-                        .update_holdings(
-                            user_id,
-                            &order_request.symbol,
-                            -quantity_change,
-                            exec_price,
-                        )
-                        .await
-                    {
-                        error!(
-                            "Failed to rollback holdings for user {} after failed credit for order {}: {}",
-                            user_id, order.id, e
-                        );
-                    } else {
-                        info!(
-                            "Rolled back holdings for user {} after failed credit for order {}",
-                            user_id, order.id
-                        );
-                    }
-                } else {
-                    info!(
-                        "Credited ${:.2} to user {} for sell order {}",
-                        transaction_amount, user_id, order.id
-                    );
-                }
+            }
+        };
+
+        if let Err(e) = funds_result {
+            error!(
+                "Failed to {} user {} account for order {}: {}",
+                match order_request.order_side {
+                    OrderSide::Buy => "debit",
+                    OrderSide::Sell => "credit",
+                },
+                user_id,
+                order.id,
+                e
+            );
+            // Do NOT update holdings if funds operation fails
+        } else {
+            info!(
+                "{} ${:.2} {} user {} for {} order {}",
+                match order_request.order_side {
+                    OrderSide::Buy => "Debited",
+                    OrderSide::Sell => "Credited",
+                },
+                transaction_amount,
+                match order_request.order_side {
+                    OrderSide::Buy => "from",
+                    OrderSide::Sell => "to",
+                },
+                user_id,
+                match order_request.order_side {
+                    OrderSide::Buy => "buy",
+                    OrderSide::Sell => "sell",
+                },
+                order.id
+            );
+            // Only update holdings if funds operation succeeded
+            if let Err(e) = state
+                .user_client
+                .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
+                .await
+            {
+                error!(
+                    "Failed to update holdings for user {} after order {}: {}",
+                    user_id, order.id, e
+                );
+            } else {
+                info!(
+                    "Updated holdings for user {}: {} {} shares @ ${}",
+                    user_id, quantity_change, order_request.symbol, exec_price
+                );
             }
         }
     }
