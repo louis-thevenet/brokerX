@@ -232,7 +232,7 @@ help:
 # Setup k6 load testing environment
 load-test-setup:
     @echo "🧪 Setting up load testing..."
-    cd load-tests && ./setup.fish
+    cd load-tests && ./setup.fish && ./test-mfa-bypass.fish
 
 # Run load tests (market-data, high-frequency, user-journey, report-generation, stress, all)
 load-test scenario="market-data":

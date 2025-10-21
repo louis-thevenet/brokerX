@@ -2,36 +2,31 @@
 
 See the [arc42](./docs/arc42/docs.md) file for detailed architecture documentation.
 
-# How to Run
+# Content
 
-## Database
+- API Gateway
+- Microservices and their databases: user-service, order-service, market-data-service
+- Prometheus and Grafana setup
+- Load tests with K6
 
-1. Create a `.env` file following indications from `.env.example`. (One will be provided in the archive, **it contains sensitive information**)
+# How to Run Locally
 
-Run the following command to start a PostgreSQL container:
-`sudo docker run -d --name brokerx_postgres --env-file .env -p 5432:5432 postgres:16`
+Create a `.env` file following indications from `.env.example`. (One will be provided in the archive, **it contains sensitive information**)
 
-To reset the database, run:
+Start all containers: `docker compose up -d`
 
-```
-sudo docker stop brokerx_postgres
-sudo docker rm brokerx_postgres
-```
+You can have finer control using Just. Run `just --list` for a list of available commands.
 
-## Application
+Information about accessing services will be printed in the terminal.
 
-To start the application, run: `cargo run --release --package app` then open [`localhost:5000`](http://localhost:5000) in your browser.
+# Grafana
 
-Test user:
+Grafana will be available at http://localhost:3000 (admin/admin123)
 
-- username: `test@test.com`
-- password: `aaaaaa`
-- OTP code is always `000000` for test user.
+Then import the dashboard from `./grafana_dashboard.json`.
 
-# Benchmark
+# Load tests
 
-To run the benchmark:
+Enable MFA Bypass in `docker-compose.yml` by setting `MFA_BYPASS=true` in API Gateway section. Then `docker compose up -d` to restart the services.
 
-```bash
-RUST_LOG=domain=debug cargo run -r --bin benchmark -- --threads 4 --processing-threads 4 --duration 15 --target-throughput 200 --test-users 5
-```
+Run `just load-test-setup` then `just load-test`.
