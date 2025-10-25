@@ -124,6 +124,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/health", get(api::health_check))
         .route("/v1/orders", post(api::create_order))
         .route("/v1/orders", get(api::get_orders))
+        .route("/v1/orders/pending", get(api::get_pending_orders))
         .route("/v1/orders/{id}", get(api::get_order))
         .route("/v1/orders/{id}", put(api::update_order))
         .route("/v1/orders/{id}", delete(api::cancel_order))

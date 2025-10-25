@@ -32,28 +32,38 @@ export function setup() {
       password: config.testUsers.password,
       firstname: 'Journey',
       surname: `User${i}`,
-      initialBalance: 10000,
     };
 
     const userId = client.registerUser(
       userData.email,
       userData.password,
       userData.firstname,
-      userData.surname,
-      userData.initialBalance
+      userData.surname
     );
 
     if (userId) {
-      testUsers.push({
-        ...userData,
-        userId,
-      });
+      // Authenticate and get token
+      const authResult = client.authenticate(userData.email, userData.password);
+      if (authResult && authResult.token) {
+        // Token is already set by authenticate(), just need to ensure userId is set
+        client.setUserId(authResult.user_id || userId);
+        
+        // Deposit initial funds
+        const depositSuccess = client.deposit(10000); // $10k for journey testing
+        
+        if (depositSuccess) {
+          testUsers.push({
+            ...userData,
+            userId,
+          });
+        }
+      }
     }
 
     sleep(0.5);
   }
 
-  console.log(`Created ${testUsers.length} test users`);
+  console.log(`Created ${testUsers.length} test users with initial deposits`);
   return { users: testUsers };
 }
 

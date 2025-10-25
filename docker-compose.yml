@@ -131,6 +131,35 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Order Execution Orchestrator Service
+  order-execution-orchestrator-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.order-execution-orchestrator-service
+    container_name: brokerx-order-execution-orchestrator-service
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - ORDER_EXECUTION_ORCHESTRATOR_SERVICE_PORT=3004
+      - USER_SERVICE_URL=http://user-service:3001
+      - ORDER_SERVICE_URL=http://order-service:3002
+      - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
+      - API_GATEWAY_URL=http://api-gateway:8080
+    ports:
+      - "3004:3004"
+    networks:
+      - brokerx-network
+    depends_on:
+      - user-service
+      - order-service
+      - market-data-service
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
   # API Gateway
   api-gateway:
     build:
@@ -140,12 +169,13 @@ services:
     env_file:
       - .env
     environment:
-      - MFA_BYPASS=false
+      - MFA_BYPASS=true
       - RUST_LOG=info
       - API_GATEWAY_ADDRESS=0.0.0.0:8080
       - USER_SERVICE_URL=http://user-service:3001
       - ORDER_SERVICE_URL=http://order-service:3002
       - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
+      - ORCHESTRATOR_SERVICE_URL=http://order-execution-orchestrator-service:3004
       - JWT_SECRET=docker-jwt-secret-change-in-production-please
       - JWT_EXPIRY_HOURS=24
       - CORS_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000
@@ -157,6 +187,7 @@ services:
       - user-service
       - order-service
       - market-data-service
+      - order-execution-orchestrator-service
     restart: unless-stopped
 
   # Web Application

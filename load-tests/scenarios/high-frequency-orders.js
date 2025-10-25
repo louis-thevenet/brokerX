@@ -38,28 +38,38 @@ export function setup() {
       password: config.testUsers.password,
       firstname: 'HFT',
       surname: `Trader${i}`,
-      initialBalance: 50000,
     };
 
     const userId = client.registerUser(
       userData.email,
       userData.password,
       userData.firstname,
-      userData.surname,
-      userData.initialBalance
+      userData.surname
     );
 
     if (userId) {
-      testUsers.push({
-        ...userData,
-        userId,
-      });
+      // Authenticate and get token
+      const authResult = client.authenticate(userData.email, userData.password);
+      if (authResult && authResult.token) {
+        // Token is already set by authenticate(), just need to ensure userId is set
+        client.setUserId(authResult.user_id || userId);
+        
+        // Deposit initial funds
+        const depositSuccess = client.deposit(5000000); // $5M for high-frequency trading
+        
+        if (depositSuccess) {
+          testUsers.push({
+            ...userData,
+            userId,
+          });
+        }
+      }
     }
 
     sleep(0.5); // Avoid overwhelming the registration endpoint
   }
 
-  console.log(`Created ${testUsers.length} test users`);
+  console.log(`Created ${testUsers.length} test users with initial deposits`);
   return { users: testUsers };
 }
 

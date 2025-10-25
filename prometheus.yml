@@ -27,22 +27,28 @@ scrape_configs:
     static_configs:
       - targets: ['market-data-service:3003']
 
-  - job_name: api-gateway-system
-    metrics_path: '/v1/metrics/system'
+  - job_name: 'order-execution-orchestrator'
+    metrics_path: '/v1/metrics'
     static_configs:
-      - targets: ['api-gateway:8080']
+      - targets: ['order-execution-orchestrator-service:3004']
 
-  - job_name: user-service-system
-    metrics_path: '/v1/metrics/system'
-    static_configs:
-      - targets: ['user-service:3001']
+  # - job_name: api-gateway-system
+  #   metrics_path: '/v1/metrics/system'
+  #   static_configs:
+  #     - targets: ['api-gateway:8080']
 
-  - job_name: order-service-system
-    metrics_path: '/v1/metrics/system'
-    static_configs:
-      - targets: ['order-service:3002']
+  # - job_name: user-service-system
+  #   metrics_path: '/v1/metrics/system'
+  #   static_configs:
+  #     - targets: ['user-service:3001']
 
-  - job_name: market-data-service-system
-    metrics_path: '/v1/metrics/system'
-    static_configs:
-      - targets: ['market-data-service:3003']
+  # - job_name: order-service-system
+  #   metrics_path: '/v1/metrics/system'
+  #   static_configs:
+  #     - targets: ['order-service:3002']
+
+  # - job_name: market-data-service-system
+  #   metrics_path: '/v1/metrics/system'
+  #   static_configs:
+  #     - targets: ['market-data-service:3003']
+

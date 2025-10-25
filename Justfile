@@ -40,7 +40,7 @@ docker-db:
 # Start only microservices (assumes databases are running)
 docker-services:
     @echo "🚀 Starting microservices and webapp..."
-    docker compose up -d user-service order-service market-data-service api-gateway webapp
+    docker compose up -d user-service order-service market-data-service order-execution-orchestrator-service api-gateway webapp
     @echo "✅ Microservices and webapp started!"
 
 # Start only monitoring stack
@@ -161,6 +161,9 @@ services log="info":
     
     RUST_LOG={{log}} cargo run --release -p market-data-service &
     MARKET_PID=$!
+
+    RUST_LOG={{log}} cargo run --release -p order-execution-orchestrator-service &
+    MARKET_PID=$!
     
     RUST_LOG={{log}} cargo run --release -p api_gateway &
     GATEWAY_PID=$!
@@ -225,6 +228,10 @@ help:
     @echo "  just load-test [scenario]   - Run load tests"
     @echo "  just load-test-all          - Run all load test scenarios"
     @echo ""
+    @echo "✅ Quality Validation:"
+    @echo "  just quality-test           - Validate quality objectives"
+    @echo "  just quality-metrics        - View metrics in Prometheus"
+    @echo ""
     @echo "For full list: just --list"
 
 # ========== LOAD TESTING COMMANDS ==========
@@ -234,7 +241,7 @@ load-test-setup:
     @echo "🧪 Setting up load testing..."
     cd load-tests && ./setup.fish && ./test-mfa-bypass.fish
 
-# Run load tests (market-data, high-frequency, user-journey, report-generation, stress, all)
+# Run load tests (market-data, high-frequency, user-journey, quality-validation, stress, all)
 load-test scenario="market-data":
     @echo "🧪 Running load test: {{scenario}}..."
     cd load-tests && ./run-tests.fish {{scenario}} local
@@ -248,6 +255,98 @@ load-test-all:
 load-test-smoke:
     @echo "🧪 Running smoke test..."
     cd load-tests && k6 run --vus 1 --duration 30s -e BASE_URL=http://localhost:8080 scenarios/market-data-consultation.js
+
+# Run quality validation test (validates all 3 quality objectives)
+quality-test:
+    #!/usr/bin/env fish
+    echo "================================================================================"
+    echo "BrokerX Quality Validation Test"
+    echo "================================================================================"
+    echo ""
+    echo "Quality Objectives:"
+    echo "  1. Availability: ≥ 95.5%"
+    echo "  2. Performance: Latency (order → ACK) ≤ 250ms (p95)"
+    echo "  3. Performance: Throughput ≥ 800 orders/s"
+    echo "  4. Observability: Metrics available in Prometheus/Grafana"
+    echo ""
+    echo "================================================================================"
+    echo ""
+    
+    # Check if services are running
+    echo "Checking services..."
+    if not curl -s http://localhost:8080/v1/health > /dev/null
+        echo "❌ API Gateway is not running!"
+        echo "Please start services with: just docker-up"
+        exit 1
+    end
+    
+    echo "✅ API Gateway is running"
+    
+    # Check Prometheus
+    if curl -s http://localhost:9090/-/healthy > /dev/null
+        echo "✅ Prometheus is running"
+    else
+        echo "⚠️  Prometheus is not running (observability validation will be limited)"
+    end
+    
+    # Check Grafana
+    if curl -s http://localhost:3000/api/health > /dev/null
+        echo "✅ Grafana is running"
+    else
+        echo "⚠️  Grafana is not running (observability validation will be limited)"
+    end
+    
+    echo ""
+    echo "================================================================================"
+    echo "Starting Quality Validation Test..."
+    echo "================================================================================"
+    echo ""
+    
+    # Create results directory
+    mkdir -p load-tests/results
+    
+    set TIMESTAMP (date +"%Y%m%d-%H%M%S")
+    
+    # Run k6 test
+    cd load-tests && k6 run \
+        --out json=results/quality-validation-$TIMESTAMP.json \
+        --summary-export=results/quality-validation-$TIMESTAMP-summary.json \
+        scenarios/quality-validation.js
+    
+    set EXIT_CODE $status
+    
+    echo ""
+    echo "================================================================================"
+    if test $EXIT_CODE -eq 0
+        echo "✅ Quality validation PASSED!"
+        echo ""
+        echo "Observability Check:"
+        echo "  - Prometheus metrics: http://localhost:9090/graph"
+        echo "  - Grafana dashboards: http://localhost:3000"
+        echo "  - Service logs: just docker-logs"
+    else
+        echo "❌ Quality validation FAILED!"
+        echo ""
+        echo "Check the output above for failed thresholds."
+        echo "Debug with: just docker-logs or just docker-logs-service <service>"
+    end
+    echo "================================================================================"
+    
+    exit $EXIT_CODE
+
+# View quality metrics in Prometheus
+quality-metrics:
+    @echo "📊 Opening Prometheus for quality metrics..."
+    @echo ""
+    @echo "Key metrics to check:"
+    @echo "  - http_requests_total (Traffic)"
+    @echo "  - http_request_duration_seconds (Latency)"
+    @echo "  - http_requests_failed (Errors)"
+    @echo "  - process_cpu_seconds_total (Saturation)"
+    @echo ""
+    @echo "Prometheus: http://localhost:9090/graph"
+    @echo "Grafana:    http://localhost:3000"
+
 
 
 
