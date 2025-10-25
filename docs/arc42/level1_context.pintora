@@ -1,6 +1,6 @@
 classDiagram
-  title: Level 1 - System Context
-  
+  title: Level 1 - System Context Microservices
+
   class WebBrowser {
     <<actor>>
     +userInteractions()
@@ -8,23 +8,84 @@ classDiagram
     +placeOrders()
     +viewPortfolio()
   }
-  
-  class BrokerXApp {
+
+  class APIGateway {
     <<system>>
-    +axumWebServer()
-    +domainLogic()
-    +orderProcessing()
-    +userManagement()
+    +requestRouting()
+    +authValidation()
+    +aggregation()
   }
-  
-  class PostgreSQLDatabase {
+
+  class UserService {
+    <<service>>
+    +createUser()
+    +getUser()
+    +updateUser()
+    +getUserByEmail()
+    +verifyUserEmail()
+    +authenticateUser()
+    +depositFunds()
+    +withdrawFunds()
+    +getHoldings()
+    +updateHoldings()
+    +validateTrade()
+    +healthCheck()
+  }
+
+  class OrderService {
+    <<service>>
+    +createOrder()
+    +getOrder()
+    +getOrders()
+    +updateOrder()
+    +cancelOrder()
+    +updateOrderExecution()
+    +healthCheck()
+  }
+
+  class MarketDataService {
+    <<service>>
+    +getCurrentPrice()
+    +getCurrentPrices()
+    +getHistoricalPrices()
+    +getAvailableSymbols()
+    +initializeMarketData()
+    +simulatePriceUpdate()
+    +executeOrder()
+    +healthCheck()
+  }
+
+  class MFAAdapter {
+    <<service>>
+    +initiateChallenge()
+    +initiateChallengeNoEmail()
+    +verifyChallenge()
+    +verifyChallengeBypass()
+    +getChallenge()
+    +sendEmail()
+    +healthCheck()
+  }
+
+  class UserDB {
     <<external>>
     +userAccounts()
-    +ordersTransactions()
     +portfolioData()
     +persistentStorage()
   }
-  
+
+  class OrderDB {
+    <<external>>
+    +ordersTransactions()
+    +persistentStorage()
+  }
+
+  class MarketDataDB {
+    <<external>>
+    +marketPrices()
+    +simulationState()
+    +persistentStorage()
+  }
+
   class SMTPEmailServer {
     <<external>>
     +emailDelivery()
@@ -32,15 +93,28 @@ classDiagram
     +registrationVerification()
     +accountNotifications()
   }
-  
+
   %% User interactions
-  WebBrowser --> BrokerXApp: HTTPS requests port 3000
-  BrokerXApp --> WebBrowser: HTML responses Askama templates
-  
-  %% Infrastructure dependencies
-  BrokerXApp --> PostgreSQLDatabase: SQL queries SQLx connection pool
-  BrokerXApp --> SMTPEmailServer: Email notifications Lettre transport
-  
-  @note right of BrokerXApp: Rust monolith\nAxum + Tokio runtime\nStatic files via Tower-HTTP
+  WebBrowser --> APIGateway: HTTPS requests port 3000
+  APIGateway --> WebBrowser: JSON responses
+
+  %% API Gateway delegates to services
+  APIGateway --> UserService: HTTP
+  APIGateway --> OrderService: HTTP
+  APIGateway --> MarketDataService: HTTP
+  APIGateway --> MFAAdapter: HTTP
+
+  %% Service infrastructure dependencies
+  UserService --> UserDB: SQL queries
+  OrderService --> OrderDB: SQL queries
+  MarketDataService --> MarketDataDB: SQL queries
+  UserService --> MFAAdapter: MFA requests
+  MFAAdapter --> SMTPEmailServer: Email notifications
+
+  %% Notes
+  @note right of APIGateway: Rust microservices\nAxum and Tokio runtime\nService boundaries enforced\nStatic files via Tower-HTTP
   @note left of WebBrowser: HTML forms\nJWT authentication
-  @note bottom of PostgreSQLDatabase: Connection pooling\nAsync operations
+  @note bottom of UserDB: Connection pooling\nAsync operations
+  @note bottom of OrderDB: Connection pooling\nAsync operations
+  @note bottom of MarketDataDB: Connection pooling\nAsync operations
+  @note right of MFAAdapter: Handles MFA\nIntegrates with SMTP

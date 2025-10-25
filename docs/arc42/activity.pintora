@@ -11,9 +11,8 @@ else
   switch (choix initial)
   case (Inscription)
     :Créer un nouveau compte;
-    :Demander confirmation code OTP;
     :Afficher confirmation inscription;
-    :Passer à la connexion;
+    :Lancer procédure de connexion;
   case (Connexion)
     :Lancer procédure de connexion;
   endswitch
@@ -22,6 +21,10 @@ else
     :Demander identifiant et mot de passe;
     :Demander confirmation code OTP;
     if (utilisateur authentifié ?) then
+      if (Statut utilisateur est non-vérifié ?) then
+        :Changer statut utilisateur à vérifié;
+      else
+      endif
       :Session ouverte;
     else
       :Afficher erreur accès refusé;
@@ -31,15 +34,16 @@ else
 endif
 
 partition Portefeuille {
-    :Utilisateur redirigé sur /dashboard;
+    :Utilisateur redirigé sur son profil;
     :Présenter son solde, ses ordres passés, leur statut et son portfolio;
-
-  :Utilisateur clique sur un bouton;
 
   switch (choix utilisateur)
   case (Approvisionnement)
     :Demander montant à déposer;
     :Confirmer dépôt crédité;
+  case (Modifier profil)
+    :Afficher formulaire modification profil;
+    :Confirmer modifications enregistrées;
   case (Consultation marché)
     :Afficher cotations en temps réel;
   case (Passer un ordre)
@@ -48,8 +52,6 @@ partition Portefeuille {
     case (Afficher ordres passés)
     :Afficher derniers ordres;
   endswitch
-    :Utilisateur redirigé vers /dashboard;
-
 }
 end
 

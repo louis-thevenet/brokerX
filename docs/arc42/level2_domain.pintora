@@ -1,63 +1,125 @@
 classDiagram
-  title: Level 2 - Domain Architecture
+  title: Level 2 - Microservices Domain Architecture
   
-  class BrokerX {
-    <<aggregate>>
-    -MfaService<EmailOtpProvider> mfa_service
-    -PreTradeValidator pre_trade_validator
-    -ProcessingPool processing_pool
-    +new()
-    +getUserRepo()
+  class APIGateway {
+    <<orchestrator>>
+    -config: GatewayConfig
+    -jwt_service: JwtService
+    -user_client: UserServiceClient
+    -order_client: OrderServiceClient
+    -market_data_client: MarketDataClient
+    -market_data_execution_client: MarketDataExecutionClient
+    -mfa_service: MfaServiceClient
+    -trade_validator: TradeValidator
+    +register()
+    +login()
+    +verifyLoginMfa()
     +createOrder()
-    +getOrdersForUser()
-    +startOrderProcessing()
+    +getMyOrders()
+    +getOrder()
+    +updateOrder()
+    +cancelOrder()
+    +getMe()
+    +depositFunds()
+    +getMarketPrice()
+    +getMarketPrices()
+  }
+  
+  class TradeValidator {
+    <<orchestration_service>>
+    -user_client: UserServiceClient
+    -market_data_client: MarketDataClient
+    -config: PreTradeConfig
+    +validateTrade()
+    +checkBuyingPower()
+    +validatePriceBands()
+    +checkPositionLimits()
+    +validateSymbol()
+    +checkConcentrationLimits()
+  }
+  
+  class UserService {
+    <<microservice>>
+    -user_repo: UserRepo
+    -mfa_client: MfaClient
+    +createUser()
+    +getUser()
+    +getUserByEmail()
+    +authenticateUser()
+    +verifyEmail()
+    +updateUser()
+    +depositFunds()
+    +withdrawFunds()
+    +getHoldings()
+    +updateHoldings()
+    +healthCheck()
+  }
+  
+  class OrderService {
+    <<microservice>>
+    -order_repo: OrderRepo
+    +createOrder()
+    +getOrder()
+    +getUserOrders()
+    +updateOrder()
+    +updateOrderExecution()
+    +cancelOrder()
+    +healthCheck()
+  }
+  
+  class MarketDataService {
+    <<microservice>>
+    -market_repo: MarketDataRepo
+    -price_engine: PriceEngine
+    +getCurrentPrice()
+    +getCurrentPrices()
+    +getAllPrices()
+    +getHistoricalPrices()
+    +getAvailableSymbols()
+    +executeOrder()
+    +simulatePriceUpdate()
+    +healthCheck()
+  }
+  
+  class MFAAdapter {
+    <<microservice>>
+    -challenge_store: ChallengeStore
+    -email_client: EmailClient
+    +initiateChallenge()
+    +initiateChallengeNoEmail()
+    +verifyChallenge()
+    +verifyChallengeBypass()
+    +sendEmail()
+    +healthCheck()
   }
   
   class UserRepo {
     <<repository>>
+    -db_pool: Pool~UserDB~
     +create()
     +get()
-    +authenticate()
     +update()
-  }
-  
-  class ProcessingPool {
-    <<service>>
-    -shared_state: Arc<Mutex<SharedState>>
-    -worker_handles: Vec<JoinHandle>
-    -work_available: Arc<Condvar>
-    +new()
-    +start()
-    +stop()
-    +processOrder()
-    +submitOrder()
-  }
-  
-  class SharedState {
-    <<state>>
-    +order_repo: OrderRepo
-    +user_repo: UserRepo
-    +order_queue: VecDeque<OrderId>
-    +is_running: bool
+    +findByEmail()
+    +authenticate()
   }
   
   class OrderRepo {
     <<repository>>
+    -db_pool: Pool~OrderDB~
     +create()
     +get()
     +update()
-    +findAllByField()
+    +findByUserId()
   }
   
-  class PreTradeValidator {
-    <<service>>
-    -config: PreTradeConfig
-    +validateOrder()
-    +checkBuyingPower()
-    +validatePriceBands()
+  class MarketDataRepo {
+    <<repository>>
+    -db_pool: Pool~MarketDataDB~
+    +getCurrentPrice()
+    +getHistoricalPrices()
+    +updatePrice()
+    +getAllSymbols()
   }
-  
-
   
   class User {
     <<entity>>
@@ -65,42 +127,86 @@ classDiagram
     +email: String
     +name: String
     +balance: f64
+    +is_verified: bool
     +portfolio: Portfolio
   }
   
   class Order {
     <<entity>>
+    +id: OrderId
     +client_id: UserId
     +symbol: String
     +quantity: u64
+    +filled_quantity: u64
     +order_side: OrderSide
     +order_type: OrderType
     +status: OrderStatus
-    +date: DateTime
+    +price: Option~f64~
+    +average_price: Option~f64~
+    +created_at: DateTime
   }
   
   class Portfolio {
     <<value_object>>
-    +positions: Vec<Position>
+    +positions: Vec~Position~
     +calculateValue()
     +canAfford()
+    +hasPosition()
   }
   
-  %% Main aggregation relationships
-  BrokerX *-- ProcessingPool
-  BrokerX *-- PreTradeValidator
+  class Position {
+    <<value_object>>
+    +symbol: String
+    +quantity: u64
+    +avg_price: f64
+  }
   
-  %% ProcessingPool contains shared state
-  ProcessingPool *-- SharedState
+  class ValidationResult {
+    <<value_object>>
+    +valid: bool
+    +errors: Vec~ValidationError~
+    +warnings: Vec~String~
+  }
   
-  %% Centralized repositories in SharedState
-  SharedState *-- UserRepo
-  SharedState *-- OrderRepo
+  class ExecutionResult {
+    <<value_object>>
+    +status: ExecutionStatus
+    +filled_quantity: u64
+    +average_price: Option~f64~
+  }
   
-  %% Key domain relationships
+  %% API Gateway composition and orchestration
+  APIGateway *-- TradeValidator
+  APIGateway ..> UserService: HTTP user operations
+  APIGateway ..> OrderService: HTTP order management
+  APIGateway ..> MarketDataService: HTTP price queries & execution
+  APIGateway ..> MFAAdapter: HTTP MFA operations
+  
+  %% Trade Validator orchestration (pre-trade checks)
+  TradeValidator ..> UserService: validate buying power
+  TradeValidator ..> MarketDataService: validate symbol & price
+  TradeValidator ..> ValidationResult: returns
+  
+  %% Service internal structure
+  UserService *-- UserRepo
+  OrderService *-- OrderRepo
+  MarketDataService *-- MarketDataRepo
+  
+  %% Inter-service communication
+  UserService ..> MFAAdapter: HTTP MFA requests
+  
+  %% Repository to Entity relationships
   UserRepo --> User: manages
   OrderRepo --> Order: manages
+  User *-- Portfolio
+  Portfolio *-- Position
   
-  @note right of BrokerX: Main Domain Aggregate\nAccesses UserRepo via ProcessingPool
-  @note left of PreTradeValidator: Risk Management
-  @note top of SharedState: Centralized repositories\nThread-safe state\nNo duplication
+  %% Order execution flow
+  MarketDataService ..> ExecutionResult: returns
+  
+  %% Notes
+  @note right of APIGateway: Central orchestrator\nHandles authentication JWT\nCoordinates order lifecycle\n1. Pre-trade validation\n2. Order creation\n3. Market execution\n4. Holdings update\nStateless service
+  @note left of TradeValidator: Pre-trade validation logic\nChecks\n- User verification status\n- Buying power & balance\n- Position limits\n- Symbol validity\n- Price bands & tick size\nOrchestrates UserService + MarketDataService
+  @note top of UserService: User domain owner\nManages users, portfolio, balance\nVerifies email via MFA\nIndependent deployment
+  @note top of OrderService: Order domain owner\nManages order lifecycle\nStores order state\nIndependent deployment
+  @note bottom of MarketDataService: Market data domain owner\nPrice simulation engine\nOrder execution logic\nOHLCV data management
