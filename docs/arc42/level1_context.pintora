@@ -1,120 +1,90 @@
 classDiagram
-  title: Level 1 - System Context Microservices
-
-  class WebBrowser {
+  title: Level 1 - System Context with Microservices
+  
+  class User {
     <<actor>>
-    +userInteractions()
-    +loginRegister()
-    +placeOrders()
-    +viewPortfolio()
+    +Trades stocks
+    +Manages portfolio
+    +Views market data
   }
-
+  
   class APIGateway {
     <<system>>
-    +requestRouting()
-    +authValidation()
-    +aggregation()
+    +Routes requests
+    +Validates authentication
   }
-
+  
   class UserService {
-    <<service>>
-    +createUser()
-    +getUser()
-    +updateUser()
-    +getUserByEmail()
-    +verifyUserEmail()
-    +authenticateUser()
-    +depositFunds()
-    +withdrawFunds()
-    +getHoldings()
-    +updateHoldings()
-    +validateTrade()
-    +healthCheck()
+    <<microservice>>
+    +User management
+    +Portfolio management
+    +Authentication
   }
-
+  
   class OrderService {
-    <<service>>
-    +createOrder()
-    +getOrder()
-    +getOrders()
-    +updateOrder()
-    +cancelOrder()
-    +updateOrderExecution()
-    +healthCheck()
+    <<microservice>>
+    +Order creation
+    +Order execution
+    +Order tracking
   }
-
+  
   class MarketDataService {
-    <<service>>
-    +getCurrentPrice()
-    +getCurrentPrices()
-    +getHistoricalPrices()
-    +getAvailableSymbols()
-    +initializeMarketData()
-    +simulatePriceUpdate()
-    +executeOrder()
-    +healthCheck()
+    <<microservice>>
+    +Price data
+    +Market simulation
+    +Symbol information
   }
-
+  
   class MFAAdapter {
-    <<service>>
-    +initiateChallenge()
-    +initiateChallengeNoEmail()
-    +verifyChallenge()
-    +verifyChallengeBypass()
-    +getChallenge()
-    +sendEmail()
-    +healthCheck()
+    <<microservice>>
+    +MFA challenges
+    +Code verification
   }
-
+  
   class UserDB {
-    <<external>>
-    +userAccounts()
-    +portfolioData()
-    +persistentStorage()
+    <<database>>
+    +User accounts
+    +Portfolio data
   }
-
+  
   class OrderDB {
-    <<external>>
-    +ordersTransactions()
-    +persistentStorage()
+    <<database>>
+    +Orders
+    +Transactions
   }
-
+  
   class MarketDataDB {
-    <<external>>
-    +marketPrices()
-    +simulationState()
-    +persistentStorage()
+    <<database>>
+    +Market prices
+    +Simulation state
   }
-
-  class SMTPEmailServer {
-    <<external>>
-    +emailDelivery()
-    +mfaCodes()
-    +registrationVerification()
-    +accountNotifications()
+  
+  class EmailServer {
+    <<external system>>
+    +Sends MFA codes
+    +Sends notifications
   }
-
+  
   %% User interactions
-  WebBrowser --> APIGateway: HTTPS requests port 3000
-  APIGateway --> WebBrowser: JSON responses
-
-  %% API Gateway delegates to services
+  User --> APIGateway: HTTPS requests
+  APIGateway --> User: JSON responses
+  
+  %% API Gateway to services
   APIGateway --> UserService: HTTP
   APIGateway --> OrderService: HTTP
   APIGateway --> MarketDataService: HTTP
   APIGateway --> MFAAdapter: HTTP
-
-  %% Service infrastructure dependencies
-  UserService --> UserDB: SQL queries
-  OrderService --> OrderDB: SQL queries
-  MarketDataService --> MarketDataDB: SQL queries
+  
+  %% Services to databases
+  UserService --> UserDB: SQL
+  OrderService --> OrderDB: SQL
+  MarketDataService --> MarketDataDB: SQL
+  
+  %% Cross-service dependencies
   UserService --> MFAAdapter: MFA requests
-  MFAAdapter --> SMTPEmailServer: Email notifications
-
-  %% Notes
-  @note right of APIGateway: Rust microservices\nAxum and Tokio runtime\nService boundaries enforced\nStatic files via Tower-HTTP
-  @note left of WebBrowser: HTML forms\nJWT authentication
-  @note bottom of UserDB: Connection pooling\nAsync operations
-  @note bottom of OrderDB: Connection pooling\nAsync operations
-  @note bottom of MarketDataDB: Connection pooling\nAsync operations
-  @note right of MFAAdapter: Handles MFA\nIntegrates with SMTP
+  MFAAdapter --> EmailServer: SMTP
+  
+  @note right of APIGateway: Rust/Axum\nPort 3000
+  @note bottom of UserDB: PostgreSQL
+  @note bottom of OrderDB: PostgreSQL
+  @note bottom of MarketDataDB: PostgreSQL

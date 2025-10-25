@@ -1,70 +1,55 @@
 sequenceDiagram
-  title: Order Processing Workflow (Actual Implementation)
-  
+  title: Order Processing Workflow (API Gateway Orchestrator, Detailed)
+
   participant User as Web Browser
-  participant Handler as PlaceOrderHandler
-  participant BrokerX as BrokerX
-  participant PreTrade as PreTradeValidator
-  participant Pool as ProcessingPool
-  participant State as SharedState
-  participant OrderRepo as OrderRepo
-  participant UserRepo as UserRepo
-  participant Worker as Worker Thread
-  
+  participant APIGateway as API Gateway
+  participant TradeValidator as PreTradeValidator
+  participant OrderService as Order Service
+  participant MarketDataService as Market Data Service
+  participant UserService as User Service
+
   %% Initial Order Submission
-  User->>Handler: POST /place_order (form data)
-  Handler->>Handler: Extract JWT claims
-  Handler->>Handler: Validate form data
-  Handler->>BrokerX: createOrder(client_id, symbol, quantity, side, type)
-  
+  User->>APIGateway: POST /v1/orders (JSON, JWT)
+  APIGateway->>APIGateway: Extract JWT, validate authentication
+  APIGateway->>APIGateway: Validate order request (fields, types, business rules)
+
   %% Pre-trade Validation
-  BrokerX->>State: Get user balance
-  State->>UserRepo: get(client_id)
-  UserRepo-->>State: User with balance
-  State-->>BrokerX: user_balance
-  BrokerX->>PreTrade: validateOrder(side, type, symbol, quantity, balance)
-  PreTrade->>PreTrade: Check buying power, price bands, limits
-  PreTrade-->>BrokerX: Validation result
-  
-  %% Order Creation and Queuing
-  BrokerX->>State: Lock shared state
-  State->>OrderRepo: createOrder(Order with status=Queued)
-  OrderRepo-->>State: OrderId
-  State-->>BrokerX: OrderId
-  BrokerX->>Pool: submitOrder(order_id)
-  Pool->>State: Push order_id to queue
-  Pool->>Pool: Notify worker threads (condvar)
-  BrokerX-->>Handler: Ok(OrderId)
-  Handler-->>User: Redirect to /dashboard
-  
-  %% Asynchronous Order Processing
-  note over Worker: Background processing starts
-  Pool->>Worker: Worker thread wakes up
-  Worker->>State: Pop order_id from queue
-  State-->>Worker: OrderId
-  Worker->>OrderRepo: get(order_id)
-  OrderRepo-->>Worker: Order with status=Queued
-  
-  %% Status Transitions
-  Worker->>Worker: Process order (Queued → Pending)
-  Worker->>OrderRepo: update(order_id, status=Pending)
-  Worker->>State: Push back to queue for execution
-  
-  %% Order Execution (Simulation)
-  Worker->>State: Pop order_id again
-  Worker->>OrderRepo: get(order_id)
-  OrderRepo-->>Worker: Order with status=Pending
-  Worker->>Worker: Random execution simulation
-  
-  alt Order Filled
-    Worker->>UserRepo: withdraw/deposit funds
-    Worker->>UserRepo: update user holdings
-    Worker->>OrderRepo: update(order_id, status=Filled)
-    note over Worker: Portfolio updated
-  else Order Rejected
-    Worker->>OrderRepo: update(order_id, status=Rejected)
-    note over Worker: Insufficient funds
-  else Keep Pending
-    Worker->>State: Push back to queue
-    note over Worker: Continue processing later
+  APIGateway->>TradeValidator: validate_trade(user_id, symbol, quantity, side, type)
+  TradeValidator->>UserService: getUser(user_id)
+  UserService-->>TradeValidator: User (balance, holdings)
+  TradeValidator->>TradeValidator: Check buying power, holdings, price bands, limits
+  TradeValidator-->>APIGateway: ValidationResult (valid, errors, warnings)
+  APIGateway->>APIGateway: If validation fails, return error to user
+
+  %% Order Creation
+  APIGateway->>OrderService: create_order(user_id, symbol, quantity, side, type)
+  OrderService->>OrderService: Validate input, create Order (status=Pending), persist in DB
+  OrderService-->>APIGateway: Order (id, status=Pending, details)
+
+  %% Order Execution
+  APIGateway->>MarketDataService: execute_order(order_id, symbol, side, type, quantity)
+  MarketDataService->>MarketDataService: Simulate/execute order, determine fill status, price
+  MarketDataService-->>APIGateway: ExecutionResult (status, filled_quantity, avg_price)
+
+  %% Update Order Status
+  APIGateway->>OrderService: update_order_execution(order_id, status, filled_quantity, avg_price)
+  OrderService->>OrderService: Update order in DB, enforce state transitions
+  OrderService-->>APIGateway: Updated Order
+
+  %% Update User Account and Holdings
+  alt Order Fully or Partially Filled
+    APIGateway->>UserService: withdraw_funds(user_id, amount) or deposit_funds(user_id, amount)
+    UserService->>UserService: Update user balance, persist in DB
+    UserService-->>APIGateway: Success/Failure
+    APIGateway->>UserService: update_holdings(user_id, symbol, quantity_change, exec_price)
+    UserService->>UserService: Update holdings, persist in DB
+    UserService-->>APIGateway: Success/Failure
+  else Order Pending or Rejected
+    note over APIGateway: No user update needed
   end
+
+  APIGateway-->>User: HTTP 201 Created (Order details, status, execution info)
+
+  %% Notes
+  note over APIGateway,User: API Gateway orchestrates all steps, handles errors, and returns final result
+  note over APIGateway: All service calls are synchronous HTTP requests, each service validates and persists its own data

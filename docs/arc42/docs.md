@@ -17,7 +17,7 @@ permet aux particuliers et petites entreprises d'accéder à une plateforme de c
 
 | Priorité | Objectif qualité  | Scénario                                              |
 | -------- | ----------------- | ----------------------------------------------------- |
-| 1        | **Disponibilité** | 95,5 % (monolithique)                                 |
+| 1        | **Disponibilité** | 95,5 %                                                |
 | 2        | **Performance**   | Latence (ordre → ACK) ≤ 250 ms & Débit ≥ 800 ordres/s |
 | 3        | **Observabilité** | Logs + métriques (4 Golden Signals)                   |
 
@@ -104,7 +104,7 @@ Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de v
 ### Contexte technique
 
 - **Applications clientes** : Postman, frontend web
-  **Couche API**: Axum (Rust) pour les endpoints RESTful
+- **Couche API**: Axum (Rust) pour les endpoints RESTful
 - **Couche base de données** : PostgreSQL
 - **API Gateway** : Axum (Rust)
 - **Communication** : Requêtes HTTP/HTTPS entre clients, gateway et microservices
@@ -113,11 +113,12 @@ Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de v
 
 <!-- TODO: compléter ça -->
 
-| Problème                  | Approche de solution                |
-| ------------------------- | ----------------------------------- |
-| **Performance**           | Utilisation du langage Rust         |
-| **Gestion des données**   | Base relationnelle (**PostgreSQL**) |
-| **Rapports statistiques** |                                     |
+| Problème                  | Approche de solution                      |
+| ------------------------- | ----------------------------------------- |
+| **Performance**           | Utilisation du langage Rust               |
+| **Gestion des données**   | Base relationnelle (**PostgreSQL**)       |
+| **Observabilité**         | Métriques Promethus et Dashboards Grafana |
+| **Rapports statistiques** |                                           |
 
 ## 5. Vue des blocs de construction
 
@@ -132,16 +133,16 @@ Les interactions passent par la passerelle API qui relaie les requêtes aux micr
 
 ![](level2_domain.svg)
 
-<!-- ### 5.5 Détail du traitement des ordres -->
+### 5.5 Détail du traitement des ordres
 
-<!-- ![](order_processing_detail.svg) -->
+![](order_processing_detail.svg)
 
-<!-- Le flux de traitement des ordres illustre l'architecture réactive : -->
+Le flux de traitement des ordres illustre l'architecture réactive :
 
-<!-- 1. **Réception** via l'interface web (handlers Axum) -->
-<!-- 2. **Validation pré-trade** avec contrôles de risque -->
-<!-- 3. **Traitement asynchrone** dans un pool de threads -->
-<!-- 4. **Persistance** avec gestion des états d'ordre -->
+1. **Réception** via l'interface web (handlers Axum)
+2. **Validation pré-trade** avec contrôles de risque
+3. **Traitement asynchrone** dans un pool de threads
+4. **Persistance** avec gestion des états d'ordre
 
 <!-- ## 6. Vue d'exécution -->
 
