@@ -15,6 +15,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use utoipa::OpenApi;
 use uuid::Uuid;
@@ -368,14 +369,13 @@ pub async fn deposit_funds(
 }
 
 /// Create a new order
-/// Archestrates the full order lifecycle: validation, creation, execution, and updating user holdings.
-/// TODO: needs refactor
+/// Submits order to the order execution orchestrator service for async processing.
 #[utoipa::path(
     post,
     path = "/v1/orders",
     request_body = CreateOrderRequest,
     responses(
-        (status = 201, description = "Order created successfully", body = OrderResponse),
+        (status = 202, description = "Order accepted for processing"),
         (status = 401, description = "Unauthorized"),
         (status = 400, description = "Invalid order request")
     ),
@@ -384,7 +384,6 @@ pub async fn deposit_funds(
     ),
     tag = "orders"
 )]
-#[allow(clippy::too_many_lines)]
 pub async fn create_order(
     State(state): State<AppState>,
     AuthenticatedUser(user_id): AuthenticatedUser,
@@ -392,7 +391,7 @@ pub async fn create_order(
 ) -> ApiResult<impl IntoResponse> {
     info!("User {} creating order: {:?}", user_id, order_request);
 
-    // PRE-TRADE VALIDATION
+    // Basic validation
     if order_request.symbol.is_empty() {
         error!("Order creation failed: Symbol is required");
         return Err(ApiError::BadRequest("Symbol is required".to_string()));
@@ -413,216 +412,19 @@ pub async fn create_order(
         ));
     }
 
-    info!("Running pre-trade validation for user {}", user_id);
-    let validation_result = state
-        .trade_validator
-        .validate_trade(
-            user_id,
-            &order_request.symbol,
-            order_request.quantity,
-            &order_request.order_side,
-            &order_request.order_type,
-        )
-        .await;
+    // Forward to orchestrator for async processing
+    state
+        .orchestrator_client
+        .submit_order(user_id, &order_request)
+        .await?;
 
-    if !validation_result.valid {
-        let error_msg = validation_result
-            .first_error()
-            .map_or_else(|| "Validation failed".to_string(), ToString::to_string);
-
-        error!(
-            "Pre-trade validation failed for user {}: {}",
-            user_id, error_msg
-        );
-
-        // Map validation errors to appropriate HTTP status codes
-        if let Some(first_error) = validation_result.first_error() {
-            use crate::trade_validation::ValidationError;
-            return Err(match first_error {
-                ValidationError::InsufficientFunds { .. }
-                | ValidationError::InsufficientHoldings { .. }
-                | ValidationError::InsufficientBuyingPower { .. }
-                | ValidationError::ShortSellingNotAllowed { .. } => ApiError::Forbidden(error_msg),
-                ValidationError::UserNotVerified { .. } => {
-                    ApiError::Forbidden("User account must be verified to trade".to_string())
-                }
-                ValidationError::InvalidSymbol { .. }
-                | ValidationError::InstrumentNotActive { .. }
-                | ValidationError::InvalidOrderData { .. } => ApiError::BadRequest(error_msg),
-                ValidationError::OrderTooLarge { .. }
-                | ValidationError::OrderTooSmall { .. }
-                | ValidationError::NotionalValueTooLarge { .. }
-                | ValidationError::PriceOutOfRange { .. }
-                | ValidationError::InvalidTickSize { .. }
-                | ValidationError::ConcentrationLimit { .. }
-                | ValidationError::DailyOrderLimitExceeded { .. } => {
-                    ApiError::UnprocessableEntity(error_msg)
-                }
-            });
-        }
-
-        return Err(ApiError::BadRequest(error_msg));
-    }
-
-    // Log any warnings
-    for warning in &validation_result.warnings {
-        warn!("Pre-trade warning for user {}: {}", user_id, warning);
-    }
-
-    info!("Pre-trade validation passed for user {}", user_id);
-
-    // ORDER CREATION AND EXECUTION
-    // Step 1: Create order in Order Service with Pending status
-    let order = match state
-        .order_client
-        .create_order(user_id, &order_request)
-        .await
-    {
-        Ok(o) => o,
-        Err(e) => {
-            error!("Order creation failed for user {}: {}", user_id, e);
-            return Err(e);
-        }
-    };
-    info!("Order {} created with status Pending", order.id);
-
-    // Step 2: Execute order with Market Data Service
-    let execution_request = crate::models::ExecuteOrderRequest {
-        order_id: order.id,
-        symbol: order_request.symbol.clone(),
-        side: order_request.order_side.clone(),
-        order_type: order_request.order_type.clone(),
-        quantity: order_request.quantity,
-    };
-
-    let execution_result = match state
-        .market_data_execution_client
-        .execute_order(execution_request)
-        .await
-    {
-        Ok(result) => result,
-        Err(e) => {
-            error!("Order {} execution failed: {}", order.id, e);
-            // Order exists but execution failed - it remains Pending
-            // Return the order with pending status
-            return Ok((StatusCode::CREATED, Json(order))); // TODO: Retry ?
-        }
-    };
-
-    info!(
-        "Order {} execution result: {:?}, filled: {}/{}, price: {:?}",
-        order.id,
-        execution_result.status,
-        execution_result.filled_quantity,
-        order.quantity,
-        execution_result.average_price
-    );
-
-    // Step 3: Update order with execution results
-    let updated_order = match state
-        .order_client
-        .update_order_execution(
-            order.id,
-            execution_result.status.clone(),
-            execution_result.filled_quantity,
-            execution_result.average_price,
-        )
-        .await
-    {
-        Ok(updated) => updated,
-        Err(e) => {
-            error!(
-                "Failed to update order {} with execution results: {}",
-                order.id, e
-            );
-            // Return original order if update fails
-            return Ok((StatusCode::CREATED, Json(order)));
-        }
-    };
-
-    // Step 4: Update user holdings and balance if order was filled (fully or partially)
-    if matches!(
-        execution_result.status,
-        crate::models::ExecutionStatus::FullyFilled
-            | crate::models::ExecutionStatus::PartiallyFilled
-    ) && let Some(exec_price) = execution_result.average_price
-    {
-        let quantity_change = match order_request.order_side {
-            OrderSide::Buy => execution_result.filled_quantity as i64,
-            OrderSide::Sell => -(execution_result.filled_quantity as i64),
-        };
-
-        // Calculate total transaction amount
-        let transaction_amount = exec_price * execution_result.filled_quantity as f64;
-
-        // Debit/Credit user account based on order side
-        let funds_result = match order_request.order_side {
-            OrderSide::Buy => {
-                state
-                    .user_client
-                    .withdraw_funds(user_id, transaction_amount)
-                    .await
-            }
-            OrderSide::Sell => {
-                state
-                    .user_client
-                    .deposit_funds(user_id, transaction_amount)
-                    .await
-            }
-        };
-
-        if let Err(e) = funds_result {
-            error!(
-                "Failed to {} user {} account for order {}: {}",
-                match order_request.order_side {
-                    OrderSide::Buy => "debit",
-                    OrderSide::Sell => "credit",
-                },
-                user_id,
-                order.id,
-                e
-            );
-            // Do NOT update holdings if funds operation fails
-        } else {
-            info!(
-                "{} ${:.2} {} user {} for {} order {}",
-                match order_request.order_side {
-                    OrderSide::Buy => "Debited",
-                    OrderSide::Sell => "Credited",
-                },
-                transaction_amount,
-                match order_request.order_side {
-                    OrderSide::Buy => "from",
-                    OrderSide::Sell => "to",
-                },
-                user_id,
-                match order_request.order_side {
-                    OrderSide::Buy => "buy",
-                    OrderSide::Sell => "sell",
-                },
-                order.id
-            );
-            // Only update holdings if funds operation succeeded
-            if let Err(e) = state
-                .user_client
-                .update_holdings(user_id, &order_request.symbol, quantity_change, exec_price)
-                .await
-            {
-                error!(
-                    "Failed to update holdings for user {} after order {}: {}",
-                    user_id, order.id, e
-                );
-            } else {
-                info!(
-                    "Updated holdings for user {}: {} {} shares @ ${}",
-                    user_id, quantity_change, order_request.symbol, exec_price
-                );
-            }
-        }
-    }
-
-    info!("Order {} completed successfully", updated_order.id);
-    Ok((StatusCode::CREATED, Json(updated_order)))
+    info!("Order submitted to orchestrator for user {}", user_id);
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(MessageResponse {
+            message: "Order accepted for processing".to_string(),
+        }),
+    ))
 }
 
 /// Get user's orders with pagination and filtering
@@ -777,10 +579,26 @@ pub async fn get_market_price(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    info!("Fetching market price for symbol: {}", symbol);
-    let price = state.market_data_client.get_price(&symbol).await?;
-    info!("Price for {}: {:?}", symbol, price);
-    Ok(Json(price))
+    // Use try_get_with for automatic request coalescing
+    // If multiple requests come in for the same symbol at once,
+    // only ONE will actually fetch from market data service,
+    // and the others will wait and share the result
+    let price = state
+        .price_cache
+        .try_get_with(symbol.clone(), async {
+            // Cache miss - fetch from market data service
+            info!("Fetching market price for symbol: {} (cache miss)", symbol);
+            let price = state.market_data_client.get_price(&symbol).await?;
+            Ok::<_, ApiError>(Arc::new(price))
+        })
+        .await
+        .map_err(|e| match e {
+            // Handle the error from the async block
+            _ => ApiError::ServiceUnavailable(format!("Failed to fetch price: {}", e)),
+        })?;
+
+    debug!("Price for {} retrieved (cached or fresh)", symbol);
+    Ok(Json((*price).clone()))
 }
 
 /// Get current prices for multiple symbols

@@ -6,6 +6,7 @@ pub struct Config {
     pub user_service_url: String,
     pub order_service_url: String,
     pub market_data_service_url: String,
+    pub orchestrator_service_url: String,
     pub jwt_secret: String,
     pub jwt_expiry_hours: i64,
     pub cors_allowed_origins: Vec<String>,
@@ -33,6 +34,8 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:3002".to_string()),
             market_data_service_url: env::var("MARKET_DATA_SERVICE_URL")
                 .unwrap_or_else(|_| "http://localhost:3003".to_string()),
+            orchestrator_service_url: env::var("ORCHESTRATOR_SERVICE_URL")
+                .unwrap_or_else(|_| "http://localhost:3004".to_string()),
             jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| {
                 "your-super-secret-jwt-key-change-this-in-production".to_string()
             }),

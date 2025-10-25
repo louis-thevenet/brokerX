@@ -48,13 +48,12 @@ export class ApiClient {
   /**
    * Register a new user
    */
-  registerUser(email, password, firstname, surname, initialBalance = 10000.0) {
+  registerUser(email, password, firstname, surname) {
     const payload = JSON.stringify({
       email,
       password,
       firstname,
       surname,
-      initial_balance: initialBalance,
     });
 
     const response = http.post(
@@ -311,14 +310,14 @@ export class ApiClient {
     );
 
     check(response, {
-      'create order: status 201': (r) => r.status === 201,
+      'create order: status 202': (r) => r.status === 202,
     });
 
-    if (response.status !== 201) {
+    if (response.status !== 202) {
       console.error(`Failed to create order. Status: ${response.status}, Body: ${response.body}`);
     }
 
-    return response.status === 201 ? response.json() : null;
+    return response.status === 202 ? response.json() : null;
   }
 
   /**

@@ -16,9 +16,17 @@ pub struct UserClient {
 
 impl UserClient {
     pub fn new(base_url: &str) -> Self {
+        // Create client with reasonable timeouts
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(50)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
             base_url: base_url.to_string(),
-            client: Client::new(),
+            client,
         }
     }
 
@@ -300,9 +308,17 @@ pub struct OrderClient {
 
 impl OrderClient {
     pub fn new(base_url: &str) -> Self {
+        // Create client with reasonable timeouts
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(50)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
             base_url: base_url.to_string(),
-            client: Client::new(),
+            client,
         }
     }
 
@@ -539,9 +555,17 @@ pub struct MarketDataClient {
 
 impl MarketDataClient {
     pub fn new(base_url: &str) -> Self {
+        // Create client with increased timeout to prevent timeout errors under load
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30)) // 30 second timeout
+            .connect_timeout(std::time::Duration::from_secs(10)) // 10 second connect timeout
+            .pool_max_idle_per_host(50) // Increase connection pool size
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
             base_url: base_url.to_string(),
-            client: Client::new(),
+            client,
         }
     }
 
@@ -679,9 +703,17 @@ pub struct MarketDataExecutionClient {
 
 impl MarketDataExecutionClient {
     pub fn new(base_url: &str) -> Self {
+        // Create client with reasonable timeouts
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(50)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
         Self {
             base_url: base_url.to_string(),
-            client: Client::new(),
+            client,
         }
     }
 
@@ -726,6 +758,66 @@ impl MarketDataExecutionClient {
             error!("Market data execution error {}: {}", status, error_text);
             Err(ApiError::ServiceUnavailable(format!(
                 "Market data service error {status}: {error_text}"
+            )))
+        }
+    }
+}
+
+// ============================================================================
+// Order Execution Orchestrator Client
+// ============================================================================
+
+pub struct OrchestratorClient {
+    base_url: String,
+    client: Client,
+}
+
+impl OrchestratorClient {
+    pub fn new(base_url: &str) -> Self {
+        // Create client with reasonable timeouts
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_max_idle_per_host(50)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+
+        Self {
+            base_url: base_url.to_string(),
+            client,
+        }
+    }
+
+    /// Submit an order to the orchestrator for async processing
+    pub async fn submit_order(&self, user_id: Uuid, request: &CreateOrderRequest) -> ApiResult<()> {
+        debug!(
+            "Submitting order to orchestrator for user {}: {:?}",
+            user_id, request
+        );
+
+        let response = self
+            .client
+            .post(format!("{}/v1/orders", self.base_url))
+            .json(&json!({
+                "user_id": user_id,
+                "symbol": request.symbol,
+                "quantity": request.quantity,
+                "order_side": request.order_side,
+                "order_type": request.order_type,
+                "price": request.price,
+            }))
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::ACCEPTED {
+            info!("Order accepted by orchestrator for user {}", user_id);
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            error!("Orchestrator error {}: {}", status, error_text);
+            Err(ApiError::ServiceUnavailable(format!(
+                "Orchestrator service error {status}: {error_text}"
             )))
         }
     }

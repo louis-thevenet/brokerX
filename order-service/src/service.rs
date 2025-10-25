@@ -52,6 +52,11 @@ impl OrderService {
         Ok((orders, total))
     }
 
+    pub async fn get_pending_orders(&self) -> Result<Vec<(OrderId, Order)>, OrderError> {
+        debug!("Fetching all pending orders");
+        self.order_repo.get_pending_orders().await
+    }
+
     pub async fn update_order(
         &self,
         order_id: &OrderId,

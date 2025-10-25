@@ -26,9 +26,11 @@ impl MfaService {
     pub async fn initiate_challenge(&self, email: &str) -> ApiResult<String> {
         let challenge_id = Uuid::new_v4().to_string();
         self.provider
-            .generate_otp(challenge_id, email)
+            .generate_otp(challenge_id.clone(), email)
             .await
-            .map_err(Self::map_mfa_error)
+            .map_err(Self::map_mfa_error)?;
+
+        Ok(challenge_id)
     }
 
     /// Verify an MFA challenge with the provided code

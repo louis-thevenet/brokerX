@@ -169,6 +169,91 @@ impl OrderRepository {
         Ok(orders)
     }
 
+    pub async fn get_pending_orders(&self) -> Result<Vec<(OrderId, Order)>, OrderError> {
+        debug!("Getting all pending orders");
+
+        let rows = sqlx::query(
+            r"
+            SELECT 
+                id, client_id, date, symbol, quantity, order_side,
+                order_type_variant, order_type_price,
+                status_variant, status_filled_quantity, status_date,
+                filled_price
+            FROM orders
+            WHERE status_variant = 'Pending'
+            ORDER BY date ASC
+            ",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+
+        let orders: Vec<(OrderId, Order)> = rows
+            .into_iter()
+            .map(|row| {
+                let id: Uuid = row.get("id");
+                let client_id: Uuid = row.get("client_id");
+                let date: DateTime<Utc> = row.get("date");
+                let symbol: String = row.get("symbol");
+                let quantity: i64 = row.get("quantity");
+                let order_side_str: String = row.get("order_side");
+                let order_type_variant: String = row.get("order_type_variant");
+                let order_type_price: Option<f64> = row.get("order_type_price");
+                let status_variant: String = row.get("status_variant");
+                let status_filled_quantity: Option<i64> = row.get("status_filled_quantity");
+                let status_date: Option<DateTime<Utc>> = row.get("status_date");
+                let filled_price: Option<f64> = row.get("filled_price");
+
+                let order_side = match order_side_str.as_str() {
+                    "Buy" => OrderSide::Buy,
+                    "Sell" => OrderSide::Sell,
+                    _ => OrderSide::Buy,
+                };
+
+                let order_type = match order_type_variant.as_str() {
+                    "Market" => OrderType::Market,
+                    "Limit" => OrderType::Limit {
+                        price: order_type_price.unwrap_or(0.0),
+                    },
+                    _ => OrderType::Market,
+                };
+
+                let status = match status_variant.as_str() {
+                    "Pending" => OrderStatus::Pending,
+                    "PartiallyFilled" => OrderStatus::PartiallyFilled {
+                        filled_quantity: status_filled_quantity.unwrap_or(0) as u64,
+                    },
+                    "Filled" => OrderStatus::Filled {
+                        date: status_date.unwrap_or_else(Utc::now),
+                    },
+                    "Rejected" => OrderStatus::Rejected {
+                        date: status_date.unwrap_or_else(Utc::now),
+                    },
+                    "Cancelled" => OrderStatus::Cancelled {
+                        date: status_date.unwrap_or_else(Utc::now),
+                    },
+                    _ => OrderStatus::Pending,
+                };
+
+                Ok((
+                    id,
+                    Order {
+                        client_id,
+                        date,
+                        symbol,
+                        quantity: quantity as u64,
+                        order_side,
+                        order_type,
+                        status,
+                        filled_price,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, OrderError>>()?;
+
+        Ok(orders)
+    }
+
     pub async fn count_orders_by_user(&self, user_id: &UserId) -> Result<i64, OrderError> {
         debug!("Counting orders for user: {}", user_id);
 

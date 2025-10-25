@@ -4,7 +4,8 @@ members = [
     "user-service",
     "order-service",
     "market-data-service",
-    "api_gateway"
+    "api_gateway",
+    "order-execution-orchestrator-service"
 ]
 resolver = "3"
 

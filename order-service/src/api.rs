@@ -462,3 +462,29 @@ pub async fn update_order_execution(
         }
     }
 }
+
+/// Get all pending orders (for orchestrator recovery)
+#[utoipa::path(
+    get,
+    path = "/v1/orders/pending",
+    responses(
+        (status = 200, description = "List of pending orders", body = Vec<OrderResponse>)
+    ),
+    tag = "orders"
+)]
+pub async fn get_pending_orders(State(state): State<AppState>) -> impl IntoResponse {
+    info!("Getting all pending orders for recovery");
+
+    match state.order_service.get_pending_orders().await {
+        Ok(orders) => {
+            info!("Found {} pending orders", orders.len());
+            let order_responses: Vec<OrderResponse> =
+                orders.into_iter().map(OrderResponse::from).collect();
+            Json(order_responses).into_response()
+        }
+        Err(e) => {
+            error!("Error getting pending orders: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
