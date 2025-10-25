@@ -117,10 +117,10 @@ export default function(data) {
     // console.log(`Buy order response for ${symbol}:`, JSON.stringify(buyOrder));
     let buyStatus = buyOrder && buyOrder.status && buyOrder.status.status ? buyOrder.status.status.toLowerCase() : '';
     if (!buyOrder || buyOrder.error) {
-      console.warn(`Buy order failed for ${symbol}: ${buyOrder && buyOrder.message ? buyOrder.message : 'Unknown error'}`);
+      // console.warn(`Buy order failed for ${symbol}: ${buyOrder && buyOrder.message ? buyOrder.message : 'Unknown error'}`);
       continue;
     } else if (buyStatus === 'rejected') {
-      console.warn(`Buy order rejected for ${symbol}: ${buyOrder.reason || JSON.stringify(buyOrder)}`);
+      // console.warn(`Buy order rejected for ${symbol}: ${buyOrder.reason || JSON.stringify(buyOrder)}`);
       continue;
     } else if (buyStatus !== 'filled' && buyStatus !== 'partially_filled') {
       console.warn(`Buy order for ${symbol} not filled (status: ${buyStatus}), skipping sell.`);
@@ -156,9 +156,9 @@ export default function(data) {
         2,
       );
       if (!sellOrder || sellOrder.error) {
-        console.warn(`Sell order failed for ${symbol}: ${sellOrder && sellOrder.message ? sellOrder.message : 'Unknown error'}`);
+        // console.warn(`Sell order failed for ${symbol}: ${sellOrder && sellOrder.message ? sellOrder.message : 'Unknown error'}`);
       } else if (sellOrder.status && sellOrder.status === 'rejected') {
-        console.warn(`Sell order rejected for ${symbol}: ${sellOrder.reason || JSON.stringify(sellOrder)}`);
+        // console.warn(`Sell order rejected for ${symbol}: ${sellOrder.reason || JSON.stringify(sellOrder)}`);
       }
     } else {
       console.log(`Not enough shares to sell ${symbol} after waiting`);
