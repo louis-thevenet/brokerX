@@ -17,7 +17,6 @@ use axum::{
 };
 use axum_prometheus::PrometheusMetricLayer;
 use config::Config;
-use moka::future::Cache;
 use std::sync::Arc;
 use sysinfo::{System, SystemExt};
 use tower_http::cors::{Any, CorsLayer};
@@ -35,7 +34,6 @@ pub struct AppState {
     pub orchestrator_client: Arc<clients::OrchestratorClient>,
     pub mfa_service: mfa_service::MfaService,
     pub trade_validator: Arc<trade_validation::TradeValidator>,
-    pub price_cache: Cache<String, Arc<serde_json::Value>>,
 }
 
 #[tokio::main]
@@ -78,13 +76,6 @@ async fn main() -> anyhow::Result<()> {
         validation_config,
     ));
 
-    // This cache is shared across all requests to reduce load on market-data service
-    // market updates every 3s
-    let price_cache = Cache::builder()
-        .max_capacity(100)
-        .time_to_live(std::time::Duration::from_millis(2800))
-        .build();
-
     let app_state = AppState {
         config: config.clone(),
         user_client,
@@ -94,7 +85,6 @@ async fn main() -> anyhow::Result<()> {
         orchestrator_client,
         mfa_service,
         trade_validator,
-        price_cache,
     };
 
     let app = create_router(app_state);

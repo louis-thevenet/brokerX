@@ -14,7 +14,11 @@ impl OrderService {
         db_config: &DatabaseConfig,
     ) -> color_eyre::Result<Self> {
         let pool = PgPoolOptions::new()
-            .max_connections(100)
+            .max_connections(250)
+            .min_connections(25)
+            .acquire_timeout(std::time::Duration::from_secs(5))
+            .idle_timeout(std::time::Duration::from_secs(300))
+            .max_lifetime(std::time::Duration::from_secs(1800))
             .connect(&db_config.database_url)
             .await?;
 

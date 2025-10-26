@@ -3,7 +3,10 @@
 /// Follows the Repository pattern to abstract database access
 use crate::models::MarketPrice;
 use chrono::{DateTime, Utc};
+use moka::future::Cache;
 use sqlx::PgPool;
+use std::sync::Arc;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -19,15 +22,30 @@ pub type Result<T> = std::result::Result<T, RepositoryError>;
 #[derive(Clone)]
 pub struct MarketDataRepository {
     pool: PgPool,
+    price_cache: Cache<String, Arc<MarketPrice>>,
 }
 
 impl MarketDataRepository {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        // Cache prices for 5 seconds to reduce DB load during high throughput
+        // Market prices update every 3s, so 5s cache still gives fresh data
+        let price_cache = Cache::builder()
+            .max_capacity(1000)
+            .time_to_live(Duration::from_millis(5000))
+            .initial_capacity(100)
+            .build();
+
+        Self { pool, price_cache }
     }
 
-    /// Get the latest price for a specific symbol
+    /// Get the latest price for a specific symbol (with caching)
     pub async fn get_latest_price(&self, symbol: &str) -> Result<MarketPrice> {
+        // Check cache first
+        if let Some(cached_price) = self.price_cache.get(symbol).await {
+            return Ok((*cached_price).clone());
+        }
+
+        // Use covering index for fast lookup - PostgreSQL will use index-only scan
         let price = sqlx::query_as::<_, MarketPrice>(
             r#"
             SELECT id, symbol, price, open, high, low, volume, timestamp
@@ -41,6 +59,9 @@ impl MarketDataRepository {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| RepositoryError::NotFound(symbol.to_string()))?;
+
+        // Cache for future requests
+        self.price_cache.insert(symbol.to_string(), Arc::new(price.clone())).await;
 
         Ok(price)
     }
@@ -167,6 +188,9 @@ impl MarketDataRepository {
         .execute(&self.pool)
         .await?;
 
+        // Invalidate cache for this symbol
+        self.price_cache.invalidate(&price.symbol).await;
+
         Ok(id)
     }
 
@@ -242,21 +266,26 @@ impl MarketDataRepository {
         Ok(new_state)
     }
 
-    /// Update market simulation state after an execution
+    /// Update market simulation state after an execution (with UPSERT to avoid race conditions)
     pub async fn update_market_state(
         &self,
         symbol: &str,
         execution_price: f64,
         volume: i64,
     ) -> Result<()> {
+        // Use UPSERT to handle both INSERT and UPDATE atomically - avoids SELECT before INSERT
         sqlx::query(
             r#"
-            UPDATE market_simulation_state
-            SET last_execution_price = $2,
+            INSERT INTO market_simulation_state
+            (symbol, current_volatility, trend_direction, last_execution_price, 
+             last_execution_time, daily_volume, execution_count)
+            VALUES ($1, 0.02, 0.0, $2, $3, $4, 1)
+            ON CONFLICT (symbol) 
+            DO UPDATE SET
+                last_execution_price = $2,
                 last_execution_time = $3,
-                daily_volume = daily_volume + $4,
-                execution_count = execution_count + 1
-            WHERE symbol = $1
+                daily_volume = market_simulation_state.daily_volume + $4,
+                execution_count = market_simulation_state.execution_count + 1
             "#,
         )
         .bind(symbol)

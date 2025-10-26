@@ -22,12 +22,14 @@ impl ApiGatewayClient {
         // Note: API Gateway has caching, but cache misses require upstream calls
         // so we need reasonable timeouts to allow cache population
         let client = Client::builder()
-            .pool_max_idle_per_host(100)
+            .pool_max_idle_per_host(150)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
-            .timeout(std::time::Duration::from_secs(2)) // Increased for cache misses
-            .connect_timeout(std::time::Duration::from_millis(500)) // Increased for reliability
+            .timeout(std::time::Duration::from_secs(5)) // Increased for cache misses under load
+            .connect_timeout(std::time::Duration::from_secs(1))
             .tcp_keepalive(std::time::Duration::from_secs(60))
             .http2_adaptive_window(true)
+            .http2_keep_alive_interval(std::time::Duration::from_secs(10))
+            .http2_keep_alive_timeout(std::time::Duration::from_secs(20))
             .build()
             .expect("Failed to build HTTP client");
 

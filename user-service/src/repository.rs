@@ -242,26 +242,57 @@ impl UserRepoExt for UserRepository {
     }
 
     async fn withdraw_from_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        let mut user = self
-            .get_user_by_id(user_id)
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-        if user.balance < amount {
-            return Err(AuthError::NotEnoughMoneyError);
+        // Optimized: Single UPDATE query with balance check
+        let query = format!(
+            "UPDATE {} SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING id",
+            self.table_name
+        );
+        
+        let result = sqlx::query(&query)
+            .bind(amount)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
+
+        match result {
+            Some(_) => Ok(()),
+            None => {
+                // Check if user exists or just insufficient funds
+                let user_exists = sqlx::query(&format!("SELECT id FROM {} WHERE id = $1", self.table_name))
+                    .bind(user_id)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(AuthError::UserRepo)?
+                    .is_some();
+                
+                if user_exists {
+                    Err(AuthError::NotEnoughMoneyError)
+                } else {
+                    Err(AuthError::UserNotFound)
+                }
+            }
         }
-        user.balance -= amount;
-        self.update_user(user_id, &user).await?;
-        Ok(())
     }
 
     async fn deposit_to_user(&self, user_id: &UserId, amount: f64) -> Result<(), AuthError> {
-        let mut user = self
-            .get_user_by_id(user_id)
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-        user.balance += amount;
-        self.update_user(user_id, &user).await?;
-        Ok(())
+        // Optimized: Single UPDATE query
+        let query = format!(
+            "UPDATE {} SET balance = balance + $1 WHERE id = $2 RETURNING id",
+            self.table_name
+        );
+        
+        let result = sqlx::query(&query)
+            .bind(amount)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
+
+        match result {
+            Some(_) => Ok(()),
+            None => Err(AuthError::UserNotFound),
+        }
     }
 
     async fn update_user_holding(

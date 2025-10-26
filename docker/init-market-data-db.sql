@@ -17,9 +17,14 @@ CREATE TABLE IF NOT EXISTS market_prices (
 );
 
 -- Create indexes for efficient querying
+-- CRITICAL: Covering index for fast latest price lookups
+CREATE INDEX IF NOT EXISTS idx_market_prices_symbol_timestamp_covering 
+    ON market_prices(symbol, timestamp DESC) 
+    INCLUDE (id, price, open, high, low, volume);
+
+-- Fallback indexes
 CREATE INDEX IF NOT EXISTS idx_market_prices_symbol ON market_prices(symbol);
 CREATE INDEX IF NOT EXISTS idx_market_prices_timestamp ON market_prices(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_market_prices_symbol_timestamp ON market_prices(symbol, timestamp DESC);
 
 -- Insert some initial sample data for testing
 INSERT INTO market_prices (id, symbol, price, open, high, low, volume, timestamp)

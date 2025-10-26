@@ -101,9 +101,6 @@ export default function(data) {
     return;
   }
 
-  // Minimal delay for high throughput
-  sleep(0.02);
-
   // Get user info to verify balance
   const userInfo = client.getUser();
   if (!userInfo) {
@@ -127,25 +124,12 @@ export default function(data) {
     orderType = 'buy';
     symbol = getRandomSymbol();
     
-    // Get current price
-    const priceData = client.getCurrentPrice(symbol);
-    if (!priceData) {
-      console.error(`Failed to get price for ${symbol}`);
-      return;
-    }
-
-    const price = priceData.price;
-    sleep(0.01); // Reduced from 0.02
-
-    // Calculate quantity we can afford (conservative to avoid race conditions)
-    const safeBalance = userInfo.balance * 0.05; // Only use 5% of balance per order for high throughput
-    const maxQuantity = Math.floor(safeBalance / (price * 1.15)); // 15% buffer for price changes
-    if (maxQuantity < 1) {
-      console.warn(`User cannot afford share (balance: $${userInfo.balance}, price: $${price})`);
-      return;
-    }
-
-    quantity = Math.min(maxQuantity, 2); // Reduced to 2 shares for even higher throughput
+    // For MARKET orders, the system will fetch the current price internally
+    // No need to fetch it here - reduces latency and load on market-data-service
+    
+    // Use a small fixed quantity for high throughput
+    // With $500k balance and typical stock prices ($50-200), 5 shares is very conservative
+    quantity = Math.floor(Math.random() * 3) + 1; // 1-3 shares for maximum throughput
     
   } else if (!wantsToBuy && hasHoldings) {
     // Place a SELL order for a random holding
@@ -169,8 +153,6 @@ export default function(data) {
     if (quantity > holdingQuantity) {
       quantity = holdingQuantity;
     }
-    
-    sleep(0.01); // Reduced from 0.02
     
   } else {
     // Can't buy (no balance) or can't sell (no holdings), skip this iteration

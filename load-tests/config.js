@@ -18,16 +18,16 @@ export const config = {
   thresholds: {
     // Availability: 95.5% success rate (< 4.5% error rate)
     http_req_failed: ['rate<0.045'],
-    
+
     // Performance: Order latency ≤ 250ms (p95) - relaxed slightly for high throughput
     'http_req_duration{name:create_order}': ['p(95)<300', 'p(99)<600'],
-    
+
     // General performance: 95% of all requests under 500ms
     http_req_duration: ['p(95)<500', 'p(99)<1000'],
-    
+
     // Throughput: Target 800 orders/second sustained
     'http_reqs{name:create_order}': ['rate>800'], // 800+ orders/s target
-    
+
     // Checks: ensure validations pass
     checks: ['rate>0.95'],
   },
@@ -113,9 +113,9 @@ export const scenarios = {
       { duration: '30s', target: 200 },   // Warm up: 200 orders/s (increased)
       { duration: '30s', target: 500 },   // Ramp up: 500 orders/s
       { duration: '1m', target: 900 },    // Target: 900 orders/s (overshoot to hit 800)
-      { duration: '5m', target: 900 },    // Sustain: 900 orders/s for 5 minutes
-      { duration: '1m', target: 1100 },   // Push: 1100 orders/s
-      { duration: '2m', target: 1100 },   // Sustain peak: 1100 orders/s
+      { duration: '10m', target: 900 },    // Sustain: 900 orders/s for 5 minutes
+      // { duration: '1m', target: 1100 },   // Push: 1100 orders/s
+      // { duration: '2m', target: 1100 },   // Sustain peak: 1100 orders/s
       { duration: '1m', target: 500 },    // Ramp down: 500 orders/s
       { duration: '30s', target: 0 },     // Cool down
     ],

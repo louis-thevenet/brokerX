@@ -274,7 +274,6 @@ pub async fn deposit_funds(
     Path(user_id): Path<Uuid>,
     Json(payload): Json<DepositRequest>,
 ) -> impl IntoResponse {
-    info!("Depositing funds to user ID: {}", user_id);
     if payload.amount <= 0.0 {
         return (StatusCode::BAD_REQUEST, "Deposit amount must be positive").into_response();
     }
@@ -284,16 +283,13 @@ pub async fn deposit_funds(
         .await
     {
         Ok(()) => {
-            info!("Deposited {} to user {}", payload.amount, user_id);
-            let user = state.user_service.get_user(&user_id).await;
-            match user {
-                Ok(Some(user)) => Json(user).into_response(),
-                Ok(None) => StatusCode::NOT_FOUND.into_response(),
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            }
+            // Return success without fetching user again (saves 1 DB query)
+            (StatusCode::OK, Json(serde_json::json!({
+                "message": "Deposit successful",
+                "amount": payload.amount
+            }))).into_response()
         }
         Err(e) => {
-            info!("Error depositing funds to user {}: {}", user_id, e);
             match e {
                 AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
                 _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -323,7 +319,6 @@ pub async fn withdraw_funds(
     Path(user_id): Path<Uuid>,
     Json(payload): Json<WithdrawRequest>,
 ) -> impl IntoResponse {
-    info!("Withdrawing funds from user ID: {}", user_id);
     if payload.amount <= 0.0 {
         return (StatusCode::BAD_REQUEST, "Withdraw amount must be positive").into_response();
     }
@@ -333,16 +328,13 @@ pub async fn withdraw_funds(
         .await
     {
         Ok(()) => {
-            info!("Withdrew {} from user {}", payload.amount, user_id);
-            let user = state.user_service.get_user(&user_id).await;
-            match user {
-                Ok(Some(user)) => Json(user).into_response(),
-                Ok(None) => StatusCode::NOT_FOUND.into_response(),
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            }
+            // Return success without fetching user again (saves 1 DB query)
+            (StatusCode::OK, Json(serde_json::json!({
+                "message": "Withdrawal successful",
+                "amount": payload.amount
+            }))).into_response()
         }
         Err(e) => {
-            info!("Error withdrawing funds from user {}: {}", user_id, e);
             match e {
                 AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
                 AuthError::NotEnoughMoneyError => {

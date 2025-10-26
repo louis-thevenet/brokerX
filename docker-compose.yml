@@ -23,6 +23,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=300"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=2MB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
 
   # Order Service Database
   order-db:
@@ -44,6 +70,34 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=400"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=2MB"
+      - "-c"
+      - "min_wal_size=2GB"
+      - "-c"
+      - "max_wal_size=8GB"
+      - "-c"
+      - "synchronous_commit=off"
 
   # Market Data Service Database
   market-data-db:
@@ -65,6 +119,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=250"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=2MB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
 
   # ========== MICROSERVICES ==========
 
@@ -88,6 +168,14 @@ services:
       user-db:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # Order Service
   order-service:
@@ -109,6 +197,14 @@ services:
       order-db:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # Market Data Service
   market-data-service:
@@ -130,6 +226,14 @@ services:
       market-data-db:
         condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 768M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # Order Execution Orchestrator Service
   order-execution-orchestrator-service:
@@ -159,6 +263,14 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # API Gateway
   api-gateway:
@@ -189,6 +301,14 @@ services:
       - market-data-service
       - order-execution-orchestrator-service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # Web Application
   webapp:

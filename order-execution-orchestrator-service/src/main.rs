@@ -145,7 +145,8 @@ async fn main() -> color_eyre::Result<()> {
 
     // Create concurrency limiter for order processing
     // Limit concurrent order processing to prevent overwhelming downstream services
-    let concurrency_limiter = Arc::new(Semaphore::new(1000));
+    // Reduced from 1000 to 300 for better stability at high throughput
+    let concurrency_limiter = Arc::new(Semaphore::new(300));
 
     let app_state = AppState {
         order_queue: Arc::new(tx.clone()),

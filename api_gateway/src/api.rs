@@ -15,7 +15,6 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json},
 };
-use std::sync::Arc;
 use tracing::{debug, error, info};
 use utoipa::OpenApi;
 use uuid::Uuid;
@@ -579,23 +578,8 @@ pub async fn get_market_price(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    // Use try_get_with for automatic request coalescing
-    // If multiple requests come in for the same symbol at once,
-    // only ONE will actually fetch from market data service,
-    // and the others will wait and share the result
-    let price = state
-        .price_cache
-        .try_get_with(symbol.clone(), async {
-            // Cache miss - fetch from market data service
-            info!("Fetching market price for symbol: {} (cache miss)", symbol);
-            let price = state.market_data_client.get_price(&symbol).await?;
-            Ok::<_, ApiError>(Arc::new(price))
-        })
-        .await
-        .map_err(|e| ApiError::ServiceUnavailable(format!("Failed to fetch price: {e}")))?;
-
-    debug!("Price for {} retrieved (cached or fresh)", symbol);
-    Ok(Json((*price).clone()))
+    let price = state.market_data_client.get_price(&symbol).await?;
+    Ok(Json(price))
 }
 
 /// Get current prices for multiple symbols
@@ -627,7 +611,7 @@ pub async fn get_market_prices(
             .collect();
 
         if !symbols.is_empty() {
-            info!(
+            debug!(
                 "Fetching market prices for {} specific symbols",
                 symbols.len()
             );

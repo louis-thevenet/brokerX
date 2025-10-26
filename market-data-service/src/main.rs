@@ -117,18 +117,27 @@ async fn main() -> color_eyre::Result<()> {
     // Initialize database connection using sqlx
     info!("Connecting to database...");
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(100)
+        .max_connections(150)
+        .min_connections(15)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .idle_timeout(std::time::Duration::from_secs(300))
+        .max_lifetime(std::time::Duration::from_secs(1800))
         .connect(&market_data_db_url)
         .await?;
     info!("Database connection established");
 
-    // Run migrations
-    info!("Running database migrations...");
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
-    info!("Migrations completed successfully");
+    // Run migrations if migration directory exists
+    info!("Checking for database migrations...");
+    let migration_result = sqlx::migrate!("./migrations").run(&pool).await;
+    match migration_result {
+        Ok(_) => info!("Migrations completed successfully"),
+        Err(sqlx::migrate::MigrateError::VersionMissing(_)) => {
+            info!("No migrations found or migrations already applied");
+        }
+        Err(e) => {
+            return Err(color_eyre::eyre::eyre!("Migration error: {}", e));
+        }
+    }
 
     let repository = MarketDataRepository::new(pool);
     let market_data_service = Arc::new(MarketDataService::new(repository.clone()));

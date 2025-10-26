@@ -126,11 +126,7 @@ pub async fn get_current_price(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
 ) -> Result<Json<MarketPriceResponse>, ApiError> {
-    use tracing::{debug, info};
-    info!("Getting current price for symbol: {}", symbol);
     let price = state.market_data_service.get_current_price(&symbol).await?;
-    debug!("Price for {}: ${:.2}", symbol, price.price);
-    info!("Current price retrieved successfully");
     Ok(Json(price))
 }
 
@@ -151,7 +147,6 @@ pub async fn get_current_prices(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<MarketPricesResponse>, ApiError> {
-    use tracing::{debug, info};
     if let Some(symbols_str) = params.get("symbols") {
         let symbols: Vec<String> = symbols_str
             .split(',')
@@ -159,25 +154,14 @@ pub async fn get_current_prices(
             .filter(|s| !s.is_empty())
             .collect();
 
-        info!("Getting current prices for {} symbols", symbols.len());
-        debug!("Symbols: {:?}", symbols);
         let prices = state
             .market_data_service
             .get_current_prices(symbols)
             .await?;
-        info!(
-            "Current prices retrieved successfully: {} prices",
-            prices.count
-        );
         Ok(Json(prices))
     } else {
         // If no symbols specified, return all available prices
-        info!("Getting all current prices");
         let prices = state.market_data_service.get_all_current_prices().await?;
-        info!(
-            "All current prices retrieved successfully: {} prices",
-            prices.count
-        );
         Ok(Json(prices))
     }
 }

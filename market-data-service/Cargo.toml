@@ -23,6 +23,7 @@ utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }
 axum-prometheus = "0.9.0"
 sysinfo = "0.29"
+moka = { version = "0.12", features = ["future"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

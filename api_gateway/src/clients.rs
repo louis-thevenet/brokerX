@@ -9,6 +9,19 @@ use serde_json::json;
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
+fn create_optimized_client() -> Client {
+    Client::builder()
+        .timeout(std::time::Duration::from_secs(5)) // Reduced from 10s - fail fast
+        .connect_timeout(std::time::Duration::from_secs(2)) // Reduced from 3s
+        .pool_max_idle_per_host(100)
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .http2_keep_alive_interval(std::time::Duration::from_secs(10))
+        .http2_keep_alive_timeout(std::time::Duration::from_secs(20))
+        .build()
+        .unwrap_or_else(|_| Client::new())
+}
+
 pub struct UserClient {
     base_url: String,
     client: Client,
@@ -16,17 +29,9 @@ pub struct UserClient {
 
 impl UserClient {
     pub fn new(base_url: &str) -> Self {
-        // Create client with reasonable timeouts
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .pool_max_idle_per_host(50)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
         Self {
             base_url: base_url.to_string(),
-            client,
+            client: create_optimized_client(),
         }
     }
 
@@ -154,7 +159,7 @@ impl UserClient {
     }
 
     pub async fn deposit_funds(&self, user_id: Uuid, amount: f64) -> ApiResult<UserResponse> {
-        debug!("Depositing {} to user ID {}", amount, user_id);
+        // First, do the deposit (which no longer returns user data)
         let response = self
             .client
             .post(format!("{}/v1/users/{}/deposit", self.base_url, user_id))
@@ -163,16 +168,13 @@ impl UserClient {
             .await?;
 
         if response.status().is_success() {
-            let user: UserServiceResponse = response.json().await?;
-            info!("Deposited funds. New balance: {}", user.balance);
-            Ok(user.into())
+            // Deposit succeeded, now fetch user to return to client
+            self.get_user(user_id).await
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
-            error!("User not found for deposit");
             Err(ApiError::NotFound)
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Error depositing funds: {}", error_text);
             Err(ApiError::ServiceUnavailable(format!(
                 "User service error {status}: {error_text}"
             )))
@@ -180,7 +182,7 @@ impl UserClient {
     }
 
     pub async fn withdraw_funds(&self, user_id: Uuid, amount: f64) -> ApiResult<UserResponse> {
-        debug!("Withdrawing {} from user ID {}", amount, user_id);
+        // First, do the withdrawal (which no longer returns user data)
         let response = self
             .client
             .post(format!("{}/v1/users/{}/withdraw", self.base_url, user_id))
@@ -189,20 +191,16 @@ impl UserClient {
             .await?;
 
         if response.status().is_success() {
-            let user: UserServiceResponse = response.json().await?;
-            info!("Withdrew funds. New balance: {}", user.balance);
-            Ok(user.into())
+            // Withdrawal succeeded, now fetch user to return to client
+            self.get_user(user_id).await
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
-            error!("User not found for withdrawal");
             Err(ApiError::NotFound)
         } else if response.status() == reqwest::StatusCode::BAD_REQUEST {
             let error_text = response.text().await.unwrap_or_default();
-            error!("Withdrawal failed: {}", error_text);
             Err(ApiError::BadRequest(error_text))
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            error!("Error withdrawing funds: {}", error_text);
             Err(ApiError::ServiceUnavailable(format!(
                 "User service error {status}: {error_text}"
             )))
@@ -308,17 +306,9 @@ pub struct OrderClient {
 
 impl OrderClient {
     pub fn new(base_url: &str) -> Self {
-        // Create client with reasonable timeouts
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .pool_max_idle_per_host(50)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
         Self {
             base_url: base_url.to_string(),
-            client,
+            client: create_optimized_client(),
         }
     }
 
@@ -555,23 +545,14 @@ pub struct MarketDataClient {
 
 impl MarketDataClient {
     pub fn new(base_url: &str) -> Self {
-        // Create client with increased timeout to prevent timeout errors under load
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30)) // 30 second timeout
-            .connect_timeout(std::time::Duration::from_secs(10)) // 10 second connect timeout
-            .pool_max_idle_per_host(50) // Increase connection pool size
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
         Self {
             base_url: base_url.to_string(),
-            client,
+            client: create_optimized_client(),
         }
     }
 
     /// Get current price for a specific symbol
     pub async fn get_price(&self, symbol: &str) -> ApiResult<serde_json::Value> {
-        debug!("Fetching price for symbol: {}", symbol);
         let response = self
             .client
             .get(format!("{}/v1/prices/{}", self.base_url, symbol))
@@ -579,11 +560,9 @@ impl MarketDataClient {
             .await?;
 
         if response.status().is_success() {
-            info!("Price data retrieved successfully for symbol: {}", symbol);
             let price = response.json().await?;
             Ok(price)
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
-            error!("Symbol not found: {}", symbol);
             Err(ApiError::NotFound)
         } else {
             let status = response.status();
@@ -597,7 +576,6 @@ impl MarketDataClient {
 
     /// Get current prices for multiple symbols
     pub async fn get_prices(&self, symbols: &[String]) -> ApiResult<serde_json::Value> {
-        debug!("Fetching prices for symbols: {:?}", symbols);
         let symbols_param = symbols.join(",");
         let response = self
             .client
@@ -620,7 +598,6 @@ impl MarketDataClient {
 
     /// Get all current prices (no symbol filter)
     pub async fn get_all_prices(&self) -> ApiResult<serde_json::Value> {
-        debug!("Fetching all available prices");
         let response = self
             .client
             .get(format!("{}/v1/prices", self.base_url))
@@ -703,17 +680,9 @@ pub struct MarketDataExecutionClient {
 
 impl MarketDataExecutionClient {
     pub fn new(base_url: &str) -> Self {
-        // Create client with reasonable timeouts
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .pool_max_idle_per_host(50)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
         Self {
             base_url: base_url.to_string(),
-            client,
+            client: create_optimized_client(),
         }
     }
 
@@ -774,17 +743,9 @@ pub struct OrchestratorClient {
 
 impl OrchestratorClient {
     pub fn new(base_url: &str) -> Self {
-        // Create client with reasonable timeouts
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .pool_max_idle_per_host(50)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-
         Self {
             base_url: base_url.to_string(),
-            client,
+            client: create_optimized_client(),
         }
     }
 
