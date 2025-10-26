@@ -36,20 +36,20 @@ impl IntoResponse for ApiError {
 
 impl From<reqwest::Error> for ApiError {
     fn from(err: reqwest::Error) -> Self {
-        ApiError::ServiceUnavailable(format!("Request failed: {}", err))
+        ApiError::ServiceUnavailable(format!("Request failed: {err}"))
     }
 }
 
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ApiError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            ApiError::BadRequest(msg) => write!(f, "Bad request: {msg}"),
             ApiError::Unauthorized => write!(f, "Unauthorized"),
-            ApiError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
+            ApiError::Forbidden(msg) => write!(f, "Forbidden: {msg}"),
             ApiError::NotFound => write!(f, "Not found"),
-            ApiError::UnprocessableEntity(msg) => write!(f, "Unprocessable entity: {}", msg),
-            ApiError::InternalServerError(msg) => write!(f, "Internal server error: {}", msg),
-            ApiError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {}", msg),
+            ApiError::UnprocessableEntity(msg) => write!(f, "Unprocessable entity: {msg}"),
+            ApiError::InternalServerError(msg) => write!(f, "Internal server error: {msg}"),
+            ApiError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {msg}"),
         }
     }
 }

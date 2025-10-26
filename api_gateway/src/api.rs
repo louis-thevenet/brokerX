@@ -16,7 +16,7 @@ use axum::{
     response::{IntoResponse, Json},
 };
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use utoipa::OpenApi;
 use uuid::Uuid;
 
@@ -592,10 +592,7 @@ pub async fn get_market_price(
             Ok::<_, ApiError>(Arc::new(price))
         })
         .await
-        .map_err(|e| match e {
-            // Handle the error from the async block
-            _ => ApiError::ServiceUnavailable(format!("Failed to fetch price: {}", e)),
-        })?;
+        .map_err(|e| ApiError::ServiceUnavailable(format!("Failed to fetch price: {e}")))?;
 
     debug!("Price for {} retrieved (cached or fresh)", symbol);
     Ok(Json((*price).clone()))

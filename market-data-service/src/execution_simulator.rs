@@ -99,10 +99,10 @@ impl ExecutionSimulator {
         };
 
         // Update market state if order was filled
-        // if execution.status != ExecutionStatus::Rejected {
-        //     self.update_market_after_execution(&symbol, &execution, &request)
-        //         .await?;
-        // }
+        if execution.status != ExecutionStatus::Rejected {
+            self.update_market_after_execution(&symbol, &execution, &request)
+                .await?;
+        }
 
         // Log final result
         match execution.status {

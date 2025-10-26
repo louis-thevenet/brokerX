@@ -1,5 +1,5 @@
-use api::{create_order, update_order};
-use axum::routing::{get, post, put};
+use api::create_order;
+use axum::routing::{get, post};
 use axum::{response::IntoResponse, Router};
 use axum_prometheus::PrometheusMetricLayer;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -25,7 +25,14 @@ pub struct OrchestratorMetrics {
     queue_length: Arc<AtomicUsize>,
 }
 
+impl Default for OrchestratorMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OrchestratorMetrics {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             queue_length: Arc::new(AtomicUsize::new(0)),
@@ -49,6 +56,7 @@ impl OrchestratorMetrics {
         metrics::counter!("orchestrator_orders_processed_total").increment(1);
     }
 
+    #[must_use]
     pub fn get_queue_length(&self) -> usize {
         self.queue_length.load(Ordering::Relaxed)
     }
@@ -199,7 +207,6 @@ async fn main() -> color_eyre::Result<()> {
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
     let app = Router::new()
         .route("/v1/orders", post(create_order))
-        .route("/v1/orders/{id}", put(update_order))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/v1/metrics", get(|| async move { metric_handle.render() }))
         .route("/v1/metrics/system", get(system_metrics_handler))

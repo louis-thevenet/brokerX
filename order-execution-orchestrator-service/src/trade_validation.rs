@@ -538,7 +538,7 @@ impl TradeValidator {
         market_price: f64,
     ) -> Result<(), ValidationError> {
         let mut portfolio_value = user.balance;
-        for (_sym, holding) in &user.holdings {
+        for holding in user.holdings.values() {
             portfolio_value += holding.quantity as f64 * holding.average_cost;
         }
 

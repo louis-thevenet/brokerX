@@ -1,24 +1,16 @@
 use crate::{
-    models::{CreateOrderRequest, OrderResponse, OrderSide, UpdateOrderRequest},
+    models::{CreateOrderRequest, OrderSide},
     AppState,
 };
 use axum::http::StatusCode;
-use axum::{
-    extract::{Path, State},
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, response::IntoResponse, Json};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-/// Type alias for the order queue sender
-pub type OrderQueueSender = mpsc::UnboundedSender<(Uuid, CreateOrderRequest)>;
-
 /// Create a new order (async, enqueue for processing)
 /// Archestrates the full order lifecycle: validation, creation, execution, and updating user holdings.
-/// TODO: needs refactor
 #[utoipa::path(
     post,
     path = "/v1/orders",
@@ -51,32 +43,6 @@ pub async fn create_order(
     StatusCode::ACCEPTED
 }
 
-/// Update an existing order
-#[utoipa::path(
-    put,
-    path = "/v1/orders/{id}",
-    params(
-        ("id" = Uuid, Path, description = "Order ID")
-    ),
-    request_body = UpdateOrderRequest,
-    responses(
-        (status = 200, description = "Order updated successfully", body = OrderResponse),
-        (status = 401, description = "Unauthorized"),
-        (status = 404, description = "Order not found")
-    ),
-    security(
-        ("bearer_auth" = [])
-    ),
-    tag = "orders"
-)]
-pub async fn update_order(
-    State(state): State<AppState>,
-    Path(order_id): Path<Uuid>,
-    Json(update_request): Json<UpdateOrderRequest>,
-) -> impl IntoResponse {
-}
-
-/// Background order processor (to be started in main.rs)
 /// Processes orders concurrently for maximum throughput
 pub async fn order_processor(
     mut rx: mpsc::UnboundedReceiver<(Uuid, CreateOrderRequest)>,
@@ -108,10 +74,6 @@ pub async fn order_processor(
             // Process the order asynchronously with full validation and execution
             if let Err(e) = process_single_order(user_id, order_request, &state_clone).await {
                 error!("Failed to process order for user {}: {}", user_id, e);
-                // In production, you might want to:
-                // - Retry the order with exponential backoff
-                // - Store failed orders in a dead letter queue
-                // - Send notification to the user about the failure
             } else {
                 // Record successful processing
                 state_clone.metrics.record_order_processed();
@@ -155,7 +117,7 @@ async fn process_single_order(
             "Pre-trade validation failed for user {}: {}",
             user_id, error_msg
         );
-        return Err(format!("Validation failed: {}", error_msg));
+        return Err(format!("Validation failed: {error_msg}"));
     }
 
     // Log any warnings
@@ -174,7 +136,7 @@ async fn process_single_order(
         Ok(o) => o,
         Err(e) => {
             error!("Order creation failed for user {}: {}", user_id, e);
-            return Err(format!("Order creation failed: {}", e));
+            return Err(format!("Order creation failed: {e}"));
         }
     };
     info!("Order {} created with status Pending", order.id);
@@ -197,7 +159,7 @@ async fn process_single_order(
         Err(e) => {
             error!("Order {} execution failed: {}", order.id, e);
             // Order remains Pending - could be retried later
-            return Err(format!("Execution failed: {}", e));
+            return Err(format!("Execution failed: {e}"));
         }
     };
 
@@ -227,7 +189,7 @@ async fn process_single_order(
                 "Failed to update order {} with execution results: {}",
                 order.id, e
             );
-            return Err(format!("Failed to update order: {}", e));
+            return Err(format!("Failed to update order: {e}"));
         }
     };
 
@@ -278,7 +240,7 @@ async fn process_single_order(
                 // - Trigger a reconciliation process
                 // - Alert operations team
                 // - Possibly reverse the trade
-                return Err(format!("Failed to update user funds: {}", e));
+                return Err(format!("Failed to update user funds: {e}"));
             }
 
             info!(
@@ -310,7 +272,7 @@ async fn process_single_order(
                     "Failed to update holdings for user {} after order {}: {}",
                     user_id, order.id, e
                 );
-                return Err(format!("Failed to update holdings: {}", e));
+                return Err(format!("Failed to update holdings: {e}"));
             }
 
             info!(
