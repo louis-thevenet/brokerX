@@ -1,5 +1,5 @@
 use crate::{
-    models::{CreateOrderRequest, OrderSide},
+    models::{CreateOrderRequest, OrderAcceptedResponse, OrderSide},
     AppState,
 };
 use axum::http::StatusCode;
@@ -10,17 +10,54 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Create a new order (async, enqueue for processing)
-/// Archestrates the full order lifecycle: validation, creation, execution, and updating user holdings.
+/// 
+/// Orchestrates the full order lifecycle including:
+/// - Pre-trade validation (balance, holdings, risk checks)
+/// - Order execution via market data service
+/// - Post-trade settlement (updating user funds and holdings)
+/// 
+/// The order is queued for asynchronous processing and a 202 Accepted response is returned immediately.
+/// The actual order processing happens in the background with the following steps:
+/// 1. Pre-trade validation against user balance and holdings
+/// 2. Order execution in the market
+/// 3. Post-trade settlement updating user account and holdings
+/// 
+/// Orders may be rejected during validation or execution. Check the order status via the order service.
 #[utoipa::path(
     post,
     path = "/v1/orders",
-    request_body = CreateOrderRequest,
-    responses(
-        (status = 202, description = "Order accepted for processing"),
-        (status = 401, description = "Unauthorized"),
-        (status = 400, description = "Invalid order request")
+    request_body(
+        content = CreateOrderRequest,
+        description = "Order details including symbol, quantity, side, and type",
+        example = json!({
+            "user_id": "550e8400-e29b-41d4-a716-446655440000",
+            "symbol": "AAPL",
+            "quantity": 10,
+            "order_side": "buy",
+            "order_type": {"type": "limit", "price": 150.50},
+            "price": 150.50
+        })
     ),
-    security(("bearer_auth" = [])),
+    responses(
+        (status = 202, description = "Order accepted for processing", body = OrderAcceptedResponse,
+            example = json!({
+                "order_id": "123e4567-e89b-12d3-a456-426614174000",
+                "message": "Order queued for processing"
+            })
+        ),
+        (status = 400, description = "Invalid order request",
+            example = json!({
+                "error": "Invalid order request",
+                "message": "Quantity must be greater than 0"
+            })
+        ),
+        (status = 500, description = "Internal server error",
+            example = json!({
+                "error": "Failed to queue order",
+                "message": "Order queue is full"
+            })
+        )
+    ),
     tag = "orders"
 )]
 pub async fn create_order(

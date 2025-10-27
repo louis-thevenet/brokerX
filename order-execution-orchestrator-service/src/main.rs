@@ -81,8 +81,46 @@ pub struct AppState {
 }
 
 #[derive(OpenApi)]
-#[openapi(paths(), components(schemas()), tags())]
+#[openapi(
+    paths(
+        api::create_order,
+        system_metrics_handler,
+    ),
+    components(
+        schemas(
+            models::CreateOrderRequest,
+            models::OrderAcceptedResponse,
+            models::OrderResponse,
+            models::UpdateOrderRequest,
+            models::OrderSide,
+            models::OrderType,
+            models::OrderStatus,
+        )
+    ),
+    tags(
+        (name = "orders", description = "Order orchestration and execution endpoints"),
+        (name = "metrics", description = "Service metrics and monitoring")
+    ),
+    info(
+        title = "Order Execution Orchestrator Service API",
+        version = "1.0.0",
+        description = "Service that orchestrates order execution lifecycle including validation, creation, execution, and settlement. This service handles the complete order processing workflow including pre-trade validation, execution, and post-trade settlement.",
+    ),
+    servers(
+        (url = "http://localhost:8083", description = "Local development server"),
+        (url = "http://order-execution-orchestrator-service:8083", description = "Docker service")
+    )
+)]
 struct ApiDoc;
+/// System metrics endpoint for monitoring CPU, RAM, and thread usage
+#[utoipa::path(
+    get,
+    path = "/v1/metrics/system",
+    responses(
+        (status = 200, description = "System metrics in Prometheus format", content_type = "text/plain")
+    ),
+    tag = "metrics"
+)]
 async fn system_metrics_handler() -> axum::response::Response {
     let mut sys = System::new_all();
     sys.refresh_all();
@@ -128,22 +166,18 @@ async fn main() -> color_eyre::Result<()> {
         &config.market_data_service_url,
     ));
 
-    // NEW: API Gateway client for cached price lookups
     let api_gateway_client = Arc::new(clients::ApiGatewayClient::new(&config.api_gateway_url));
     info!(
         "Using API Gateway at {} for cached price lookups",
         config.api_gateway_url
     );
 
-    // Initialize trade validator - now uses API Gateway for price lookups
     let trade_validator = Arc::new(trade_validation::TradeValidator::new(
         user_client.clone(),
         api_gateway_client.clone(), // Changed from market_data_client
         trade_validation::ValidationConfig::default(),
     ));
 
-    // Create order queue with larger capacity for recovery
-    // Using unbounded channel to handle large number of pending orders on startup
     let (tx, rx) = mpsc::unbounded_channel();
 
     // Initialize metrics
