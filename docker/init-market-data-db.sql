@@ -26,6 +26,22 @@ CREATE INDEX IF NOT EXISTS idx_market_prices_symbol_timestamp_covering
 CREATE INDEX IF NOT EXISTS idx_market_prices_symbol ON market_prices(symbol);
 CREATE INDEX IF NOT EXISTS idx_market_prices_timestamp ON market_prices(timestamp DESC);
 
+-- Create the market_simulation_state table for tracking execution simulation state
+CREATE TABLE IF NOT EXISTS market_simulation_state (
+    symbol VARCHAR(10) PRIMARY KEY,
+    current_volatility DOUBLE PRECISION NOT NULL DEFAULT 0.02 CHECK (current_volatility >= 0),
+    trend_direction DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    last_execution_price DOUBLE PRECISION,
+    last_execution_time TIMESTAMP WITH TIME ZONE,
+    daily_volume BIGINT NOT NULL DEFAULT 1000000 CHECK (daily_volume >= 0),
+    execution_count INTEGER NOT NULL DEFAULT 0 CHECK (execution_count >= 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Create index for efficient simulation state lookups
+CREATE INDEX IF NOT EXISTS idx_market_simulation_state_symbol ON market_simulation_state(symbol);
+
 -- Insert some initial sample data for testing
 INSERT INTO market_prices (id, symbol, price, open, high, low, volume, timestamp)
 VALUES 

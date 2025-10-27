@@ -61,7 +61,9 @@ impl MarketDataRepository {
         .ok_or_else(|| RepositoryError::NotFound(symbol.to_string()))?;
 
         // Cache for future requests
-        self.price_cache.insert(symbol.to_string(), Arc::new(price.clone())).await;
+        self.price_cache
+            .insert(symbol.to_string(), Arc::new(price.clone()))
+            .await;
 
         Ok(price)
     }

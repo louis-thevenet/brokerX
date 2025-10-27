@@ -15,11 +15,11 @@ permet aux particuliers et petites entreprises d'accéder à une plateforme de c
 
 ### Objectifs qualité
 
-| Priorité | Objectif qualité  | Scénario                                              |
-| -------- | ----------------- | ----------------------------------------------------- |
-| 1        | **Disponibilité** | 95,5 %                                                |
-| 2        | **Performance**   | Latence (ordre → ACK) ≤ 250 ms & Débit ≥ 800 ordres/s |
-| 3        | **Observabilité** | Logs + métriques (4 Golden Signals)                   |
+| Priorité | Objectif qualité  | Scénario                                                  |
+| -------- | ----------------- | --------------------------------------------------------- |
+| 1        | **Disponibilité** | 95,5 %                                                    |
+| 2        | **Performance**   | Latence P95 (ordre → ACK) ≤ 250 ms & Débit ≥ 800 ordres/s |
+| 3        | **Observabilité** | Logs + métriques (4 Golden Signals)                       |
 
 ### Parties prenantes (Stakeholders)
 

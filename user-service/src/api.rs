@@ -284,17 +284,19 @@ pub async fn deposit_funds(
     {
         Ok(()) => {
             // Return success without fetching user again (saves 1 DB query)
-            (StatusCode::OK, Json(serde_json::json!({
-                "message": "Deposit successful",
-                "amount": payload.amount
-            }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "message": "Deposit successful",
+                    "amount": payload.amount
+                })),
+            )
+                .into_response()
         }
-        Err(e) => {
-            match e {
-                AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
-                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-            }
-        }
+        Err(e) => match e {
+            AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
+            _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
     }
 }
 
@@ -329,20 +331,22 @@ pub async fn withdraw_funds(
     {
         Ok(()) => {
             // Return success without fetching user again (saves 1 DB query)
-            (StatusCode::OK, Json(serde_json::json!({
-                "message": "Withdrawal successful",
-                "amount": payload.amount
-            }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "message": "Withdrawal successful",
+                    "amount": payload.amount
+                })),
+            )
+                .into_response()
         }
-        Err(e) => {
-            match e {
-                AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
-                AuthError::NotEnoughMoneyError => {
-                    (StatusCode::BAD_REQUEST, "Insufficient funds").into_response()
-                }
-                _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => match e {
+            AuthError::UserNotFound => StatusCode::NOT_FOUND.into_response(),
+            AuthError::NotEnoughMoneyError => {
+                (StatusCode::BAD_REQUEST, "Insufficient funds").into_response()
             }
-        }
+            _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        },
     }
 }
 

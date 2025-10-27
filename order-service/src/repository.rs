@@ -27,14 +27,23 @@ impl OrderRepository {
         };
 
         // Extract status fields
-        let (status_variant, status_filled_quantity, status_date) = match &order.status {
-            OrderStatus::Pending => ("Pending", None, None),
+        let (status_variant, reason, status_filled_quantity, status_date) = match &order.status {
+            OrderStatus::Pending => ("Pending", None, None, None),
             OrderStatus::PartiallyFilled { filled_quantity } => {
-                ("PartiallyFilled", Some(*filled_quantity as i64), None)
+                ("PartiallyFilled", None, Some(*filled_quantity as i64), None)
             }
-            OrderStatus::Filled { date } => ("Filled", Some(order.quantity as i64), Some(*date)),
-            OrderStatus::Rejected { date } => ("Rejected", None, Some(*date)),
-            OrderStatus::Cancelled { date } => ("Cancelled", None, Some(*date)),
+            OrderStatus::Filled { date } => {
+                ("Filled", None, Some(order.quantity as i64), Some(*date))
+            }
+            OrderStatus::Rejected { date, reason } => {
+                ("Rejected", reason.clone(), None, Some(*date))
+            }
+            OrderStatus::Cancelled { date } => (
+                "Cancelled",
+                Some("By the client".to_string()),
+                None,
+                Some(*date),
+            ),
         };
 
         let order_side_str = match order.order_side {
@@ -48,8 +57,8 @@ impl OrderRepository {
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
                 status_variant, status_filled_quantity, status_date,
-                filled_price
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                status_reason, filled_price
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ",
         )
         .bind(order_id)
@@ -63,6 +72,7 @@ impl OrderRepository {
         .bind(status_variant)
         .bind(status_filled_quantity)
         .bind(status_date)
+        .bind(reason)
         .bind(order.filled_price)
         .execute(&self.pool)
         .await
@@ -90,7 +100,7 @@ impl OrderRepository {
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
                 status_variant, status_filled_quantity, status_date,
-                filled_price
+                status_reason, filled_price
             FROM orders
             WHERE client_id = $1
             ORDER BY date DESC
@@ -118,6 +128,7 @@ impl OrderRepository {
                 let status_variant: String = row.get("status_variant");
                 let status_filled_quantity: Option<i64> = row.get("status_filled_quantity");
                 let status_date: Option<DateTime<Utc>> = row.get("status_date");
+                let status_reason: Option<String> = row.get("status_reason");
                 let filled_price: Option<f64> = row.get("filled_price");
 
                 let order_side = match order_side_str.as_str() {
@@ -143,6 +154,7 @@ impl OrderRepository {
                         date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Rejected" => OrderStatus::Rejected {
+                        reason: status_reason,
                         date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Cancelled" => OrderStatus::Cancelled {
@@ -178,7 +190,7 @@ impl OrderRepository {
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
                 status_variant, status_filled_quantity, status_date,
-                filled_price
+                status_reason, filled_price
             FROM orders
             WHERE status_variant = 'Pending'
             ORDER BY date ASC
@@ -202,6 +214,7 @@ impl OrderRepository {
                 let status_variant: String = row.get("status_variant");
                 let status_filled_quantity: Option<i64> = row.get("status_filled_quantity");
                 let status_date: Option<DateTime<Utc>> = row.get("status_date");
+                let status_reason: Option<String> = row.get("status_reason");
                 let filled_price: Option<f64> = row.get("filled_price");
 
                 let order_side = match order_side_str.as_str() {
@@ -227,6 +240,7 @@ impl OrderRepository {
                         date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Rejected" => OrderStatus::Rejected {
+                        reason: status_reason,
                         date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Cancelled" => OrderStatus::Cancelled {
@@ -282,7 +296,7 @@ impl OrderRepository {
                 id, client_id, date, symbol, quantity, order_side,
                 order_type_variant, order_type_price,
                 status_variant, status_filled_quantity, status_date,
-                filled_price
+                status_reason, filled_price
             FROM orders
             WHERE id = $1
             ",
@@ -305,6 +319,7 @@ impl OrderRepository {
                 let status_variant: String = row.get("status_variant");
                 let status_filled_quantity: Option<i64> = row.get("status_filled_quantity");
                 let status_date: Option<DateTime<Utc>> = row.get("status_date");
+                let status_reason: Option<String> = row.get("status_reason");
                 let filled_price: Option<f64> = row.get("filled_price");
 
                 let order_side = match order_side_str.as_str() {
@@ -330,6 +345,7 @@ impl OrderRepository {
                         date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Rejected" => OrderStatus::Rejected {
+                        reason: status_reason,
                         date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Cancelled" => OrderStatus::Cancelled {
@@ -364,14 +380,18 @@ impl OrderRepository {
         };
 
         // Extract status fields
-        let (status_variant, status_filled_quantity, status_date) = match &order.status {
-            OrderStatus::Pending => ("Pending", None, None),
+        let (status_variant, reason, status_filled_quantity, status_date) = match &order.status {
+            OrderStatus::Pending => ("Pending", None, None, None),
             OrderStatus::PartiallyFilled { filled_quantity } => {
-                ("PartiallyFilled", Some(*filled_quantity as i64), None)
+                ("PartiallyFilled", None, Some(*filled_quantity as i64), None)
             }
-            OrderStatus::Filled { date } => ("Filled", Some(order.quantity as i64), Some(*date)),
-            OrderStatus::Rejected { date } => ("Rejected", None, Some(*date)),
-            OrderStatus::Cancelled { date } => ("Cancelled", None, Some(*date)),
+            OrderStatus::Filled { date } => {
+                ("Filled", None, Some(order.quantity as i64), Some(*date))
+            }
+            OrderStatus::Rejected { date, reason } => {
+                ("Rejected", reason.clone(), None, Some(*date))
+            }
+            OrderStatus::Cancelled { date } => ("Cancelled", None, None, Some(*date)),
         };
 
         let order_side_str = match order.order_side {
@@ -393,7 +413,8 @@ impl OrderRepository {
                 status_variant = $9,
                 status_filled_quantity = $10,
                 status_date = $11,
-                filled_price = $12
+                status_reason = $12,
+                filled_price = $13
             WHERE id = $1
             ",
         )
@@ -408,6 +429,7 @@ impl OrderRepository {
         .bind(status_variant)
         .bind(status_filled_quantity)
         .bind(status_date)
+        .bind(reason)
         .bind(order.filled_price)
         .execute(&self.pool)
         .await
@@ -428,10 +450,10 @@ impl OrderRepository {
         debug!("Updating order {} status to {:?}", order_id, status);
 
         // Extract status fields
-        let (status_variant, status_filled_quantity, status_date) = match &status {
-            OrderStatus::Pending => ("Pending", None, None),
+        let (status_variant, status_reason, status_filled_quantity, status_date) = match &status {
+            OrderStatus::Pending => ("Pending", None, None, None),
             OrderStatus::PartiallyFilled { filled_quantity } => {
-                ("PartiallyFilled", Some(*filled_quantity as i64), None)
+                ("PartiallyFilled", None, Some(*filled_quantity as i64), None)
             }
             OrderStatus::Filled { date } => {
                 // For Filled status, we need to get the order quantity
@@ -440,10 +462,12 @@ impl OrderRepository {
                     .get_order_by_id(order_id)
                     .await?
                     .ok_or(OrderError::OrderNotFound)?;
-                ("Filled", Some(order.quantity as i64), Some(*date))
+                ("Filled", None, Some(order.quantity as i64), Some(*date))
             }
-            OrderStatus::Rejected { date } => ("Rejected", None, Some(*date)),
-            OrderStatus::Cancelled { date } => ("Cancelled", None, Some(*date)),
+            OrderStatus::Rejected { date, reason } => {
+                ("Rejected", reason.clone(), None, Some(*date))
+            }
+            OrderStatus::Cancelled { date } => ("Cancelled", None, None, Some(*date)),
         };
 
         let result = sqlx::query(
@@ -452,13 +476,15 @@ impl OrderRepository {
             SET 
                 status_variant = $2,
                 status_filled_quantity = $3,
-                status_date = $4
+                status_reason = $4,
+                status_date = $5
             WHERE id = $1
             ",
         )
         .bind(order_id)
         .bind(status_variant)
         .bind(status_filled_quantity)
+        .bind(status_reason)
         .bind(status_date)
         .execute(&self.pool)
         .await

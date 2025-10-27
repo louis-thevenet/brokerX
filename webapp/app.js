@@ -428,9 +428,10 @@ async function placeOrder(event) {
     console.log('Order response headers:', response.headers);
     
     if (response.ok) {
-      const order = await response.json();
-      console.log('Order created:', order);
-      showMessage('trading-message', `Order placed successfully! Order ID: ${order.id}`);
+      const result = await response.json();
+      console.log('Order created:', result);
+      // API now returns OrderAcceptedResponse with order_id
+      showMessage('trading-message', `${result.message} - Order ID: ${result.order_id}`);
       // Clear form
       document.getElementById('order-symbol').value = '';
       document.getElementById('order-quantity').value = '';
@@ -551,7 +552,8 @@ function formatOrderStatus(status) {
     return `Cancelled (${date})`;
   } else if (status.status === 'rejected') {
     const date = new Date(status.date).toLocaleString();
-    return `Rejected (${date})`;
+    const reason = status.reason ? `: ${status.reason}` : '';
+    return `Rejected (${date})${reason}`;
   } else if (status.status === 'partially_filled') {
     return `Partially Filled (${status.filled_quantity})`;
   }

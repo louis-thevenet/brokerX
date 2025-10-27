@@ -23,6 +23,13 @@ pub struct MessageResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct OrderAcceptedResponse {
+    #[schema(value_type = String, format = Uuid)]
+    pub order_id: Uuid,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ErrorResponse {
     pub error: String,
     pub message: String,
@@ -217,6 +224,7 @@ pub enum OrderStatus {
     Rejected {
         #[schema(value_type = String)]
         date: DateTime<Utc>,
+        reason: Option<String>,
     },
     Cancelled {
         #[schema(value_type = String)]
@@ -398,10 +406,19 @@ pub(crate) enum OrderTypeInternal {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum OrderStatusInternal {
     Pending,
-    PartiallyFilled { filled_quantity: u64 },
-    Filled { date: DateTime<Utc> },
-    Rejected { date: DateTime<Utc> },
-    Cancelled { date: DateTime<Utc> },
+    PartiallyFilled {
+        filled_quantity: u64,
+    },
+    Filled {
+        date: DateTime<Utc>,
+    },
+    Rejected {
+        date: DateTime<Utc>,
+        reason: Option<String>,
+    },
+    Cancelled {
+        date: DateTime<Utc>,
+    },
 }
 
 // ============================================================================
@@ -481,7 +498,9 @@ impl From<OrderStatusInternal> for OrderStatus {
                 OrderStatus::PartiallyFilled { filled_quantity }
             }
             OrderStatusInternal::Filled { date } => OrderStatus::Filled { date },
-            OrderStatusInternal::Rejected { date } => OrderStatus::Rejected { date },
+            OrderStatusInternal::Rejected { date, reason } => {
+                OrderStatus::Rejected { date, reason }
+            }
             OrderStatusInternal::Cancelled { date } => OrderStatus::Cancelled { date },
         }
     }

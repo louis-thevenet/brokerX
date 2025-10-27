@@ -484,10 +484,11 @@ impl OrderClient {
         execution_status: crate::models::ExecutionStatus,
         filled_quantity: u64,
         filled_price: Option<f64>,
+        rejection_reason: Option<String>,
     ) -> ApiResult<OrderResponse> {
         debug!(
-            "Updating order {} execution: status={:?}, filled={}, price={:?}",
-            order_id, execution_status, filled_quantity, filled_price
+            "Updating order {} execution: status={:?}, filled={}, price={:?}, reason={:?}",
+            order_id, execution_status, filled_quantity, filled_price, rejection_reason
         );
 
         // Map execution status to order status
@@ -499,7 +500,7 @@ impl OrderClient {
                 json!({"status": "partially_filled", "filled_quantity": filled_quantity})
             }
             crate::models::ExecutionStatus::Rejected => {
-                json!({"status": "rejected", "date": chrono::Utc::now()})
+                json!({"status": "rejected", "date": chrono::Utc::now(), "reason": rejection_reason})
             }
         };
 

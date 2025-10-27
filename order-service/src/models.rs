@@ -26,10 +26,19 @@ pub enum OrderType {
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum OrderStatus {
     Pending,
-    PartiallyFilled { filled_quantity: u64 },
-    Filled { date: DateTime<Utc> },
-    Rejected { date: DateTime<Utc> },
-    Cancelled { date: DateTime<Utc> },
+    PartiallyFilled {
+        filled_quantity: u64,
+    },
+    Filled {
+        date: DateTime<Utc>,
+    },
+    Rejected {
+        date: DateTime<Utc>,
+        reason: Option<String>,
+    },
+    Cancelled {
+        date: DateTime<Utc>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

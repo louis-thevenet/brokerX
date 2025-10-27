@@ -64,7 +64,13 @@ impl OrchestratorMetrics {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub order_queue: Arc<mpsc::UnboundedSender<(uuid::Uuid, crate::models::CreateOrderRequest)>>,
+    pub order_queue: Arc<
+        mpsc::UnboundedSender<(
+            uuid::Uuid,
+            crate::models::CreateOrderRequest,
+            Option<uuid::Uuid>,
+        )>,
+    >,
     pub user_client: Arc<clients::UserClient>,
     pub order_client: Arc<clients::OrderClient>,
     pub market_data_client: Arc<clients::MarketDataClient>,
@@ -145,8 +151,7 @@ async fn main() -> color_eyre::Result<()> {
 
     // Create concurrency limiter for order processing
     // Limit concurrent order processing to prevent overwhelming downstream services
-    // Reduced from 1000 to 300 for better stability at high throughput
-    let concurrency_limiter = Arc::new(Semaphore::new(300));
+    let concurrency_limiter = Arc::new(Semaphore::new(1000));
 
     let app_state = AppState {
         order_queue: Arc::new(tx.clone()),
@@ -187,7 +192,8 @@ async fn main() -> color_eyre::Result<()> {
                     models::OrderType::Market => None,
                 },
             };
-            if let Err(e) = tx.send((order.client_id, order_request)) {
+            // For recovery, we pass None for order_id since the order is already created
+            if let Err(e) = tx.send((order.client_id, order_request, None)) {
                 tracing::error!("Failed to enqueue pending order {}: {}", order.id, e);
             } else {
                 metrics.increment_queue();

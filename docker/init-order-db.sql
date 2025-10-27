@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS orders (
     status_variant VARCHAR(30) NOT NULL CHECK (status_variant IN ('Pending', 'PartiallyFilled', 'Filled', 'Rejected', 'Cancelled')),
     status_filled_quantity BIGINT,
     status_date TIMESTAMPTZ,
+    status_reason TEXT,
     filled_price DOUBLE PRECISION,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -379,10 +379,11 @@ impl OrderClient {
         execution_status: ExecutionStatus,
         filled_quantity: u64,
         filled_price: Option<f64>,
+        rejection_reason: Option<String>,
     ) -> ApiResult<OrderResponse> {
         debug!(
-            "Updating order {} execution: {:?}, qty: {}, price: {:?}",
-            order_id, execution_status, filled_quantity, filled_price
+            "Updating order {} execution: {:?}, qty: {}, price: {:?}, reason: {:?}",
+            order_id, execution_status, filled_quantity, filled_price, rejection_reason
         );
 
         let status = match execution_status {
@@ -396,7 +397,8 @@ impl OrderClient {
             }),
             ExecutionStatus::Rejected => json!({
                 "status": "rejected",
-                "date": chrono::Utc::now().to_rfc3339()
+                "date": chrono::Utc::now().to_rfc3339(),
+                "reason": rejection_reason
             }),
             ExecutionStatus::Pending => json!({
                 "status": "pending"
@@ -527,14 +529,40 @@ impl MarketDataClient {
             .send()
             .await?;
 
-        if response.status().is_success() {
+        let status = response.status();
+
+        // Both 200 (success) and 422 (rejected) return valid ExecutionResult
+        if status.is_success() || status == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
             let result: ExecutionResult = response.json().await?;
-            info!("Order execution result: {:?}", result);
+
+            // Log appropriately based on execution status
+            match result.status {
+                ExecutionStatus::FullyFilled | ExecutionStatus::PartiallyFilled => {
+                    info!(
+                        "Order {} executed: {:?}, filled {} shares @ ${:.2}",
+                        result.order_id,
+                        result.status,
+                        result.filled_quantity,
+                        result.average_price.unwrap_or(0.0)
+                    );
+                }
+                ExecutionStatus::Rejected => {
+                    info!(
+                        "Order {} rejected: {}",
+                        result.order_id,
+                        result.message.as_deref().unwrap_or("Unknown reason")
+                    );
+                }
+                ExecutionStatus::Pending => {
+                    info!("Order {} pending", result.order_id);
+                }
+            }
+
             Ok(result)
         } else {
-            let status = response.status();
+            // Only treat actual errors (5xx, 4xx except 422) as failures
             let error_text = response.text().await.unwrap_or_default();
-            error!("Order execution failed: {error_text}");
+            error!("Order execution error: {error_text}");
             Err(ApiError::ServiceUnavailable(format!(
                 "Market data service error {status}: {error_text}"
             )))

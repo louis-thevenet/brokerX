@@ -247,7 +247,7 @@ impl UserRepoExt for UserRepository {
             "UPDATE {} SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING id",
             self.table_name
         );
-        
+
         let result = sqlx::query(&query)
             .bind(amount)
             .bind(user_id)
@@ -259,13 +259,14 @@ impl UserRepoExt for UserRepository {
             Some(_) => Ok(()),
             None => {
                 // Check if user exists or just insufficient funds
-                let user_exists = sqlx::query(&format!("SELECT id FROM {} WHERE id = $1", self.table_name))
-                    .bind(user_id)
-                    .fetch_optional(&self.pool)
-                    .await
-                    .map_err(AuthError::UserRepo)?
-                    .is_some();
-                
+                let user_exists =
+                    sqlx::query(&format!("SELECT id FROM {} WHERE id = $1", self.table_name))
+                        .bind(user_id)
+                        .fetch_optional(&self.pool)
+                        .await
+                        .map_err(AuthError::UserRepo)?
+                        .is_some();
+
                 if user_exists {
                     Err(AuthError::NotEnoughMoneyError)
                 } else {
@@ -281,7 +282,7 @@ impl UserRepoExt for UserRepository {
             "UPDATE {} SET balance = balance + $1 WHERE id = $2 RETURNING id",
             self.table_name
         );
-        
+
         let result = sqlx::query(&query)
             .bind(amount)
             .bind(user_id)

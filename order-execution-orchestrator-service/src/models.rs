@@ -76,3 +76,10 @@ pub struct UpdateOrderRequest {
     pub quantity: Option<u64>,
     pub order_type: Option<OrderType>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct OrderAcceptedResponse {
+    #[schema(value_type = String, format = Uuid)]
+    pub order_id: Uuid,
+    pub message: String,
+}

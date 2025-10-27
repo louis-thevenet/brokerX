@@ -5,10 +5,10 @@ use crate::middleware::AuthenticatedUser;
 use crate::models::{
     CreateOrderRequest, DepositRequest, ErrorResponse, HealthResponse, HoldingResponse,
     LoginRequest, LoginResponse, LogoutRequest, MarketPriceResponse, MarketPricesResponse,
-    MessageResponse, MfaChallengeResponse, OrderResponse, OrderSide, OrderStatus, OrderType,
-    PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest, RegisterResponse,
-    SymbolsResponse, UpdateOrderRequest, UpdateUserRequest, UserResponse, VerifyMfaRequest,
-    VerifyMfaResponse,
+    MessageResponse, MfaChallengeResponse, OrderAcceptedResponse, OrderResponse, OrderSide,
+    OrderStatus, OrderType, PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest,
+    RegisterResponse, SymbolsResponse, UpdateOrderRequest, UpdateUserRequest, UserResponse,
+    VerifyMfaRequest, VerifyMfaResponse,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -62,6 +62,7 @@ use uuid::Uuid;
             PaginatedResponse<OrderResponse>,
             PaginationInfo,
             MessageResponse,
+            OrderAcceptedResponse,
             MfaChallengeResponse,
             VerifyMfaRequest,
             VerifyMfaResponse,
@@ -374,7 +375,7 @@ pub async fn deposit_funds(
     path = "/v1/orders",
     request_body = CreateOrderRequest,
     responses(
-        (status = 202, description = "Order accepted for processing"),
+        (status = 202, description = "Order accepted for processing", body = OrderAcceptedResponse),
         (status = 401, description = "Unauthorized"),
         (status = 400, description = "Invalid order request")
     ),
@@ -411,16 +412,43 @@ pub async fn create_order(
         ));
     }
 
-    // Forward to orchestrator for async processing
-    state
-        .orchestrator_client
-        .submit_order(user_id, &order_request)
+    // Step 1: Create order in order-service (persists as Pending)
+    let order = state
+        .order_client
+        .create_order(user_id, &order_request)
         .await?;
 
-    info!("Order submitted to orchestrator for user {}", user_id);
+    info!(
+        "Order {} created in order-service for user {}",
+        order.id, user_id
+    );
+
+    // Step 2: Submit to orchestrator for async processing (best effort)
+    // If orchestrator is down, order remains Pending and will be recovered on startup
+    match state
+        .orchestrator_client
+        .submit_order(user_id, &order_request)
+        .await
+    {
+        Ok(_) => {
+            info!(
+                "Order {} submitted to orchestrator for user {}",
+                order.id, user_id
+            );
+        }
+        Err(e) => {
+            // Log the error but don't fail the request - order is already persisted
+            error!(
+                "Failed to submit order {} to orchestrator: {}. Order will be processed on orchestrator recovery.",
+                order.id, e
+            );
+        }
+    }
+
     Ok((
         StatusCode::ACCEPTED,
-        Json(MessageResponse {
+        Json(OrderAcceptedResponse {
+            order_id: order.id,
             message: "Order accepted for processing".to_string(),
         }),
     ))
