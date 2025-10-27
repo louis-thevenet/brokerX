@@ -751,10 +751,18 @@ impl OrchestratorClient {
     }
 
     /// Submit an order to the orchestrator for async processing
-    pub async fn submit_order(&self, user_id: Uuid, request: &CreateOrderRequest) -> ApiResult<()> {
+    ///
+    /// If order_id is provided, it will be passed to the orchestrator to skip the expensive
+    /// get_pending_orders() lookup, dramatically improving performance at high throughput.
+    pub async fn submit_order(
+        &self,
+        user_id: Uuid,
+        request: &CreateOrderRequest,
+        order_id: Option<Uuid>,
+    ) -> ApiResult<()> {
         debug!(
-            "Submitting order to orchestrator for user {}: {:?}",
-            user_id, request
+            "Submitting order to orchestrator for user {} (order_id: {:?}): {:?}",
+            user_id, order_id, request
         );
 
         let response = self
@@ -767,12 +775,16 @@ impl OrchestratorClient {
                 "order_side": request.order_side,
                 "order_type": request.order_type,
                 "price": request.price,
+                "order_id": order_id,
             }))
             .send()
             .await?;
 
         if response.status() == reqwest::StatusCode::ACCEPTED {
-            info!("Order accepted by orchestrator for user {}", user_id);
+            info!(
+                "Order {:?} accepted by orchestrator for user {}",
+                order_id, user_id
+            );
             Ok(())
         } else {
             let status = response.status();

@@ -77,6 +77,11 @@ pub struct CreateOrderRequest {
     /// Price is required for limit orders, ignored for market orders
     #[schema(example = 150.50)]
     pub price: Option<f64>,
+    /// Order ID (optional) - if provided, skip order lookup and use this ID directly
+    /// This eliminates the expensive get_pending_orders() call
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, format = Uuid, example = "123e4567-e89b-12d3-a456-426614174000")]
+    pub order_id: Option<Uuid>,
 }
 
 /// Complete order information returned by the service

@@ -1,30 +1,41 @@
 use crate::error::{ApiError, ApiResult};
 use crate::models::{CreateOrderRequest, OrderResponse, OrderSide, OrderType};
+use dashmap::DashMap;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing::{debug, error, info};
 use uuid::Uuid;
 
 // ============================================================================
-// API Gateway Client (for cached prices)
+// API Gateway Client (with aggressive price caching)
 // ============================================================================
+
+/// Cached price entry with timestamp
+#[derive(Clone, Debug)]
+struct CachedPrice {
+    price: MarketPrice,
+    cached_at: Instant,
+}
 
 pub struct ApiGatewayClient {
     base_url: String,
     client: Client,
+    /// Price cache - 4.5 second TTL (market updates every 5s, so we're safe)
+    price_cache: Arc<DashMap<String, CachedPrice>>,
+    cache_ttl: Duration,
 }
 
 impl ApiGatewayClient {
     pub fn new(base_url: &str) -> Self {
         // Configure HTTP client for high performance
-        // Note: API Gateway has caching, but cache misses require upstream calls
-        // so we need reasonable timeouts to allow cache population
         let client = Client::builder()
             .pool_max_idle_per_host(150)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
-            .timeout(std::time::Duration::from_secs(5)) // Increased for cache misses under load
+            .timeout(std::time::Duration::from_secs(5))
             .connect_timeout(std::time::Duration::from_secs(1))
             .tcp_keepalive(std::time::Duration::from_secs(60))
             .http2_adaptive_window(true)
@@ -36,42 +47,76 @@ impl ApiGatewayClient {
         Self {
             base_url: base_url.to_string(),
             client,
+            price_cache: Arc::new(DashMap::new()),
+            cache_ttl: Duration::from_millis(4500), // 4.5s cache (market updates every 5s)
         }
     }
 
-    /// Get price from API Gateway (uses cached prices with 100ms TTL)
+    /// Get price with aggressive caching (4.5s TTL)
+    /// Since market data updates every 5 seconds, we can safely cache for 4.5s
     pub async fn get_price(&self, symbol: &str) -> ApiResult<MarketPrice> {
+        // Check cache first
+        if let Some(cached) = self.price_cache.get(symbol) {
+            if cached.cached_at.elapsed() < self.cache_ttl {
+                debug!(
+                    "Cache HIT for {} (age: {:?})",
+                    symbol,
+                    cached.cached_at.elapsed()
+                );
+                return Ok(cached.price.clone());
+            }
+            debug!(
+                "Cache EXPIRED for {} (age: {:?})",
+                symbol,
+                cached.cached_at.elapsed()
+            );
+        } else {
+            debug!("Cache MISS for {}", symbol);
+        }
+
+        // Cache miss or expired - fetch from API Gateway
         let url = format!("{}/v1/market/prices/{}", self.base_url, symbol);
-        info!("📡 Fetching price for {} from API Gateway: {}", symbol, url);
+        debug!("📡 Fetching price for {} from API Gateway: {}", symbol, url);
 
         let response = match self.client.get(&url).send().await {
             Ok(resp) => {
                 info!(
-                    "✅ Got response from API Gateway for {}: status={}",
+                    "Got response from API Gateway for {}: status={}",
                     symbol,
                     resp.status()
                 );
                 resp
             }
             Err(e) => {
-                error!("❌ Failed to connect to API Gateway at {}: {}", url, e);
+                error!("Failed to connect to API Gateway at {}: {}", url, e);
                 if e.is_timeout() {
-                    error!("⏱️  TIMEOUT calling API Gateway for {}", symbol);
+                    error!("TIMEOUT calling API Gateway for {}", symbol);
                 } else if e.is_connect() {
-                    error!("🔌 CONNECTION ERROR to API Gateway for {}", symbol);
+                    error!("CONNECTION ERROR to API Gateway for {}", symbol);
                 }
                 return Err(ApiError::from(e));
             }
         };
 
         if response.status().is_success() {
-            match response.json().await {
+            match response.json::<MarketPrice>().await {
                 Ok(price) => {
-                    info!("✅ Successfully fetched price for {}: {:?}", symbol, price);
+                    info!("Successfully fetched price for {}: {:?}", symbol, price);
+
+                    // Cache the price for 4.5 seconds
+                    self.price_cache.insert(
+                        symbol.to_string(),
+                        CachedPrice {
+                            price: price.clone(),
+                            cached_at: Instant::now(),
+                        },
+                    );
+                    debug!("💾 Cached price for {} (TTL: {:?})", symbol, self.cache_ttl);
+
                     Ok(price)
                 }
                 Err(e) => {
-                    error!("❌ Failed to parse price response for {}: {}", symbol, e);
+                    error!("Failed to parse price response for {}: {}", symbol, e);
                     Err(ApiError::from(e))
                 }
             }
@@ -82,7 +127,7 @@ impl ApiGatewayClient {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             error!(
-                "⚠️  API Gateway error for {}: {} - {}",
+                "API Gateway error for {}: {} - {}",
                 symbol, status, error_text
             );
             Err(ApiError::ServiceUnavailable(format!(
@@ -444,7 +489,10 @@ impl OrderClient {
         if response.status().is_success() {
             let orders: Vec<OrderServiceResponse> = response.json().await?;
             info!("Fetched {} pending orders for recovery", orders.len());
-            Ok(orders.into_iter().map(|o| o.into_response()).collect())
+            Ok(orders
+                .into_iter()
+                .map(OrderServiceResponse::into_response)
+                .collect())
         } else {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();

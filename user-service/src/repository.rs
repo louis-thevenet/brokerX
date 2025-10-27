@@ -303,55 +303,114 @@ impl UserRepoExt for UserRepository {
         quantity_change: i64,
         execution_price: f64,
     ) -> Result<(), AuthError> {
-        let mut tx = self.pool.begin().await.map_err(AuthError::UserRepo)?;
-        let query = format!(
-            "SELECT holdings FROM {} WHERE id = $1 FOR UPDATE",
-            self.table_name
-        );
-        let row = sqlx::query(&query)
-            .bind(user_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(AuthError::UserRepo)?;
-        let row = match row {
-            Some(row) => row,
-            None => return Err(AuthError::UserNotFound),
-        };
-        let holdings_json: serde_json::Value = row.try_get("holdings").unwrap();
-        let mut holdings: HashMap<String, Holding> =
-            serde_json::from_value(holdings_json).unwrap_or_default();
-        let holding = holdings
-            .entry(symbol.to_string())
-            .or_insert_with(|| Holding {
-                symbol: symbol.to_string(),
-                quantity: 0,
-                average_cost: 0.0,
-            });
         if quantity_change > 0 {
-            let new_quantity = holding.quantity + quantity_change as u64;
-            let total_cost = (holding.quantity as f64 * holding.average_cost)
-                + (quantity_change as f64 * execution_price);
-            holding.average_cost = total_cost / new_quantity as f64;
-            holding.quantity = new_quantity;
-        } else {
-            let abs_change = (-quantity_change) as u64;
-            if holding.quantity < abs_change {
-                return Err(AuthError::NotEnoughMoneyError);
+            // BUY: Add shares or create new holding
+            let query = format!(
+                r"
+                UPDATE {} SET holdings = 
+                    CASE 
+                        WHEN holdings ? $2 THEN
+                            -- Update existing holding: recalculate average cost
+                            jsonb_set(
+                                holdings,
+                                ARRAY[$2],
+                                jsonb_build_object(
+                                    'symbol', $2::text,
+                                    'quantity', ((holdings->$2->>'quantity')::bigint + $3),
+                                    'average_cost', (
+                                        ((holdings->$2->>'quantity')::bigint * (holdings->$2->>'average_cost')::float8 + 
+                                         $3 * $4) / 
+                                        ((holdings->$2->>'quantity')::bigint + $3)
+                                    )
+                                )
+                            )
+                        ELSE
+                            -- Create new holding
+                            holdings || jsonb_build_object($2, jsonb_build_object(
+                                'symbol', $2::text,
+                                'quantity', $3,
+                                'average_cost', $4
+                            ))
+                    END
+                WHERE id = $1
+                RETURNING id
+                ",
+                self.table_name
+            );
+
+            let result = sqlx::query(&query)
+                .bind(user_id)
+                .bind(symbol)
+                .bind(quantity_change)
+                .bind(execution_price)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(AuthError::UserRepo)?;
+
+            if result.is_none() {
+                return Err(AuthError::UserNotFound);
             }
-            holding.quantity -= abs_change;
+        } else {
+            // SELL: Decrease shares or remove holding
+            let abs_change = (-quantity_change) as u64;
+
+            // First check if user has enough shares (in single query)
+            let query = format!(
+                r#"
+                UPDATE {} SET holdings = 
+                    CASE 
+                        WHEN (holdings->$2->>'quantity')::bigint > $3 THEN
+                            -- Decrease quantity (keep holding)
+                            jsonb_set(
+                                holdings,
+                                ARRAY[$2],
+                                jsonb_build_object(
+                                    'symbol', $2::text,
+                                    'quantity', ((holdings->$2->>'quantity')::bigint - $3),
+                                    'average_cost', (holdings->$2->>'average_cost')::float8
+                                )
+                            )
+                        WHEN (holdings->$2->>'quantity')::bigint = $3 THEN
+                            -- Remove holding (quantity becomes 0)
+                            holdings - $2
+                        ELSE
+                            -- Insufficient shares - this will trigger error via RETURNING NULL
+                            NULL
+                    END
+                WHERE id = $1 
+                    AND holdings ? $2 
+                    AND (holdings->$2->>'quantity')::bigint >= $3
+                RETURNING id
+                "#,
+                self.table_name
+            );
+
+            let result = sqlx::query(&query)
+                .bind(user_id)
+                .bind(symbol)
+                .bind(abs_change as i64)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(AuthError::UserRepo)?;
+
+            if result.is_none() {
+                // Check if it's insufficient shares or user not found
+                let user_exists =
+                    sqlx::query(&format!("SELECT id FROM {} WHERE id = $1", self.table_name))
+                        .bind(user_id)
+                        .fetch_optional(&self.pool)
+                        .await
+                        .map_err(AuthError::UserRepo)?
+                        .is_some();
+
+                if user_exists {
+                    return Err(AuthError::NotEnoughMoneyError);
+                } else {
+                    return Err(AuthError::UserNotFound);
+                }
+            }
         }
-        if holding.quantity == 0 {
-            holdings.remove(symbol);
-        }
-        let holdings_json = serde_json::to_value(&holdings).unwrap();
-        let update_query = format!("UPDATE {} SET holdings = $1 WHERE id = $2", self.table_name);
-        sqlx::query(&update_query)
-            .bind(holdings_json)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(AuthError::UserRepo)?;
-        tx.commit().await.map_err(AuthError::UserRepo)?;
+
         Ok(())
     }
 }

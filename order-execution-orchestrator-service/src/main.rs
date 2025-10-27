@@ -225,9 +225,10 @@ async fn main() -> color_eyre::Result<()> {
                     models::OrderType::Limit { price } => Some(*price),
                     models::OrderType::Market => None,
                 },
+                order_id: Some(order.id), // Pass the order ID for recovery (avoid lookup)
             };
-            // For recovery, we pass None for order_id since the order is already created
-            if let Err(e) = tx.send((order.client_id, order_request, None)) {
+            // For recovery, we pass the existing order.id to skip lookup
+            if let Err(e) = tx.send((order.client_id, order_request, Some(order.id))) {
                 tracing::error!("Failed to enqueue pending order {}: {}", order.id, e);
             } else {
                 metrics.increment_queue();

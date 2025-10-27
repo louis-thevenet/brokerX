@@ -10,18 +10,18 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 /// Create a new order (async, enqueue for processing)
-/// 
+///
 /// Orchestrates the full order lifecycle including:
 /// - Pre-trade validation (balance, holdings, risk checks)
 /// - Order execution via market data service
 /// - Post-trade settlement (updating user funds and holdings)
-/// 
+///
 /// The order is queued for asynchronous processing and a 202 Accepted response is returned immediately.
 /// The actual order processing happens in the background with the following steps:
 /// 1. Pre-trade validation against user balance and holdings
 /// 2. Order execution in the market
 /// 3. Post-trade settlement updating user account and holdings
-/// 
+///
 /// Orders may be rejected during validation or execution. Check the order status via the order service.
 #[utoipa::path(
     post,
@@ -67,13 +67,19 @@ pub async fn create_order(
     // Extract user_id from the order request (set by API Gateway from authenticated user)
     let user_id = order.user_id;
 
+    // Extract order_id if provided by API Gateway (optimization to skip lookup)
+    let order_id = order.order_id;
+
     // Note: Order is already created by API Gateway in order-service
     // This endpoint just queues it for processing
-    info!("Queueing order for processing for user {}", user_id);
+    info!(
+        "Queueing order for processing for user {} (order_id: {:?})",
+        user_id, order_id
+    );
 
-    // Queue the order for processing (order is already created in order-service)
+    // Queue the order for processing with the order_id if available
     let queue = state.order_queue.as_ref();
-    if let Err(e) = queue.send((user_id, order.clone(), None)) {
+    if let Err(e) = queue.send((user_id, order.clone(), order_id)) {
         error!("Failed to enqueue order for processing: {}", e);
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -88,11 +94,11 @@ pub async fn create_order(
     // Increment queue length metric
     state.metrics.increment_queue();
 
-    // Return acceptance - we don't have the order_id here, API Gateway will provide it
+    // Return acceptance with the order_id if available
     (
         StatusCode::ACCEPTED,
         Json(crate::models::OrderAcceptedResponse {
-            order_id: uuid::Uuid::nil(), // Placeholder, API Gateway has the real ID
+            order_id: order_id.unwrap_or_else(uuid::Uuid::nil),
             message: "Order queued for processing".to_string(),
         }),
     )
@@ -154,17 +160,20 @@ async fn process_single_order(
     existing_order_id: Option<Uuid>,
     state: &AppState,
 ) -> Result<(), String> {
-    // FIND/CREATE ORDER FIRST (so we have an order_id to update if validation fails)
+    // FIND/CREATE ORDER - USE PROVIDED ORDER_ID IF AVAILABLE
     let order_id = if let Some(id) = existing_order_id {
-        // Order ID passed from recovery - use it
-        info!("Processing existing order {} from recovery", id);
+        // Order ID passed from API Gateway or recovery - use it directly (FAST PATH!)
+        info!(
+            "Processing order {} (provided by caller, skipping lookup)",
+            id
+        );
         id
     } else {
-        // Normal flow: Order was created by API Gateway, find it
-        // Get the most recent pending order for this user that matches the request
-        info!(
-            "Looking up pending order for user {} symbol {} quantity {}",
-            user_id, order_request.symbol, order_request.quantity
+        // FALLBACK PATH: No order_id provided, need to look it up (SLOW!)
+        // This should rarely happen in production - only during recovery or legacy flows
+        warn!(
+            "No order_id provided for user {} - falling back to expensive lookup",
+            user_id
         );
 
         // Try to find matching pending order (created by API Gateway)
@@ -293,7 +302,7 @@ async fn process_single_order(
 
     // ORDER EXECUTION
     let execution_request = crate::clients::ExecuteOrderRequest {
-        order_id: order_id,
+        order_id,
         symbol: order_request.symbol.clone(),
         side: order_request.order_side.clone(),
         order_type: order_request.order_type.clone(),
@@ -318,7 +327,7 @@ async fn process_single_order(
                     crate::clients::ExecutionStatus::Rejected,
                     0,
                     None,
-                    Some(format!("Service error: {}", e)),
+                    Some(format!("Service error: {e}")),
                 )
                 .await
             {

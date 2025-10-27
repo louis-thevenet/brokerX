@@ -17,14 +17,14 @@ CREATE TABLE IF NOT EXISTS market_prices (
 );
 
 -- Create indexes for efficient querying
--- CRITICAL: Covering index for fast latest price lookups
+-- CRITICAL: Covering index for fast latest price lookups (includes all needed columns)
 CREATE INDEX IF NOT EXISTS idx_market_prices_symbol_timestamp_covering 
     ON market_prices(symbol, timestamp DESC) 
     INCLUDE (id, price, open, high, low, volume);
 
--- Fallback indexes
-CREATE INDEX IF NOT EXISTS idx_market_prices_symbol ON market_prices(symbol);
-CREATE INDEX IF NOT EXISTS idx_market_prices_timestamp ON market_prices(timestamp DESC);
+-- NOTE: Removed redundant indexes that were causing write overhead:
+-- - idx_market_prices_symbol (redundant with covering index)
+-- - idx_market_prices_timestamp (not used, redundant with covering index)
 
 -- Create the market_simulation_state table for tracking execution simulation state
 CREATE TABLE IF NOT EXISTS market_simulation_state (

@@ -117,9 +117,9 @@ async fn main() -> color_eyre::Result<()> {
     // Initialize database connection using sqlx
     info!("Connecting to database...");
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(150)
-        .min_connections(15)
-        .acquire_timeout(std::time::Duration::from_secs(5))
+        .max_connections(300) // Increased from 150 to handle higher load
+        .min_connections(30) // Increased from 15
+        .acquire_timeout(std::time::Duration::from_secs(2)) // Reduced from 5s
         .idle_timeout(std::time::Duration::from_secs(300))
         .max_lifetime(std::time::Duration::from_secs(1800))
         .connect(&market_data_db_url)
@@ -149,7 +149,7 @@ async fn main() -> color_eyre::Result<()> {
     info!("Starting background price simulation task (30s interval)");
     let simulation_service = market_data_service.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {

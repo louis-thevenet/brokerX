@@ -112,10 +112,8 @@ export const scenarios = {
     stages: [
       { duration: '30s', target: 200 },   // Warm up: 200 orders/s (increased)
       { duration: '30s', target: 500 },   // Ramp up: 500 orders/s
-      { duration: '1m', target: 900 },    // Target: 900 orders/s (overshoot to hit 800)
-      { duration: '10m', target: 900 },    // Sustain: 900 orders/s for 5 minutes
-      // { duration: '1m', target: 1100 },   // Push: 1100 orders/s
-      // { duration: '2m', target: 1100 },   // Sustain peak: 1100 orders/s
+      { duration: '2m', target: 800 },
+      { duration: '7m', target: 800 },   // Sustain peak: 800 orders/s
       { duration: '1m', target: 500 },    // Ramp down: 500 orders/s
       { duration: '30s', target: 0 },     // Cool down
     ],

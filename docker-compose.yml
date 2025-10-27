@@ -26,7 +26,7 @@ services:
     command:
       - "postgres"
       - "-c"
-      - "max_connections=300"
+      - "max_connections=500"
       - "-c"
       - "shared_buffers=256MB"
       - "-c"
@@ -168,15 +168,10 @@ services:
       user-db:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   # Order Service
   order-service:
     build:
@@ -197,15 +192,10 @@ services:
       order-db:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   # Market Data Service
   market-data-service:
     build:
@@ -226,15 +216,10 @@ services:
       market-data-db:
         condition: service_healthy
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'
-          memory: 768M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   # Order Execution Orchestrator Service
   order-execution-orchestrator-service:
     build:
@@ -263,15 +248,6 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-
   # API Gateway
   api-gateway:
     build:
@@ -301,15 +277,10 @@ services:
       - market-data-service
       - order-execution-orchestrator-service
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
   # Web Application
   webapp:
     build:

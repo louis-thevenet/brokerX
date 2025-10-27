@@ -427,7 +427,7 @@ pub async fn create_order(
     // If orchestrator is down, order remains Pending and will be recovered on startup
     match state
         .orchestrator_client
-        .submit_order(user_id, &order_request)
+        .submit_order(user_id, &order_request, Some(order.id))
         .await
     {
         Ok(_) => {

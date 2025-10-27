@@ -109,9 +109,9 @@ async fn main() -> color_eyre::Result<()> {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("Either USER_DATABASE_URL or DATABASE_URL must be set");
     let pool = PgPoolOptions::new()
-        .max_connections(200)
-        .min_connections(20)
-        .acquire_timeout(std::time::Duration::from_secs(5))
+        .max_connections(400)
+        .min_connections(40)
+        .acquire_timeout(std::time::Duration::from_secs(2))
         .idle_timeout(std::time::Duration::from_secs(300))
         .max_lifetime(std::time::Duration::from_secs(1800))
         .connect(&user_db_url)
