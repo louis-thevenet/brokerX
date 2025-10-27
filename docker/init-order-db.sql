@@ -26,6 +26,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status_variant);
 CREATE INDEX IF NOT EXISTS idx_orders_client_status ON orders(client_id, status_variant);
 CREATE INDEX IF NOT EXISTS idx_orders_client_date ON orders(client_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_symbol ON orders(symbol);
+-- Composite index for pending orders query (status + date)
+CREATE INDEX IF NOT EXISTS idx_orders_pending_date ON orders(status_variant, date ASC) WHERE status_variant = 'Pending';
 
 -- Create updated_at trigger
 CREATE OR REPLACE FUNCTION update_orders_updated_at()

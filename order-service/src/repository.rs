@@ -184,6 +184,8 @@ impl OrderRepository {
     pub async fn get_pending_orders(&self) -> Result<Vec<(OrderId, Order)>, OrderError> {
         debug!("Getting all pending orders");
 
+        // Add LIMIT to prevent performance degradation with many pending orders
+        // The orchestrator should process orders in batches anyway
         let rows = sqlx::query(
             r"
             SELECT 
@@ -194,6 +196,7 @@ impl OrderRepository {
             FROM orders
             WHERE status_variant = 'Pending'
             ORDER BY date ASC
+            LIMIT 1000
             ",
         )
         .fetch_all(&self.pool)
