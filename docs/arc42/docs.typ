@@ -321,6 +321,7 @@ Chaque service possède sa propre base de données PostgreSQL 15 pour l'isolatio
 === Monitoring
 - *Prometheus* (port 9090) : Collecte des métriques via endpoints `/metrics`
 - *Grafana* (port 3000) : Visualisation des métriques et dashboards
+- *K6* : Des scénarios de tests K6 sont disponibles
 
 === Réseau et Communication
 - Tous les services communiquent via un réseau Docker privé `brokerx-network`
@@ -331,12 +332,38 @@ Chaque service possède sa propre base de données PostgreSQL 15 pour l'isolatio
 
 == Décisions d'architecture
 
-// TODO: les lister
+Les décisions architecturales majeures sont documentées sous forme d'ADR (Architecture Decision Records) dans le répertoire `docs/adr/`.
+
+=== ADR documentées
+
+1. *ADR 001* — Adoption de l'architecture hexagonale (ports et adaptateurs) (obsolète)
+2. *ADR 002* — Choix de la technologie web (Axum)
+3. *ADR 003* — Adoption des UUIDs comme identifiants
+4. *ADR 004* — Choix de la technologie de logs (tracing)
+5. *ADR 005* — Implémentation du traitement des ordres (machine d'états, pipeline asynchrone)
+6. *ADR 006* — Implémentation d'une queue d'ordres à traiter
+7. *ADR 007* — Architecture microservices avec API Gateway (5 services distincts)
+8. *ADR 008* — Authentification JWT avec MFA (multi-factor authentication)
+9. *ADR 009* — Stratégie de caching multi-niveaux (4 caches, batching des écritures)
+
+Chaque ADR décrit le contexte, les options considérées, la décision retenue et ses conséquences.
 
 
 == Exigences qualité
 
+BrokerX est capable de gérer $>=$ 1800 ordres/s en pic. La latence P95 sur l'endpoint `/v1/orders` est garantie grâce à la queue asynchrone dans l'orchestrateur d'ordres. Même lors de pics de charge et de perte de disponibilité sur certains services, les utilisateurs peuvent toujours passer des ordres qui seront traités en différé.
+#figure(caption: "Ordres traités par seconde et taille de la queue", image(
+  "./order_per_s.png",
+))
 
+On voit que la queue d'ordres monte en pic lors des charges élevées, mais les ordres sont toujours acceptés rapidement par l'API Gateway.
+#figure(caption: "Latence P95 sur l'endpoint /v1/orders", image(
+  "./p95_orders.png",
+))
+
+Le premier service à tomber est celui chargé de mettre à jour les soldes et portefeuilles des utilisateurs.
+
+#figure(caption: "Latence sur tous les endpoints", image("./latency.png"))
 
 // == Risques et dettes techniques
 

@@ -5,7 +5,7 @@ See the [arc42](./docs/arc42/docs.md) file for detailed architecture documentati
 # Content
 
 - API Gateway
-- Microservices and their databases: user-service, order-service, market-data-service
+- Microservices and their databases: user-service, order-service, market-data-service and order-processing-service
 - Prometheus and Grafana setup
 - Load tests with K6
 

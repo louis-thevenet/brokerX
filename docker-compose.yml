@@ -257,7 +257,7 @@ services:
     env_file:
       - .env
     environment:
-      - MFA_BYPASS=true
+      - MFA_BYPASS=false
       - RUST_LOG=info
       - API_GATEWAY_ADDRESS=0.0.0.0:8080
       - USER_SERVICE_URL=http://user-service:3001
