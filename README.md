@@ -1,6 +1,6 @@
 # Arc42 Documentation
 
-See the [arc42](./docs/arc42/docs.md) file for detailed architecture documentation.
+See the [arc42](./docs/arc42/docs.pdf) file for detailed architecture documentation.
 
 # Content
 
