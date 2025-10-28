@@ -520,6 +520,45 @@ Le premier service à tomber est celui chargé de mettre à jour les soldes et p
 
 // == Risques et dettes techniques
 
+== CI/CD (Intégration et Déploiement Continus)
+
+BrokerX utilise *GitHub Actions* pour l'automatisation CI/CD avec trois pipelines principaux :
+
+#figure(
+  table(
+    columns: 3,
+    align: (left, left, left),
+    table.header([*Pipeline*], [*Déclencheur*], [*Actions*]),
+    [CI], [Push sur `main` et PRs], [Tests + formatage Rust],
+    [Release], [Tags `v*.*.*`], [Build multi-plateformes via `cargo-dist`],
+    [Bump], [Manuel], [Incrémentation de versions],
+  ),
+  caption: [Pipelines CI/CD],
+)
+
+=== Pipeline CI
+
+Le workflow CI déploie 3 bases PostgreSQL en parallèle (user-db:5432, order-db:5433, market-data-db:5434), initialise les schémas SQL et exécute `cargo test --all-features --workspace`. Le formatage est vérifié via `cargo fmt --all --check`.
+
+*Optimisations* : Cache Rust (`Swatinem/rust-cache@v2`), healthchecks PostgreSQL, temps d'exécution ~5-8 minutes.
+
+=== Pipeline Release
+
+Déclenché par tags Git, `cargo-dist` génère automatiquement les binaires multi-plateformes, archives (`.tar.gz`, `.zip`), checksums SHA256 et notes de release. Publication sur GitHub Releases.
+
+=== Outils de développement
+
+Le `Justfile` fournit des raccourcis pour Docker Compose :
+```bash
+just docker-up           # Démarre toute la stack
+just docker-services     # Microservices uniquement
+just docker-monitoring   # Prometheus + Grafana
+```
+
+=== Stratégie Git
+
+Workflow simplifié : branche `main` protégée par CI, feature branches, validation par PR avant merge, releases via tags
+
 
 = Runbook
 
