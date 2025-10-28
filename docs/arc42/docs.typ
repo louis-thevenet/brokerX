@@ -786,3 +786,16 @@ Les collections sont également disponibles dans le répertoire `docs/postman/`.
 / Order Orchestrator Service: #link(
     "http://127.0.0.1:3004/api-docs/openapi.json",
   )
+
+
+= Glossaire
+#figure(table(
+  columns: 2,
+  align: (left, left),
+  table.header([*Terme*], [*Définition*]),
+  [Ordre], [Instruction d'achat ou de vente d'un instrument financier],
+  [Portefeuille], [Ensemble des actifs financiers détenus par un utilisateur],
+  [MFA], [Authentification multi-facteurs],
+  [OTP], [One-Time Password, mot de passe à usage unique],
+  [JWT], [JSON Web Token, format de token sécurisé pour l'authentification],
+))
