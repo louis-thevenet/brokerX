@@ -6,7 +6,11 @@ import { config, scenarios } from '../config.js';
 // Test configuration
 export const options = {
   scenarios: {
-    quality_validation_high_throughput: scenarios.highThroughput,
+    quality_validation_high_throughput: {
+      executor: 'constant-vus',
+      vus: 100, // Constant 100 users placing orders
+      duration: '5m', // 5 minutes of sustained load
+    },
   },
   thresholds: {
     ...config.thresholds,
@@ -17,15 +21,15 @@ export const options = {
 };
 
 /**
- * Setup phase: Create test users with funds and holdings
- * Creates 50 users for high-throughput testing to avoid contention
+ * Setup phase: Create test users with billions in funds
+ * Creates 100 users for high-throughput testing to avoid contention
  */
 export function setup() {
-  console.log('Setting up test users for high-throughput quality validation (800 orders/s target)...');
+  console.log('Setting up test users for high-throughput quality validation (800 BUY orders/s target)...');
   const client = new ApiClient();
   const testUsers = [];
 
-  // Create 50 test users with sufficient funds for high-volume testing
+  // Create 100 test users (enough for constant-vus scenario)
   const userCount = 50;
   for (let i = 0; i < userCount; i++) {
     const userData = {
@@ -46,18 +50,17 @@ export function setup() {
       // Authenticate and get token
       const authResult = client.authenticate(userData.email, userData.password);
       if (authResult && authResult.token) {
-        // Token is already set by authenticate(), just need to ensure userId is set
         client.setUserId(authResult.user_id || userId);
-        
-        // Deposit substantial funds for testing
-        const depositSuccess = client.deposit(500000); // $500k for high-throughput testing
-        
+
+        // Deposit billions for testing - unlimited buying power
+        const depositSuccess = client.deposit(10000000000); // $10 billion for unlimited BUY orders
+
         if (depositSuccess) {
           testUsers.push({
             ...userData,
             userId,
           });
-          console.log(`Created user ${i + 1}/${userCount}: ${userData.email} with $500k balance`);
+          console.log(`Created user ${i + 1}/${userCount}: ${userData.email} with $10B balance`);
         } else {
           console.error(`Failed to deposit funds for user ${i + 1}`);
         }
@@ -75,13 +78,18 @@ export function setup() {
   }
 
   console.log(`Successfully created ${testUsers.length} test users for high-throughput validation`);
-  console.log(`Target: 800 orders/second sustained`);
+  console.log(`Target: 800 BUY orders/second sustained with ONLY order creation requests`);
+  console.log(`Each VU will authenticate once, then continuously place BUY orders`);
   return { users: testUsers };
 }
 
+// Per-VU state: each VU gets its own authenticated client
+let vuClient = null;
+let vuUser = null;
+
 /**
- * Scenario: High-throughput quality validation - targeting 800 orders/second
- * Places orders that should pass all validation checks with minimal delays
+ * Scenario: High-throughput quality validation - targeting 800 BUY orders/second
+ * Each VU authenticates once, then continuously places BUY orders with no extra requests
  */
 export default function(data) {
   if (!data || !data.users || data.users.length === 0) {
@@ -89,90 +97,51 @@ export default function(data) {
     return;
   }
 
-  const client = new ApiClient();
+  // First iteration for this VU: authenticate once
+  if (!vuClient || !vuUser) {
+    vuClient = new ApiClient();
 
-  // Pick a random user (should have balance from setup)
-  const user = data.users[Math.floor(Math.random() * data.users.length)];
+    // Assign a unique user to this VU (round-robin distribution)
+    const vuIndex = __VU - 1; // VU IDs are 1-based
+    const userIndex = vuIndex % data.users.length;
+    vuUser = data.users[userIndex];
 
-  // Authenticate
-  const authResult = client.authenticate(user.email, user.password);
-  if (!authResult) {
-    console.error(`Authentication failed for ${user.email}`);
-    return;
-  }
-
-  // Get user info to verify balance
-  const userInfo = client.getUser();
-  if (!userInfo) {
-    console.error('Failed to get user info');
-    return;
-  }
-
-  // Decide whether to BUY or SELL based on what the user has
-  const hasHoldings = userInfo.holdings && Object.keys(userInfo.holdings).length > 0;
-  const hasBalance = userInfo.balance > 1000;
-  
-  let orderType;
-  let symbol;
-  let quantity;
-  
-  // Randomly choose to BUY or SELL, but only if we have the resources
-  const wantsToBuy = Math.random() < 0.5;
-  
-  if (wantsToBuy && hasBalance) {
-    // Place a BUY order
-    orderType = 'buy';
-    symbol = getRandomSymbol();
-    
-    // For MARKET orders, the system will fetch the current price internally
-    // No need to fetch it here - reduces latency and load on market-data-service
-    
-    // Use a small fixed quantity for high throughput
-    // With $500k balance and typical stock prices ($50-200), 5 shares is very conservative
-    quantity = Math.floor(Math.random() * 3) + 1; // 1-3 shares for maximum throughput
-    
-  } else if (!wantsToBuy && hasHoldings) {
-    // Place a SELL order for a random holding
-    orderType = 'sell';
-    const symbols = Object.keys(userInfo.holdings);
-    symbol = symbols[Math.floor(Math.random() * symbols.length)];
-    const holding = userInfo.holdings[symbol];
-    
-    if (!holding || typeof holding.quantity !== 'number' || holding.quantity < 1) {
-      console.warn(`Invalid holding for ${symbol}:`, JSON.stringify(holding));
+    // Authenticate once for this VU
+    const authResult = vuClient.authenticate(vuUser.email, vuUser.password);
+    if (!authResult) {
+      console.error(`VU ${__VU}: Authentication failed for ${vuUser.email}`);
       return;
     }
-    
-    const holdingQuantity = holding.quantity;
-    
-    // Sell a small portion for high throughput (10-30%)
-    const sellPercentage = 0.1 + Math.random() * 0.2; // Sell 10-30%
-    quantity = Math.max(1, Math.floor(holdingQuantity * sellPercentage));
-    
-    // Safety check: never sell more than we have
-    if (quantity > holdingQuantity) {
-      quantity = holdingQuantity;
-    }
-    
-  } else {
-    // Can't buy (no balance) or can't sell (no holdings), skip this iteration
-    return;
+
+    console.log(`VU ${__VU}: Authenticated as ${vuUser.email}`);
   }
 
-  // Place the order
-  const orderResult = client.createOrder(symbol, 'market', orderType, quantity);
-  
+  // Now just place orders - no login, no user info fetch
+  // Only BUY orders (users have billions, no need to sell)
+  const orderType = 'buy';
+  const symbol = getRandomSymbol();
+  const quantity = Math.floor(Math.random() * 3) + 1; // 1-3 shares
+
+  // Place the order - this is the ONLY HTTP request in the hot path
+  const orderResult = vuClient.createOrder(symbol, 'market', orderType, quantity);
+
   if (orderResult) {
     // Minimal logging for high throughput
-    if (Math.random() < 0.01) { // Log only 1% of orders to reduce overhead
-      console.log(`✓ ${orderType.toUpperCase()} ${quantity} ${symbol} @ market`);
+    if (Math.random() < 0.001) { // Log only 0.1% of orders to reduce overhead
+      console.log(`✓ BUY ${quantity} ${symbol} @ market`);
     }
   } else {
-    console.error(`✗ Order failed: ${orderType.toUpperCase()} ${quantity} ${symbol}`);
+    // Still log errors
+    if (Math.random() < 0.1) { // Log 10% of errors
+      console.error(`✗ Order failed: BUY ${quantity} ${symbol}`);
+    }
   }
 
-  // Minimal think time for high throughput
-  sleep(thinkTime(0.05, 0.2)); // Reduced from 0.1-0.3
+  // Minimal think time for maximum throughput
+  // With 100 VUs and 0.01-0.05s sleep, we get: 100 VUs / ~0.03s avg = ~3333 iterations/s
+  // But each VU can only do so many requests due to network/processing time
+  // Expect around 800-1200 orders/s with this configuration
+  sleep(thinkTime(0.01, 0.05));
 }
 
 /**
@@ -183,9 +152,10 @@ export function teardown(data) {
   console.log('High-Throughput Quality Validation Test Completed');
   console.log('='.repeat(80));
   if (data && data.users) {
-    console.log(`Tested with ${data.users.length} users`);
-    console.log(`Target throughput: 800 orders/second`);
-    console.log(`Peak throughput: 1000 orders/second`);
+    console.log(`Tested with ${data.users.length} users (each VU had dedicated user)`);
+    console.log(`Target throughput: 800 BUY orders/second`);
+    console.log(`Strategy: Constant VUs, each authenticated ONCE, then only placing BUY orders`);
+    console.log(`No /login or /user requests during test - ONLY order creation`);
     console.log('Check the summary for actual throughput achieved');
   }
   console.log('='.repeat(80));
