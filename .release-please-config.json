@@ -23,6 +23,11 @@
       "path": "api_gateway",
       "release-type": "rust",
       "component": "api-gateway"
+    },
+    "order-execution-orchestrator-service": {
+      "path": "order-execution-orchestrator-service",
+      "release-type": "rust",
+      "component": "order-execution-orchestrator-service"
     }
   },
   "plugins": [
@@ -38,7 +43,8 @@
         "user-service",
         "order-service",
         "market-data-service",
-        "api-gateway"
+        "api-gateway",
+        "order-execution-orchestrator-service"
       ]
     }
   ]
