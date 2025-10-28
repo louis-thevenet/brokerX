@@ -126,8 +126,21 @@ Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de v
 
 ![](level1_context.svg)
 
-Le système BrokerX suit une architecture restAPI avec passerelle API et microservices :
-Les interactions passent par la passerelle API qui relaie les requêtes aux microservices internes pour le traitement métier et l'accès aux données. Elle sert aussi d'orchestateur pour les flux de données entre les composants.
+Le système BrokerX suit une architecture REST API avec passerelle API et microservices :
+
+- **Point d'entrée unique** : L'`APIGateway` (port 8080) reçoit toutes les requêtes HTTPS de la `WebApp` et assure l'authentification JWT, le routage, la gestion CORS et l'orchestration MFA.
+
+- **Microservices métier** :
+  - `UserService` (port 3001) : gestion des utilisateurs, authentification, soldes de portefeuille et détention d'actifs
+  - `OrderService` (port 3002) : persistance et suivi des ordres
+  - `MarketDataService` (port 3003) : cotations actuelles et historiques, simulation d'exécution
+  - `OrderOrchestrator` (port 3004) : orchestration asynchrone du cycle de vie des ordres
+
+- **Flux d'orchestration des ordres** : Lorsqu'un ordre est créé, l'`OrderOrchestrator` coordonne les validations pré-trade (vérification du solde via `UserService`, validation du symbole via `MarketDataService`), l'exécution de l'ordre, et la mise à jour post-trade (statut via `OrderService`, détentions via `UserService`).
+
+- **Persistance** : Chaque service dispose de sa propre base de données PostgreSQL (`UserDB` sur le port 5432, `OrderDB` sur 5433, `MarketDataDB` sur 5434).
+
+- **MFA** : Le `MFAAdapter` est une bibliothèque embarquée (pas un service réseau) qui génère et vérifie les codes OTP, et envoie des emails via un serveur SMTP externe.
 
 ### 5.2 Architecture du domaine (Niveau 2)
 

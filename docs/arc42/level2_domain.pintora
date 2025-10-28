@@ -2,65 +2,72 @@ classDiagram
   title: Level 2 - Microservices Domain Architecture
   
   class APIGateway {
-    <<orchestrator>>
-    -config: GatewayConfig
+    <<gateway>>
+    -config: Config
     -jwt_service: JwtService
-    -user_client: UserServiceClient
-    -order_client: OrderServiceClient
+    -user_client: UserClient
+    -order_client: OrderClient
     -market_data_client: MarketDataClient
-    -market_data_execution_client: MarketDataExecutionClient
-    -mfa_service: MfaServiceClient
-    -trade_validator: TradeValidator
+    -orchestrator_client: OrchestratorClient
+    -mfa_service: MfaService
     +register()
     +login()
     +verifyLoginMfa()
+    +logout()
+    +getMe()
+    +updateMe()
+    +depositFunds()
     +createOrder()
     +getMyOrders()
     +getOrder()
     +updateOrder()
     +cancelOrder()
-    +getMe()
-    +depositFunds()
     +getMarketPrice()
     +getMarketPrices()
+    +getMarketSymbols()
+    +getMarketHistory()
+  }
+  
+  class MfaService {
+    <<service>>
+    -provider: EmailOtpProvider
+    +initiateChallenge()
+    +verifyChallenge()
   }
   
   class TradeValidator {
-    <<orchestration_service>>
-    -user_client: UserServiceClient
+    <<service>>
+    -user_client: UserClient
     -market_data_client: MarketDataClient
-    -config: PreTradeConfig
+    -config: ValidationConfig
     +validateTrade()
-    +checkBuyingPower()
-    +validatePriceBands()
-    +checkPositionLimits()
+    +checkBalance()
     +validateSymbol()
-    +checkConcentrationLimits()
+    +validatePrice()
   }
   
   class UserService {
     <<microservice>>
-    -user_repo: UserRepo
-    -mfa_client: MfaClient
+    -user_service: UserService
     +createUser()
     +getUser()
     +getUserByEmail()
-    +authenticateUser()
-    +verifyEmail()
     +updateUser()
+    +authenticateUser()
+    +verifyUserEmail()
     +depositFunds()
-    +withdrawFunds()
     +getHoldings()
     +updateHoldings()
+    +validateTrade()
     +healthCheck()
   }
   
   class OrderService {
     <<microservice>>
-    -order_repo: OrderRepo
+    -order_service: OrderService
     +createOrder()
     +getOrder()
-    +getUserOrders()
+    +getOrders()
     +updateOrder()
     +updateOrderExecution()
     +cancelOrder()
@@ -69,144 +76,151 @@ classDiagram
   
   class MarketDataService {
     <<microservice>>
-    -market_repo: MarketDataRepo
-    -price_engine: PriceEngine
+    -market_data_service: MarketDataService
+    -execution_simulator: ExecutionSimulator
     +getCurrentPrice()
     +getCurrentPrices()
-    +getAllPrices()
     +getHistoricalPrices()
     +getAvailableSymbols()
-    +executeOrder()
+    +initializeMarketData()
     +simulatePriceUpdate()
+    +executeOrder()
     +healthCheck()
   }
   
-  class MFAAdapter {
+  class OrderOrchestrator {
     <<microservice>>
-    -challenge_store: ChallengeStore
-    -email_client: EmailClient
-    +initiateChallenge()
-    +initiateChallengeNoEmail()
-    +verifyChallenge()
-    +verifyChallengeBypass()
-    +sendEmail()
-    +healthCheck()
+    -order_queue: UnboundedSender
+    -user_client: UserClient
+    -order_client: OrderClient
+    -market_data_client: MarketDataClient
+    -api_gateway_client: ApiGatewayClient
+    -trade_validator: TradeValidator
+    -metrics: Metrics
+    -concurrency_limiter: Semaphore
+    +createOrder()
+    +processOrderQueue()
+    +validatePreTrade()
+    +executeOrder()
+    +updatePostTrade()
   }
   
-  class UserRepo {
+  class UserRepository {
     <<repository>>
-    -db_pool: Pool~UserDB~
+    -pool: PgPool
     +create()
     +get()
     +update()
     +findByEmail()
     +authenticate()
+    +verifyEmail()
+    +deposit()
+    +getHoldings()
+    +updateHoldings()
   }
   
-  class OrderRepo {
+  class OrderRepository {
     <<repository>>
-    -db_pool: Pool~OrderDB~
+    -pool: PgPool
     +create()
     +get()
+    +findByUser()
     +update()
-    +findByUserId()
+    +updateExecution()
+    +cancel()
   }
   
-  class MarketDataRepo {
+  class MarketDataRepository {
     <<repository>>
-    -db_pool: Pool~MarketDataDB~
+    -pool: PgPool
     +getCurrentPrice()
+    +getCurrentPrices()
     +getHistoricalPrices()
+    +getSymbols()
+    +initializeData()
     +updatePrice()
-    +getAllSymbols()
   }
   
   class User {
     <<entity>>
-    +id: UserId
+    +id: Uuid
     +email: String
+    +password_hash: String
     +name: String
-    +balance: f64
+    +balance: Decimal
     +is_verified: bool
-    +portfolio: Portfolio
+    +created_at: DateTime
+    +updated_at: DateTime
+  }
+  
+  class Holding {
+    <<entity>>
+    +id: Uuid
+    +user_id: Uuid
+    +symbol: String
+    +quantity: i64
+    +average_price: Decimal
+    +created_at: DateTime
+    +updated_at: DateTime
   }
   
   class Order {
     <<entity>>
-    +id: OrderId
-    +client_id: UserId
+    +id: Uuid
+    +user_id: Uuid
     +symbol: String
-    +quantity: u64
-    +filled_quantity: u64
+    +quantity: i64
+    +filled_quantity: i64
     +order_side: OrderSide
     +order_type: OrderType
+    +limit_price: Option~Decimal~
     +status: OrderStatus
-    +price: Option~f64~
-    +average_price: Option~f64~
+    +average_fill_price: Option~Decimal~
     +created_at: DateTime
+    +updated_at: DateTime
   }
   
-  class Portfolio {
-    <<value_object>>
-    +positions: Vec~Position~
-    +calculateValue()
-    +canAfford()
-    +hasPosition()
-  }
-  
-  class Position {
-    <<value_object>>
+  class Stock {
+    <<entity>>
+    +id: Uuid
     +symbol: String
-    +quantity: u64
-    +avg_price: f64
+    +name: String
+    +current_price: Decimal
+    +last_updated: DateTime
   }
   
-  class ValidationResult {
-    <<value_object>>
-    +valid: bool
-    +errors: Vec~ValidationError~
-    +warnings: Vec~String~
-  }
+  %% API Gateway composition
+  APIGateway *-- MfaService
   
-  class ExecutionResult {
-    <<value_object>>
-    +status: ExecutionStatus
-    +filled_quantity: u64
-    +average_price: Option~f64~
-  }
+  %% OrderOrchestrator composition
+  OrderOrchestrator *-- TradeValidator
   
-  %% API Gateway composition and orchestration
-  APIGateway *-- TradeValidator
-  APIGateway ..> UserService: HTTP user operations
-  APIGateway ..> OrderService: HTTP order management
-  APIGateway ..> MarketDataService: HTTP price queries & execution
-  APIGateway ..> MFAAdapter: HTTP MFA operations
+  %% API Gateway to services
+  APIGateway ..> UserService: HTTP
+  APIGateway ..> OrderService: HTTP
+  APIGateway ..> MarketDataService: HTTP
+  APIGateway ..> OrderOrchestrator: HTTP
   
-  %% Trade Validator orchestration (pre-trade checks)
-  TradeValidator ..> UserService: validate buying power
-  TradeValidator ..> MarketDataService: validate symbol & price
-  TradeValidator ..> ValidationResult: returns
+  %% Order Orchestrator coordination
+  OrderOrchestrator ..> UserService: Validate balance
+  OrderOrchestrator ..> MarketDataService: Execute order
+  OrderOrchestrator ..> OrderService: Update status
+  OrderOrchestrator ..> UserService: Update holdings
   
-  %% Service internal structure
-  UserService *-- UserRepo
-  OrderService *-- OrderRepo
-  MarketDataService *-- MarketDataRepo
+  %% Service to repository
+  UserService *-- UserRepository
+  OrderService *-- OrderRepository
+  MarketDataService *-- MarketDataRepository
   
-  %% Inter-service communication
-  UserService ..> MFAAdapter: HTTP MFA requests
+  %% Repository to entity
+  UserRepository --> User: manages
+  UserRepository --> Holding: manages
+  OrderRepository --> Order: manages
+  MarketDataRepository --> Stock: manages
   
-  %% Repository to Entity relationships
-  UserRepo --> User: manages
-  OrderRepo --> Order: manages
-  User *-- Portfolio
-  Portfolio *-- Position
-  
-  %% Order execution flow
-  MarketDataService ..> ExecutionResult: returns
-  
-  %% Notes
-  @note right of APIGateway: Central orchestrator\nHandles authentication JWT\nCoordinates order lifecycle\n1. Pre-trade validation\n2. Order creation\n3. Market execution\n4. Holdings update\nStateless service
-  @note left of TradeValidator: Pre-trade validation logic\nChecks\n- User verification status\n- Buying power & balance\n- Position limits\n- Symbol validity\n- Price bands & tick size\nOrchestrates UserService + MarketDataService
-  @note top of UserService: User domain owner\nManages users, portfolio, balance\nVerifies email via MFA\nIndependent deployment
-  @note top of OrderService: Order domain owner\nManages order lifecycle\nStores order state\nIndependent deployment
-  @note bottom of MarketDataService: Market data domain owner\nPrice simulation engine\nOrder execution logic\nOHLCV data management
+  @note right of APIGateway: Single entry point\nJWT authentication\nMFA orchestration\nRequest routing
+  @note right of OrderOrchestrator: Async order processing\nPre-trade validation\nExecution coordination\nPost-trade settlement
+  @note left of TradeValidator: Pre-trade validation\nBalance checks\nRisk limits\nPrice validation
+  @note top of UserService: User domain\nAuthentication\nBalance management\nHoldings
+  @note top of OrderService: Order domain\nOrder persistence\nStatus tracking
+  @note bottom of MarketDataService: Market domain\nPrice simulation\nOrder execution

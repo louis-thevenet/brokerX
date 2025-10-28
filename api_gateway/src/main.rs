@@ -6,7 +6,6 @@ mod error;
 mod mfa_service;
 mod middleware;
 mod models;
-mod trade_validation;
 
 use api::ApiDoc;
 use axum::{
@@ -33,7 +32,6 @@ pub struct AppState {
     pub market_data_execution_client: Arc<clients::MarketDataExecutionClient>,
     pub orchestrator_client: Arc<clients::OrchestratorClient>,
     pub mfa_service: mfa_service::MfaService,
-    pub trade_validator: Arc<trade_validation::TradeValidator>,
 }
 
 #[tokio::main]
@@ -68,14 +66,6 @@ async fn main() -> anyhow::Result<()> {
     let mfa_provider = Arc::new(mfa_adapter::EmailOtpProvider::new_with_default_config());
     let mfa_service = mfa_service::MfaService::new(mfa_provider);
 
-    // Initialize trade validator with default configuration
-    let validation_config = trade_validation::ValidationConfig::default();
-    let trade_validator = Arc::new(trade_validation::TradeValidator::new(
-        user_client.clone(),
-        market_data_client.clone(),
-        validation_config,
-    ));
-
     let app_state = AppState {
         config: config.clone(),
         user_client,
@@ -84,7 +74,6 @@ async fn main() -> anyhow::Result<()> {
         market_data_execution_client,
         orchestrator_client,
         mfa_service,
-        trade_validator,
     };
 
     let app = create_router(app_state);

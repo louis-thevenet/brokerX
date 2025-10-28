@@ -1,55 +1,84 @@
 sequenceDiagram
-  title: Order Processing Workflow (API Gateway Orchestrator, Detailed)
+  title: Order Processing Workflow with Async Orchestrator
 
   participant User as Web Browser
   participant APIGateway as API Gateway
-  participant TradeValidator as PreTradeValidator
   participant OrderService as Order Service
-  participant MarketDataService as Market Data Service
+  participant Orchestrator as Order Orchestrator
+  participant Queue as Order Queue
+  participant Validator as Trade Validator
+  participant MarketData as Market Data Service
   participant UserService as User Service
 
-  %% Initial Order Submission
-  User->>APIGateway: POST /v1/orders (JSON, JWT)
-  APIGateway->>APIGateway: Extract JWT, validate authentication
-  APIGateway->>APIGateway: Validate order request (fields, types, business rules)
+  %% PHASE 1: Order Acceptance via API Gateway
+  User->>APIGateway: POST /v1/orders with JWT
+  APIGateway->>APIGateway: Validate JWT authentication
+  APIGateway->>APIGateway: Validate request fields
 
-  %% Pre-trade Validation
-  APIGateway->>TradeValidator: validate_trade(user_id, symbol, quantity, side, type)
-  TradeValidator->>UserService: getUser(user_id)
-  UserService-->>TradeValidator: User (balance, holdings)
-  TradeValidator->>TradeValidator: Check buying power, holdings, price bands, limits
-  TradeValidator-->>APIGateway: ValidationResult (valid, errors, warnings)
-  APIGateway->>APIGateway: If validation fails, return error to user
+  APIGateway->>OrderService: create_order with status PENDING
+  OrderService->>OrderService: Persist order in DB
+  OrderService-->>APIGateway: Order with id and PENDING status
 
-  %% Order Creation
-  APIGateway->>OrderService: create_order(user_id, symbol, quantity, side, type)
-  OrderService->>OrderService: Validate input, create Order (status=Pending), persist in DB
-  OrderService-->>APIGateway: Order (id, status=Pending, details)
+  APIGateway->>Orchestrator: POST /v1/orders with order_id
+  Orchestrator->>Queue: Enqueue order for async processing
+  Queue-->>Orchestrator: Queued successfully
+  Orchestrator-->>APIGateway: 202 Accepted with order_id
 
-  %% Order Execution
-  APIGateway->>MarketDataService: execute_order(order_id, symbol, side, type, quantity)
-  MarketDataService->>MarketDataService: Simulate/execute order, determine fill status, price
-  MarketDataService-->>APIGateway: ExecutionResult (status, filled_quantity, avg_price)
+  APIGateway-->>User: 202 Accepted - Order queued
 
-  %% Update Order Status
-  APIGateway->>OrderService: update_order_execution(order_id, status, filled_quantity, avg_price)
-  OrderService->>OrderService: Update order in DB, enforce state transitions
-  OrderService-->>APIGateway: Updated Order
+  note over User,APIGateway: Synchronous phase complete - User can poll order status
 
-  %% Update User Account and Holdings
-  alt Order Fully or Partially Filled
-    APIGateway->>UserService: withdraw_funds(user_id, amount) or deposit_funds(user_id, amount)
-    UserService->>UserService: Update user balance, persist in DB
-    UserService-->>APIGateway: Success/Failure
-    APIGateway->>UserService: update_holdings(user_id, symbol, quantity_change, exec_price)
-    UserService->>UserService: Update holdings, persist in DB
-    UserService-->>APIGateway: Success/Failure
-  else Order Pending or Rejected
-    note over APIGateway: No user update needed
+  %% PHASE 2: Async Processing in Background
+  note over Queue,UserService: Async processing with concurrency limits
+
+  Queue->>Orchestrator: Dequeue order
+  Orchestrator->>Orchestrator: Acquire concurrency permit
+
+  %% PRE-TRADE VALIDATION
+  Orchestrator->>Validator: validate_trade
+  Validator->>UserService: get_user for balance and holdings
+  UserService-->>Validator: User data
+  Validator->>MarketData: get_price via API Gateway cache
+  MarketData-->>Validator: Current price
+  Validator->>Validator: Check balance, holdings, limits, price bands
+  Validator-->>Orchestrator: ValidationResult
+
+  alt Validation Failed
+    Orchestrator->>OrderService: update_order_execution to REJECTED
+    OrderService-->>Orchestrator: Updated
+    note over Orchestrator: Stop processing - order rejected
+  else Validation Passed
+    %% ORDER EXECUTION
+    Orchestrator->>MarketData: execute_order
+    MarketData->>MarketData: Simulate market execution
+    MarketData-->>Orchestrator: ExecutionResult with status and price
+
+    Orchestrator->>OrderService: update_order_execution with results
+    OrderService-->>Orchestrator: Updated order
+
+    alt Order Filled
+      %% POST-TRADE SETTLEMENT
+      Orchestrator->>UserService: withdraw_funds for BUY or deposit_funds for SELL
+      UserService->>UserService: Update balance in DB
+      UserService-->>Orchestrator: Balance updated
+
+      Orchestrator->>UserService: update_holdings with quantity change
+      UserService->>UserService: Update holdings in DB
+      UserService-->>Orchestrator: Holdings updated
+
+      note over Orchestrator: Order completed successfully
+    else Order Rejected
+      note over Orchestrator: No settlement needed
+    end
   end
 
-  APIGateway-->>User: HTTP 201 Created (Order details, status, execution info)
+  Orchestrator->>Orchestrator: Release concurrency permit
+  Orchestrator->>Orchestrator: Record metrics
 
-  %% Notes
-  note over APIGateway,User: API Gateway orchestrates all steps, handles errors, and returns final result
-  note over APIGateway: All service calls are synchronous HTTP requests, each service validates and persists its own data
+  note over Orchestrator: Processing complete - User can fetch updated order
+
+  %% USER POLLING
+  User->>APIGateway: GET /v1/orders/:id
+  APIGateway->>OrderService: get_order
+  OrderService-->>APIGateway: Order with final status
+  APIGateway-->>User: Order details with FILLED/REJECTED status

@@ -1,7 +1,7 @@
 activityDiagram
 title: Expérience Utilisateur BrokerX
 start
-:Utilisateur se rend sur le site BrokerX;
+:Utilisateur accède à l'application web;
 
 if (session existante ?) then
   :Session déjà ouverte;
@@ -10,7 +10,8 @@ else
 
   switch (choix initial)
   case (Inscription)
-    :Créer un nouveau compte;
+    :Remplir formulaire inscription;
+    :Créer nouveau compte;
     :Afficher confirmation inscription;
     :Lancer procédure de connexion;
   case (Connexion)
@@ -18,14 +19,10 @@ else
   endswitch
 
   partition Authentification {
-    :Demander identifiant et mot de passe;
-    :Demander confirmation code OTP;
-    if (utilisateur authentifié ?) then
-      if (Statut utilisateur est non-vérifié ?) then
-        :Changer statut utilisateur à vérifié;
-      else
-      endif
-      :Session ouverte;
+    :Soumettre identifiants;
+    :Vérifier code OTP;
+    if (authentification réussie ?) then
+      :Ouvrir session utilisateur;
     else
       :Afficher erreur accès refusé;
       stop
@@ -33,25 +30,40 @@ else
   }
 endif
 
-partition Portefeuille {
-    :Utilisateur redirigé sur son profil;
-    :Présenter son solde, ses ordres passés, leur statut et son portfolio;
+partition TableauDeBord {
+    :Afficher tableau de bord;
+    note right: Solde, ordres, portfolio, données marché
 
   switch (choix utilisateur)
   case (Approvisionnement)
-    :Demander montant à déposer;
-    :Confirmer dépôt crédité;
+    :Saisir montant à déposer;
+    :Valider et créditer portefeuille;
+    :Confirmer dépôt;
+    
   case (Modifier profil)
-    :Afficher formulaire modification profil;
-    :Confirmer modifications enregistrées;
+    :Modifier informations profil;
+    :Enregistrer modifications;
+    
   case (Consultation marché)
-    :Afficher cotations en temps réel;
+    :Afficher cotations temps réel;
+    
   case (Passer un ordre)
-    :Demander type ordre et paramètres;
-    :Demande d'ordre envoyée au système;
-    case (Afficher ordres passés)
-    :Afficher derniers ordres;
+    :Remplir formulaire ordre;
+    :Soumettre ordre;
+    :Le système traite l'ordre;
+    if (ordre valide ?) then
+      :Débiter/Créditer utilisateur;
+      :Mettre à jour portfolio;
+      :Passer l'ordre en traité;
+    else
+      :Passer l'ordre en rejeté;
+    endif
+    
+  case (Afficher ordres)
+    :Afficher historique ordres;
   endswitch
 }
+
+:Continuer navigation;
 end
 

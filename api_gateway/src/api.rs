@@ -430,7 +430,7 @@ pub async fn create_order(
         .submit_order(user_id, &order_request, Some(order.id))
         .await
     {
-        Ok(_) => {
+        Ok(()) => {
             info!(
                 "Order {} submitted to orchestrator for user {}",
                 order.id, user_id

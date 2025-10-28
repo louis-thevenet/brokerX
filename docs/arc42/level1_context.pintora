@@ -1,90 +1,129 @@
 classDiagram
-  title: Level 1 - System Context with Microservices
+  title: Level 1 - System Context
   
   class User {
     <<actor>>
-    +Trades stocks
-    +Manages portfolio
-    +Views market data
+    +Access via browser
+  }
+  
+  class WebApp {
+    <<frontend>>
+    +HTML/JavaScript interface
+    +Authentication forms
+    +Trading dashboard
+    +Market data display
   }
   
   class APIGateway {
-    <<system>>
-    +Routes requests
-    +Validates authentication
+    <<gateway>>
+    +JWT authentication
+    +Request routing
+    +CORS handling
+    +MFA orchestration
+    +Trade validation
   }
   
   class UserService {
     <<microservice>>
-    +User management
-    +Portfolio management
+    +User CRUD
     +Authentication
+    +Portfolio balance
+    +Holdings management
+    +Email verification
   }
   
   class OrderService {
     <<microservice>>
-    +Order creation
-    +Order execution
-    +Order tracking
+    +Order CRUD
+    +Order persistence
+    +Status tracking
+    +Order history
+    +Pagination
   }
   
   class MarketDataService {
     <<microservice>>
-    +Price data
-    +Market simulation
-    +Symbol information
+    +Current prices
+    +Historical prices
+    +Symbol management
+    +Price simulation
+    +Order execution simulation
+  }
+  
+  class OrderOrchestrator {
+    <<microservice>>
+    +Order acceptance queue
+    +Pre-trade validation
+    +Balance checks
+    +Symbol validation
+    +Order execution coordination
+    +Post-trade settlement
+    +Async processing
   }
   
   class MFAAdapter {
-    <<microservice>>
-    +MFA challenges
+    <<library>>
+    +OTP generation
     +Code verification
+    +Challenge storage
+    +Email sending
   }
   
   class UserDB {
-    <<database>>
-    +User accounts
-    +Portfolio data
+    <<PostgreSQL>>
+    +users table
+    +holdings table
   }
   
   class OrderDB {
-    <<database>>
-    +Orders
-    +Transactions
+    <<PostgreSQL>>
+    +orders table
   }
   
   class MarketDataDB {
-    <<database>>
-    +Market prices
-    +Simulation state
+    <<PostgreSQL>>
+    +stocks table
+    +prices table
   }
   
   class EmailServer {
-    <<external system>>
-    +Sends MFA codes
-    +Sends notifications
+    <<external>>
+    +SMTP relay
+    +OTP delivery
   }
   
-  %% User interactions
-  User --> APIGateway: HTTPS requests
-  APIGateway --> User: JSON responses
+  %% User flow
+  User --> WebApp: Browser access
+  WebApp --> APIGateway: HTTPS REST API
   
-  %% API Gateway to services
-  APIGateway --> UserService: HTTP
-  APIGateway --> OrderService: HTTP
-  APIGateway --> MarketDataService: HTTP
-  APIGateway --> MFAAdapter: HTTP
+  %% API Gateway as single entry point
+  APIGateway --> UserService: User operations
+  APIGateway --> OrderService: Order queries
+  APIGateway --> MarketDataService: Market data
+  APIGateway --> OrderOrchestrator: Order creation
   
-  %% Services to databases
-  UserService --> UserDB: SQL
-  OrderService --> OrderDB: SQL
-  MarketDataService --> MarketDataDB: SQL
+  %% Internal orchestration
+  OrderOrchestrator --> UserService: Validate balance
+  OrderOrchestrator --> MarketDataService: Execute order
+  OrderOrchestrator --> OrderService: Update status
+  OrderOrchestrator --> UserService: Update holdings
   
-  %% Cross-service dependencies
-  UserService --> MFAAdapter: MFA requests
+  %% Database connections
+  UserService --> UserDB: SQL queries
+  OrderService --> OrderDB: SQL queries
+  MarketDataService --> MarketDataDB: SQL queries
+  
+  %% MFA integration
+  APIGateway ..> MFAAdapter: Uses library
   MFAAdapter --> EmailServer: SMTP
   
-  @note right of APIGateway: Rust/Axum\nPort 3000
-  @note bottom of UserDB: PostgreSQL
-  @note bottom of OrderDB: PostgreSQL
-  @note bottom of MarketDataDB: PostgreSQL
+  @note right of WebApp: Port 8000\nStatic HTML/JS
+  @note right of APIGateway: Port 8080\nAxum/Rust
+  @note right of UserService: Port 3001\nAxum/Rust
+  @note right of OrderService: Port 3002\nAxum/Rust
+  @note right of MarketDataService: Port 3003\nAxum/Rust
+  @note right of OrderOrchestrator: Port 3004\nAxum/Rust\nAsync queue
+  @note right of MFAAdapter: Embedded crate\nNo network port
+  @note bottom of UserDB: Port 5432
+  @note bottom of OrderDB: Port 5433
+  @note bottom of MarketDataDB: Port 5434

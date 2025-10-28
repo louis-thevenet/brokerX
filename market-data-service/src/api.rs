@@ -80,7 +80,7 @@ impl From<crate::service::ServiceError> for ApiError {
             crate::service::ServiceError::RepositoryError(
                 crate::repository::RepositoryError::NotFound(symbol),
             ) => ApiError::NotFound(format!("Market data not found for symbol: {symbol}")),
-            _ => ApiError::InternalError(err.to_string()),
+            crate::service::ServiceError::RepositoryError(_) => ApiError::InternalError(err.to_string()),
         }
     }
 }

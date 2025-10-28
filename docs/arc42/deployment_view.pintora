@@ -1,14 +1,56 @@
-classDiagram
-  title: BrokerX - Vue de Déploiement
+componentDiagram
+  title: BrokerX - Vue de Déploiement (Docker Compose)
   
-  class BrokerXBinary {
-    <<executable>>
-    Rust Application
+  package "Client Layer" {
+    [Web Browser] as browser
   }
   
-  class PostgreSQL {
-    <<database>>
-    Data Storage
+  package "Frontend" {
+    [WebApp] as webapp
   }
   
-  BrokerXBinary --> PostgreSQL: SQL connections
+  package "API Layer" {
+    [API Gateway] as gateway
+  }
+  
+  package "Microservices" {
+    [User Service] as userSvc
+    [Order Service] as orderSvc
+    [Market Data Service] as marketSvc
+    [Order Orchestrator] as orchestrator
+  }
+  
+  package "Databases" {
+    [User DB] as userDB
+    [Order DB] as orderDB
+    [Market Data DB] as marketDB
+  }
+  
+  package "Monitoring" {
+    [Prometheus] as prometheus
+    [Grafana] as grafana
+  }
+  
+  browser --> webapp
+  webapp --> gateway
+  
+  gateway --> userSvc
+  gateway --> orderSvc
+  gateway --> marketSvc
+  gateway --> orchestrator
+  
+  orchestrator --> userSvc
+  orchestrator --> orderSvc
+  orchestrator --> marketSvc
+  
+  userSvc --> userDB
+  orderSvc --> orderDB
+  marketSvc --> marketDB
+  
+  prometheus --> gateway
+  prometheus --> userSvc
+  prometheus --> orderSvc
+  prometheus --> marketSvc
+  prometheus --> orchestrator
+  
+  grafana --> prometheus
