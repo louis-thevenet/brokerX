@@ -58,6 +58,15 @@ use utoipa_swagger_ui::SwaggerUi;
         (name = "admin", description = "Administrative operations"),
         (name = "execution", description = "Order execution simulation"),
         (name = "health", description = "Health check operations")
+    ),
+    info(
+        title = "Market Data Service API",
+        version = "1.0.0",
+        description = "Service for real-time market data, historical prices, and order execution simulation.",
+    ),
+    servers(
+        (url = "http://localhost:3003", description = "Local development server"),
+        (url = "http://market-data-service:3003", description = "Docker service")
     )
 )]
 struct ApiDoc;

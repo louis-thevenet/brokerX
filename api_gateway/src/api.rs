@@ -78,6 +78,15 @@ use uuid::Uuid;
         (name = "user", description = "User management endpoints"),
         (name = "orders", description = "Order management endpoints"),
         (name = "market", description = "Market data endpoints")
+    ),
+    info(
+        title = "BrokerX API Gateway",
+        version = "1.0.0",
+        description = "Main API Gateway for BrokerX platform - handles authentication, routing, and API composition.",
+    ),
+    servers(
+        (url = "http://localhost:8080", description = "Local development server"),
+        (url = "http://api-gateway:8080", description = "Docker service")
     )
 )]
 pub struct ApiDoc;

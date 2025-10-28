@@ -55,6 +55,15 @@ pub struct AppState {
     tags(
         (name = "orders", description = "Order management operations"),
         (name = "health", description = "Health check operations")
+    ),
+    info(
+        title = "Order Service API",
+        version = "1.0.0",
+        description = "Service for managing order lifecycle including creation, updates, and cancellation.",
+    ),
+    servers(
+        (url = "http://localhost:3002", description = "Local development server"),
+        (url = "http://order-service:3002", description = "Docker service")
     )
 )]
 struct ApiDoc;

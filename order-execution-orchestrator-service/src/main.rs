@@ -107,8 +107,8 @@ pub struct AppState {
         description = "Service that orchestrates order execution lifecycle including validation, creation, execution, and settlement. This service handles the complete order processing workflow including pre-trade validation, execution, and post-trade settlement.",
     ),
     servers(
-        (url = "http://localhost:8083", description = "Local development server"),
-        (url = "http://order-execution-orchestrator-service:8083", description = "Docker service")
+        (url = "http://localhost:3004", description = "Local development server"),
+        (url = "http://order-execution-orchestrator-service:3004", description = "Docker service")
     )
 )]
 struct ApiDoc;

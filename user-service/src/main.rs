@@ -59,6 +59,15 @@ pub struct AppState {
         (name = "users", description = "User management operations"),
         (name = "auth", description = "Authentication operations"),
         (name = "health", description = "Health check operations")
+    ),
+    info(
+        title = "User Service API",
+        version = "1.0.0",
+        description = "Service for managing users, authentication, holdings, and trade validation.",
+    ),
+    servers(
+        (url = "http://localhost:3001", description = "Local development server"),
+        (url = "http://user-service:3001", description = "Docker service")
     )
 )]
 struct ApiDoc;

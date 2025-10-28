@@ -149,8 +149,6 @@ Ce cas d'utilisation permet à un utilisateur de modifier ou d'annuler un ordre 
 
 = Stratégie de solution
 
-// TODO: compléter ça
-
 #figure(
   table(
     columns: 2,
@@ -165,6 +163,161 @@ Ce cas d'utilisation permet à un utilisateur de modifier ou d'annuler un ordre 
   ),
   caption: [Stratégie de solution],
 )
+
+= Domain-Driven Design (DDD)
+
+== Introduction au DDD
+
+BrokerX applique les principes du Domain-Driven Design pour structurer le code métier autour des concepts du domaine financier. Cette approche permet une meilleure séparation des préoccupations et une évolutivité accrue du système.
+
+== Bounded Contexts
+
+Le système BrokerX est divisé en plusieurs contextes délimités (Bounded Contexts), chacun représentant un sous-domaine métier distinct :
+
+#figure(
+  table(
+    columns: 3,
+    align: (left, left, left),
+    table.header([*Bounded Context*], [*Responsabilité*], [*Service*]),
+    [*User Context*],
+    [Gestion des utilisateurs, authentification, soldes et positions],
+    [UserService],
+
+    [*Order Context*], [Gestion du cycle de vie des ordres], [OrderService],
+    [*Market Data Context*],
+    [Données de marché, cotations, exécution simulée],
+    [MarketDataService],
+
+    [*Order Processing Context*],
+    [Orchestration, validation pré/post-trade],
+    [OrderOrchestrator],
+  ),
+  caption: [Bounded Contexts de BrokerX],
+)
+
+Chaque contexte est implémenté comme un microservice autonome avec sa propre base de données, garantissant l'isolation et l'indépendance des domaines.
+
+== Entités et Value Objects
+
+=== Entités principales
+
+Les entités sont des objets métier identifiés par un identifiant unique (UUID) dont l'identité persiste dans le temps :
+
+*User Context*
+- `User` : Entité représentant un utilisateur du système
+  - Attributs : `id` (UUID), `email`, `password_hash`, `balance`, `verified`, `created_at`
+  - Invariants : email unique,
+- `Holding` : Position d'un utilisateur sur un instrument
+  - Attributs : `user_id`, `symbol`, `quantity`, `average_price`
+  - Invariants : quantity > 0
+
+*Order Context*
+- `Order` : Entité centrale représentant un ordre de bourse
+  - Attributs : `id` (UUID), `user_id`, `symbol`, `order_type`, `quantity`, `price`, `status`, `created_at`
+  - Machine à états : `PENDING` → `VALIDATED` → `FILLED` / `REJECTED` / `CANCELLED`
+  - Invariants : quantity > 0, price > 0 (pour ordres limites)
+
+*Market Data Context*
+- `Stock` : Instrument financier
+  - Attributs : `symbol`, `name`, `current_price`, `last_updated`
+  - Invariants : price > 0
+
+=== Value Objects
+
+Les Value Objects sont des objets immuables définis par leurs attributs :
+
+- `OrderType` : Énumération `MARKET` | `LIMIT`
+- `OrderStatus` : Énumération `PENDING` | `VALIDATED` | `FILLED` | `REJECTED` | `CANCELLED`
+- `Side` : Énumération `BUY` | `SELL`
+- `Money` : Représentation du montant avec précision (Decimal)
+
+== Aggregates
+
+Les aggregates définissent les frontières transactionnelles et de cohérence :
+
+*User Aggregate*
+- Racine : `User`
+- Entités liées : `Holding[]`
+- Règles : Toute modification du solde ou des positions doit passer par l'aggregate User pour garantir la cohérence
+
+*Order Aggregate*
+- Racine : `Order`
+- Auto-suffisant : un ordre est traité de manière autonome
+- Règles : Les transitions d'état sont contrôlées par la machine à états
+
+== Repositories
+
+Le pattern Repository abstrait l'accès aux données et fournit une interface orientée collection :
+
+```rust
+trait UserRepository {
+    fn find_by_id(&self, id: Uuid) -> Option<User>;
+    fn find_by_email(&self, email: &str) -> Option<User>;
+    fn save(&self, user: &User) -> Result<()>;
+    fn update_balance(&self, user_id: Uuid, amount: Decimal) -> Result<()>;
+}
+
+trait OrderRepository {
+    fn find_by_id(&self, id: Uuid) -> Option<Order>;
+    fn find_by_user(&self, user_id: Uuid) -> Vec<Order>;
+    fn save(&self, order: &Order) -> Result<()>;
+    fn update_status(&self, id: Uuid, status: OrderStatus) -> Result<()>;
+}
+```
+
+Chaque bounded context possède son propre repository isolé, implémenté avec PostgreSQL.
+
+== Domain Services
+
+Les services de domaine encapsulent la logique métier qui ne correspond pas naturellement à une entité :
+
+*TradeValidator*
+- Responsabilité : Validation pré/post-trade des ordres
+- Logique :
+  - Vérification de solvabilité (solde suffisant pour achat)
+  - Vérification des positions (quantité suffisante pour vente)
+  - Contrôle des bandes de prix ($plus.minus 10%$ du prix de marché pour ordres limites)
+- Collaboration : Interroge `UserRepository` et `MarketDataRepository`
+
+*OrderExecutor*
+- Responsabilité : Simulation de l'exécution sur le marché
+- Logique : Interaction avec les autres services pour simuler l'exécution des ordres
+
+== Ubiquitous Language
+
+Le langage omniprésent (Ubiquitous Language) utilisé dans BrokerX reflète le vocabulaire métier de la finance :
+
+#figure(
+  table(
+    columns: 2,
+    align: (left, left),
+    table.header([*Terme métier*], [*Signification dans le code*]),
+    [Ordre], [`Order` entity],
+    [Exécution], [Passage d'un ordre de `VALIDATED` à `FILLED`],
+    [Règlement], [Mise à jour du solde et des positions après exécution],
+    [Position], [`Holding` entity],
+    [Solde], [`User.balance`],
+    [Pré/Post-trade], [Validation avant/après exécution (`TradeValidator`)],
+  ),
+  caption: [Ubiquitous Language de BrokerX],
+)
+
+
+== Architecture en couches (Layered Architecture)
+
+Bien que BrokerX utilise une architecture microservices, chaque service respecte une séparation en couches :
+
++ API Layer (HTTP Handlers) $arrow$ Axum routes
++ Application Layer (Use Cases) $arrow$ Orchestration
++ Domain Layer (Business Logic) $arrow$ Entities, Services
++ Infrastructure Layer (Repos) $arrow$ PostgreSQL, HTTP clients
+
+
+*Application Layer* : Cas d'usage orchestrant les opérations du domaine
+
+*Infrastructure Layer* : Implémentations concrètes des repositories et clients externes (mail)
+
+Cette séparation permet de tester la logique métier indépendamment de l'infrastructure.
 
 = Vue des blocs de construction
 
@@ -361,24 +514,275 @@ On voit que la queue d'ordres monte en pic lors des charges élevées, mais les 
   "./p95_orders.png",
 ))
 
-Le premier service à tomber est celui chargé de mettre à jour les soldes et portefeuilles des utilisateurs.
+Le premier service à tomber est celui chargé de mettre à jour les soldes et portefeuilles des utilisateurs. Mais le passage d'ordre est maintenu.
 
 #figure(caption: "Latence sur tous les endpoints", image("./latency.png"))
 
 // == Risques et dettes techniques
 
-= Glossaire
+
+= Runbook
+
+Le runbook suivant documente les procédures opérationnelles standards (SOP) pour le déploiement, la surveillance et le dépannage du système BrokerX.
+
+== Vue d'ensemble des services
+
+BrokerX est composé de 5 microservices principaux, 3 bases de données PostgreSQL et une stack de monitoring (Prometheus + Grafana). Par défaut:
 
 #figure(
   table(
-    columns: 2,
-    align: (left, left),
-    table.header([*Terme*], [*Définition*]),
-    [Ordre], [Instruction d'achat ou de vente d'un instrument financier],
-    [Portefeuille], [Ensemble des actifs financiers détenus par un utilisateur],
-    [MFA], [Authentification multi-facteurs],
-    [OTP], [One-Time Password, mot de passe à usage unique],
-    [JWT], [JSON Web Token, format de token sécurisé pour l'authentification],
+    columns: 3,
+    align: (left, left, left),
+    table.header([*Service*], [*Port*], [*Endpoint santé*]),
+    [Web App], [8000], [`http://localhost:8000`],
+    [API Gateway], [8080], [`http://localhost:8080/v1/health`],
+    [User Service], [3001], [`http://localhost:3001/v1/health`],
+    [Order Service], [3002], [`http://localhost:3002/v1/health`],
+    [Market Data Service], [3003], [`http://localhost:3003/v1/health`],
+    [Order Orchestrator], [3004], [`http://localhost:3004/v1/health`],
+    [Prometheus], [9090], [`http://localhost:9090`],
+    [Grafana], [3000], [`http://localhost:3000`],
   ),
-  caption: [Glossaire],
+  caption: [Services BrokerX et ports associés],
 )
+
+== Déploiement
+
+=== Prérequis
+
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+- Just (gestionnaire de commandes) — optionnel mais recommandé
+
+=== Configuration initiale
++ Fichier de configuration
+  - Un fichier `.env` devrait êter fourni avec l'archive
+  - Sinon créer le fichier de configuration `.env`:
+    ```bash
+    cp .env.example .env
+    ```
++ Choisir un mode MFA :
+  - La passerelle API peut être configurée pour ne pas envoyer de mails et accepter tous les codes OTP avec: `- MFA_BYPASS=false` dans la section api-gateway du fichier `docker-compose.yml`.
+  - Modifier `.env` avec les variables d'environnement appropriées (entre autres)
+    - `SMTP_HOST` : serveur SMTP pour l'envoi d'emails MFA
+    - `SMTP_PORT` : port SMTP (587 par défaut)
+    - `SMTP_USERNAME` : identifiant SMTP
+    - `SMTP_PASSWORD` : mot de passe SMTP
+    - `SMTP_FROM` : adresse email d'envoi
+
+=== Démarrage complet de la stack
+
+*Méthode 1 : Avec Just (recommandé)*
+
+```bash
+just docker-up
+```
+
+Cette commande démarre tous les services et affiche les URLs d'accès.
+
+*Méthode 2 : Avec Docker Compose*
+
+```bash
+docker compose up -d
+```
+
+=== Démarrage sélectif des composants
+
+*Démarrer uniquement les bases de données :*
+
+```bash
+just docker-db
+# ou
+docker compose up -d user-db order-db market-data-db
+```
+
+*Démarrer uniquement les microservices :*
+
+```bash
+just docker-services
+# ou
+docker compose up -d user-service order-service \
+  market-data-service order-execution-orchestrator-service \
+  api-gateway webapp
+```
+
+*Démarrer uniquement le monitoring :*
+
+```bash
+just docker-monitoring
+# ou
+docker compose up -d prometheus grafana
+```
+
+=== Vérification du déploiement
+
++ *Vérifier l'état des conteneurs :*
+  ```bash
+  docker compose ps
+  ```
+  Tous les services doivent être en état `Up (healthy)`.
+
++ *Vérifier les logs :*
+  ```bash
+  just docker-logs
+  # ou
+  docker compose logs -f
+  ```
+
++ *Tester les endpoints de santé :*
+  ```bash
+  curl http://localhost:8080/v1/health
+  curl http://localhost:3001/v1/health
+  curl http://localhost:3002/v1/health
+  curl http://localhost:3003/v1/health
+  curl http://localhost:3004/v1/health
+  ```
+
+  Chaque endpoint doit retourner `{"status": "ok"}`.
+
++ *Accéder à l'interface web :*
+  - Web App : `http://localhost:8000`
+
+== Surveillance et monitoring
+
+=== Prometheus
+
+*URL :* `http://localhost:9090`
+
+
+
+=== Grafana
+
+*URL :* `http://localhost:3000`
+
+*Identifiants par défaut :*
+- Username : `admin`
+- Password : `admin123`
+
+*Configuration initiale :*
+
++ Se connecter à Grafana
++ Importer le dashboard pré-configuré :
+  - Aller dans Dashboards → Import
+  - Télécharger `./grafana_dashboard.json`
+  - Sélectionner la source Prometheus
+  - Cliquer sur Import
+
+*Dashboards disponibles :*
+- Performance globale (latence, débit)
+- Statut de la queue d'ordres
+- Métriques par service
+- Erreur 4xx et 5xx
+- 4 Golden Signals
+
+=== Logs
+
+*Consulter les logs en temps réel :*
+
+```bash
+# Tous les services
+docker compose logs -f
+
+# Service spécifique
+docker compose logs -f api-gateway
+docker compose logs -f order-execution-orchestrator-service
+
+# Filtrer par niveau
+docker compose logs -f | grep ERROR
+docker compose logs -f | grep WARN
+```
+
+*Structure des logs :*
+
+Les logs utilisent le format structuré `tracing` de Rust avec les niveaux suivants :
+- `ERROR` : Erreurs critiques nécessitant une action immédiate
+- `WARN` : Situations anormales mais gérées
+- `INFO` : Événements importants du système
+- `DEBUG` : Informations de débogage détaillées (désactivé en production)
+- `TRACE` : Traçage très détaillé (désactivé en production)
+
+== Tests de charge
+
+=== Préparation
+
++ *Activer le bypass MFA :*
+
+  Éditer `docker-compose.yml` et définir `MFA_BYPASS=true` dans la section API Gateway :
+
+  ```yaml
+  api-gateway:
+    environment:
+      - MFA_BYPASS=true
+  ```
+
++ *Redémarrer les services :*
+  ```bash
+  docker compose up -d api-gateway
+  ```
+
+=== Exécution des tests K6
+
+*Configuration :*
+
+```bash
+just load-test-setup
+```
+
+*Lancer les tests :*
+
+```bash
+just load-test
+# ou
+cd load-tests && k6 run scenarios/quality-validation.js
+```
+
+*Scénarios disponibles :*
+- `quality-validation.js` : Test de charge complet (800+ ordres/s)
+- `market-data-consultation.js` : Test de consultation des données de marché
+
+*Métriques attendues :*
+- Débit : ≥ 800 ordres/s
+- Latence P95 : ≤ 250 ms
+- Taux d'erreur : < 1%
+
+= Guide d’utilisation
+== Frontend Web
+
+Créer un nouveau compte utilisateur:
+
+On peut cliquer sur "Register":
+#image("./login.png")
+
+Après avoir rempli le formulaire d'inscription:
+#image("./register_confirmation.png")
+
+On peut maintenant se connecter:
+#image("./otp.png")
+
+Vue informations personnelles:
+#image("./profile1.png")
+Vue marché:
+#image("./profile2.png")
+Portfolio, ordres passés et formulaire de passage d'ordre:
+#image("./profile3.png")
+Après avoir passé des ordres:
+#image("./orders.png")
+#image("./holdings.png")
+
+== API
+=== Swagger UI
+/ API Gateway: #link("http://127.0.0.1:8080/swagger-ui/")
+/ User Service: #link("http://127.0.0.1:3001/swagger-ui/")
+/ Order Service: #link("http://127.0.0.1:3002/swagger-ui/")
+/ Market Data Service: #link("http://127.0.0.1:3003/swagger-ui/")
+/ Order Orchestrator Service: #link("http://127.0.0.1:3004/swagger-ui/")
+
+=== Postman
+Les collections sont également disponibles dans le répertoire `docs/postman/`.
+/ API Gateway: #link("http://127.0.0.1:8080/api-docs/openapi.json")
+/ User Service: #link("http://127.0.0.1:3001/api-docs/openapi.json")
+/ Order Service: #link("http://127.0.0.1:3002/api-docs/openapi.json")
+/ Market Data Service: #link("http://127.0.0.1:3003/api-docs/openapi.json")
+/ Order Orchestrator Service: #link(
+    "http://127.0.0.1:3004/api-docs/openapi.json",
+  )

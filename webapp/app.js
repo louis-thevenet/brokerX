@@ -65,12 +65,12 @@ async function login(event) {
 
     if (response.ok) {
       const data = await response.json();
-      
+
       // All logins require MFA - always show verification screen
       pendingMfaChallenge = data.challenge_id;
       mfaStep = 'login';
       sessionStorage.setItem('pending_user_id', data.user_id);
-      showMfaVerification('Multi-Factor Authentication', 
+      showMfaVerification('Multi-Factor Authentication',
         'Please enter the verification code sent to your email to complete login. Check your email for the 6-digit code.');
     } else {
       const error = await response.json();
@@ -103,11 +103,11 @@ async function register(event) {
 
     if (response.ok) {
       const data = await response.json();
-      
+
       // Registration creates the account - MFA challenge will be sent during login
-      showMessage('auth-message', 
+      showMessage('auth-message',
         'Registration successful! Please login to verify your account. You will receive a verification code via email during login.');
-      
+
       // Clear registration form and show login
       document.getElementById('reg-email').value = '';
       document.getElementById('reg-password').value = '';
@@ -426,7 +426,7 @@ async function placeOrder(event) {
 
     console.log('Order response status:', response.status);
     console.log('Order response headers:', response.headers);
-    
+
     if (response.ok) {
       const result = await response.json();
       console.log('Order created:', result);
@@ -497,7 +497,7 @@ async function loadOrders() {
       // REST API returns paginated response: { data: [...], pagination: {...} }
       const orders = data.data || [];
       displayOrders(orders);
-      
+
       // Show pagination info if available
       if (data.pagination) {
         const paginationInfo = `Showing page ${data.pagination.page} of ${data.pagination.total_pages} (${data.pagination.total_items} total orders)`;
@@ -516,12 +516,12 @@ async function loadOrders() {
 function formatOrderType(orderType) {
   // orderType is a tagged enum: { type: "market" } or { type: "limit", price: 150.0 }
   if (!orderType) return 'Unknown';
-  
+
   if (typeof orderType === 'string') {
     // Legacy format compatibility (shouldn't happen with new API)
     return orderType;
   }
-  
+
   if (orderType.type === 'market') {
     return 'Market';
   } else if (orderType.type === 'limit') {
@@ -533,15 +533,15 @@ function formatOrderType(orderType) {
 function formatOrderStatus(status) {
   // status is a tagged enum: { status: "pending" } or { status: "filled", date: "..." }
   if (!status) return 'Unknown';
-  
+
   // Debug: log the actual status object
   console.log('Formatting status:', status);
-  
+
   if (typeof status === 'string') {
     // Legacy format compatibility (shouldn't happen with new API)
     return status;
   }
-  
+
   if (status.status === 'pending') {
     return 'Pending';
   } else if (status.status === 'filled') {
@@ -564,22 +564,22 @@ function formatOrderStatus(status) {
 function canCancelOrder(status) {
   // Can only cancel pending or partially filled orders
   if (!status) return false;
-  
+
   if (typeof status === 'string') {
     return status === 'PENDING';
   }
-  
+
   return status.status === 'pending' || status.status === 'partially_filled';
 }
 
 function canUpdateOrder(status) {
   // Can only update pending or partially filled orders
   if (!status) return false;
-  
+
   if (typeof status === 'string') {
     return status === 'PENDING';
   }
-  
+
   return status.status === 'pending' || status.status === 'partially_filled';
 }
 
@@ -613,7 +613,7 @@ function displayOrders(orders) {
     const filledPrice = order.filled_price ? `$${order.filled_price.toFixed(2)}` : '-';
     // Escape order data for HTML attributes
     const orderTypeJson = JSON.stringify(order.order_type).replace(/"/g, '&quot;');
-    
+
     html += `
       <tr>
         <td style="font-size: 0.85rem;">${orderDate}</td>
@@ -624,14 +624,14 @@ function displayOrders(orders) {
         <td>${filledPrice}</td>
         <td>${formatOrderStatus(order.status)}</td>
         <td>
-          ${canCancelOrder(order.status) ? 
-            `<button onclick="cancelOrder('${order.id}')" class="btn-secondary" style="font-size: 0.85rem; padding: 4px 8px;">❌ Cancel</button>` : 
-            '-'
-          }
-          ${canUpdateOrder(order.status) ? 
-            `<button onclick="updateOrderDialog('${order.id}', ${order.quantity}, '${orderTypeJson}')" class="btn-info" style="font-size: 0.85rem; padding: 4px 8px; margin-left: 4px;">✏️ Edit</button>` : 
-            ''
-          }
+          ${canCancelOrder(order.status) ?
+        `<button onclick="cancelOrder('${order.id}')" class="btn-secondary" style="font-size: 0.85rem; padding: 4px 8px;">❌ Cancel</button>` :
+        '-'
+      }
+          ${canUpdateOrder(order.status) ?
+        `<button onclick="updateOrderDialog('${order.id}', ${order.quantity}, '${orderTypeJson}')" class="btn-info" style="font-size: 0.85rem; padding: 4px 8px; margin-left: 4px;">✏️ Edit</button>` :
+        ''
+      }
         </td>
       </tr>
     `;
@@ -681,7 +681,7 @@ function updateOrderDialog(orderId, currentQuantity, currentTypeJson) {
   document.getElementById('update-order-modal').style.display = 'block';
   document.getElementById('update-order-id').value = orderId;
   document.getElementById('update-order-quantity').value = currentQuantity;
-  
+
   // Set order type
   if (currentType.type === 'market') {
     document.getElementById('update-order-type').value = 'MARKET';
@@ -692,7 +692,7 @@ function updateOrderDialog(orderId, currentQuantity, currentTypeJson) {
     document.getElementById('update-price-field').classList.remove('hidden');
     document.getElementById('update-order-price').value = currentType.price || '';
   }
-  
+
   document.getElementById('update-order-message').innerHTML = '';
 }
 
@@ -717,7 +717,7 @@ function toggleUpdatePriceField() {
 
 async function submitOrderUpdateFromModal(event) {
   event.preventDefault();
-  
+
   const orderId = document.getElementById('update-order-id').value;
   const quantity = parseInt(document.getElementById('update-order-quantity').value);
   const orderTypeValue = document.getElementById('update-order-type').value;
@@ -765,7 +765,7 @@ async function loadMarketData() {
   try {
     // First, load available symbols
     const symbolsResponse = await makeApiCall('/v1/market/symbols');
-    
+
     if (!symbolsResponse.ok) {
       const error = await symbolsResponse.json().catch(() => ({ message: 'Failed to load market data' }));
       showMessage('market-message', error.message || 'Failed to load market data', true);
@@ -774,31 +774,31 @@ async function loadMarketData() {
 
     const symbolsData = await symbolsResponse.json();
     console.log('Symbols response:', symbolsData);
-    
+
     // The API returns { symbols: [...], count: N }
     const symbols = symbolsData.symbols || symbolsData.data || [];
-    
+
     if (!symbols || symbols.length === 0) {
       document.getElementById('market-prices-table').innerHTML = '<p>No market data available.</p>';
       return;
     }
 
     console.log('Available symbols:', symbols);
-    
+
     // Update the datalist for order form
     updateSymbolDatalist(symbols);
 
     // Fetch prices for all symbols
     const pricesResponse = await makeApiCall('/v1/market/prices');
-    
+
     if (pricesResponse.ok) {
       const pricesData = await pricesResponse.json();
       console.log('Prices response:', pricesData);
-      
+
       // The API returns { prices: [...] }
       const prices = pricesData.prices || pricesData.data || [];
       console.log('Extracted prices array:', prices);
-      
+
       displayMarketPrices(prices);
     } else {
       showMessage('market-message', 'Failed to load current prices', true);
@@ -812,7 +812,7 @@ async function loadMarketData() {
 function updateSymbolDatalist(symbols) {
   const datalist = document.getElementById('available-symbols');
   if (!datalist) return;
-  
+
   datalist.innerHTML = symbols.map(symbol => `<option value="${symbol}">`).join('');
 }
 
@@ -854,7 +854,7 @@ function displayMarketPrices(prices) {
     const previousPrice = marketDataCache[priceData.symbol];
     let changeClass = 'price-neutral';
     let changeIndicator = '';
-    
+
     if (previousPrice) {
       if (priceData.price > previousPrice) {
         changeClass = 'price-up';
@@ -864,16 +864,16 @@ function displayMarketPrices(prices) {
         changeIndicator = '▼';
       }
     }
-    
+
     // Update cache
     marketDataCache[priceData.symbol] = priceData.price;
-    
+
     // Format timestamp
     const lastUpdate = new Date(priceData.timestamp || Date.now()).toLocaleTimeString();
-    
+
     // Format high/low
     const highLow = `$${priceData.high.toFixed(2)} / $${priceData.low.toFixed(2)}`;
-    
+
     html += `
       <tr>
         <td class="symbol-cell">${priceData.symbol}</td>
@@ -892,7 +892,7 @@ function displayMarketPrices(prices) {
 
   html += '</tbody></table>';
   tableContainer.innerHTML = html;
-  
+
   // Refresh holdings display if holdings section is visible
   if (currentUser && !document.getElementById('holdings-section').classList.contains('hidden')) {
     // Just re-render with updated cache prices
@@ -910,7 +910,7 @@ function quickBuy(symbol, price) {
   document.getElementById('order-side').value = 'buy'; // lowercase for API
   document.getElementById('order-type').value = 'MARKET';
   document.getElementById('order-quantity').focus();
-  
+
   // Scroll to trading section
   document.getElementById('trading-section').scrollIntoView({ behavior: 'smooth' });
   showMessage('trading-message', `Ready to buy ${symbol} at market price ($${price.toFixed(2)})`);
@@ -919,7 +919,7 @@ function quickBuy(symbol, price) {
 async function viewHistory(symbol) {
   try {
     const response = await makeApiCall(`/v1/market/prices/${symbol}/history`);
-    
+
     if (response.ok) {
       const data = await response.json();
       // The API returns { symbol: String, prices: [...], count: N }
@@ -944,23 +944,23 @@ function showPriceChart(symbol, history) {
   }
 
   // Sort by timestamp (oldest first for chart)
-  const sortedHistory = [...history].sort((a, b) => 
+  const sortedHistory = [...history].sort((a, b) =>
     new Date(a.timestamp) - new Date(b.timestamp)
   );
 
   // Prepare data
-  const labels = sortedHistory.map(entry => 
-    new Date(entry.timestamp).toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      hour: '2-digit', 
-      minute: '2-digit' 
+  const labels = sortedHistory.map(entry =>
+    new Date(entry.timestamp).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     })
   );
-  
+
   const prices = sortedHistory.map(entry => entry.price);
   const volumes = sortedHistory.map(entry => entry.volume);
-  
+
   // Calculate statistics
   const currentPrice = sortedHistory[sortedHistory.length - 1].price;
   const firstPrice = sortedHistory[0].price;
@@ -969,11 +969,11 @@ function showPriceChart(symbol, history) {
   const maxPrice = Math.max(...prices);
   const minPrice = Math.min(...prices);
   const avgPrice = (prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2);
-  
+
   // Show modal
   document.getElementById('chart-modal').style.display = 'block';
   document.getElementById('chart-title').textContent = `${symbol} - Price History`;
-  
+
   // Display statistics
   document.getElementById('chart-stats').innerHTML = `
     <div class="section" style="padding: 10px;">
@@ -1001,12 +1001,12 @@ function showPriceChart(symbol, history) {
       </span>
     </div>
   `;
-  
+
   // Destroy previous chart if exists
   if (priceChart) {
     priceChart.destroy();
   }
-  
+
   // Create new chart
   const ctx = document.getElementById('price-chart').getContext('2d');
   priceChart = new Chart(ctx, {
@@ -1095,11 +1095,11 @@ function closeChartModal() {
 window.onclick = function(event) {
   const chartModal = document.getElementById('chart-modal');
   const updateModal = document.getElementById('update-order-modal');
-  
+
   if (event.target === chartModal) {
     closeChartModal();
   }
-  
+
   if (event.target === updateModal) {
     closeUpdateOrderModal();
   }
@@ -1119,7 +1119,7 @@ function startMarketDataRefresh() {
   if (marketDataRefreshInterval) {
     clearInterval(marketDataRefreshInterval);
   }
-  
+
   marketDataRefreshInterval = setInterval(async () => {
     if (!document.getElementById('market-data-section').classList.contains('hidden')) {
       await loadMarketData();
@@ -1176,14 +1176,14 @@ async function verifyMfa(event) {
 
     if (response.ok) {
       const data = await response.json();
-      
+
       // Save token and login
       currentToken = data.token;
       localStorage.setItem('brokerx_token', currentToken);
       sessionStorage.removeItem('pending_user_id');
-      
+
       showMessage('auth-message', 'Verification successful! You are now logged in.');
-      
+
       clearMfaState();
       await loadUserProfile();
       showDashboard();
@@ -1205,8 +1205,6 @@ async function resendMfaCode() {
     return;
   }
 
-  // Simulate resending MFA code
-  showMessage('mfa-message', 'Code resent! Demo code: 123456');
 }
 
 function showMfaVerification(title, description) {
@@ -1216,7 +1214,7 @@ function showMfaVerification(title, description) {
   document.getElementById('profile-section').classList.add('hidden');
   document.getElementById('trading-section').classList.add('hidden');
   document.getElementById('orders-section').classList.add('hidden');
-  
+
   // Show MFA section
   document.getElementById('mfa-section').classList.remove('hidden');
   document.getElementById('mfa-title').textContent = title;
@@ -1304,7 +1302,7 @@ function setupMfaAutoSubmit() {
     mfaCodeInput.addEventListener('input', function(e) {
       // Only allow numeric input
       e.target.value = e.target.value.replace(/[^0-9]/g, '');
-      
+
       // Auto-submit when 6 digits are entered
       if (e.target.value.length === 6) {
         // Small delay to allow user to see the complete code
