@@ -355,6 +355,7 @@ name = "brokerx-events"
 version = "0.1.0"
 dependencies = [
  "color-eyre",
+ "futures-util",
  "metrics 0.23.1",
  "redis",
  "serde",
