@@ -6,7 +6,8 @@ members = [
     "market-data-service",
     "api_gateway",
     "order-execution-orchestrator-service",
-    "event-store-service"
+    "event-store-service",
+    "brokerx-events"
 ]
 resolver = "3"
 

@@ -1,3 +1,4 @@
 pub mod models;
-pub mod repository;
+pub mod outbox_worker;
 pub mod redis_client;
+pub mod repository;

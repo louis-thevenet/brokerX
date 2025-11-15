@@ -15,6 +15,7 @@ mod api;
 mod config;
 mod error;
 mod models;
+mod outbox_worker;
 mod redis_client;
 mod repository;
 
@@ -25,6 +26,7 @@ use models::{
     EventHistoryQuery, HealthResponse, MessageResponse, OrderEvent, OrderEventType, OrderSide,
     OrderType, OutboxMessage, PublishEventRequest, PublishEventResponse, SagaState, SagaStep,
 };
+use outbox_worker::OutboxWorker;
 use redis_client::RedisClient;
 use repository::EventStoreRepository;
 use std::sync::Arc;
@@ -106,6 +108,13 @@ async fn main() -> color_eyre::Result<()> {
     // Health check Redis
     redis_client.ping().await?;
     info!("Redis connection verified");
+
+    // Start Outbox Worker in background
+    let outbox_worker = OutboxWorker::new(repository.clone(), redis_client.clone());
+    tokio::spawn(async move {
+        outbox_worker.start().await;
+    });
+    info!("Outbox Worker started in background");
 
     // Create application state
     let app_state = AppState {
