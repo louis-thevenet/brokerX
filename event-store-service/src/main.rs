@@ -1,4 +1,7 @@
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use config::DatabaseConfig;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
@@ -10,26 +13,53 @@ use utoipa_swagger_ui::SwaggerUi;
 
 mod api;
 mod config;
+mod error;
 mod models;
 mod repository;
 
 #[cfg(test)]
 mod tests;
 
-use models::{HealthResponse, MessageResponse};
+use models::{
+    EventHistoryQuery, HealthResponse, MessageResponse, OrderEvent, OrderEventType, OrderSide,
+    OrderType, OutboxMessage, PublishEventRequest, PublishEventResponse, SagaState, SagaStep,
+};
 use repository::EventStoreRepository;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(api::health),
-    components(schemas(HealthResponse, MessageResponse)),
+    paths(
+        api::health,
+        api::publish_event,
+        api::get_order_events,
+        api::get_user_events,
+        api::get_saga_state,
+        api::get_unprocessed_outbox,
+    ),
+    components(schemas(
+        HealthResponse,
+        MessageResponse,
+        PublishEventRequest,
+        PublishEventResponse,
+        OrderEvent,
+        OrderEventType,
+        OrderSide,
+        OrderType,
+        SagaState,
+        SagaStep,
+        OutboxMessage,
+        EventHistoryQuery,
+    )),
     tags(
-        (name = "health", description = "Health check endpoints")
+        (name = "health", description = "Health check endpoints"),
+        (name = "events", description = "Event publishing and retrieval"),
+        (name = "saga", description = "Saga state management"),
+        (name = "outbox", description = "Outbox pattern monitoring")
     ),
     info(
         title = "Event Store Service API",
         version = "0.1.0",
-        description = "Event Store Service for BrokerX+ - Event Sourcing and CQRS"
+        description = "Event Store Service for BrokerX+ - Event Sourcing and CQRS with Saga Choreography"
     )
 )]
 struct ApiDoc;
@@ -71,6 +101,11 @@ async fn main() -> color_eyre::Result<()> {
     // Create router
     let app = Router::new()
         .route("/v1/health", get(api::health))
+        .route("/v1/events", post(api::publish_event))
+        .route("/v1/events/order/{order_id}", get(api::get_order_events))
+        .route("/v1/events/user/{user_id}", get(api::get_user_events))
+        .route("/v1/saga/{order_id}", get(api::get_saga_state))
+        .route("/v1/outbox/unprocessed", get(api::get_unprocessed_outbox))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())
         .with_state(app_state);

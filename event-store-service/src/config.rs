@@ -12,7 +12,8 @@ impl DatabaseConfig {
             database_url: env::var("EVENT_STORE_DATABASE_URL")
                 .or_else(|_| env::var("DATABASE_URL"))
                 .unwrap_or_else(|_| {
-                    "postgres://brokerx_user:password123@localhost:5435/brokerx_events".to_string()
+                    "postgres://brokerx_user:password123@localhost:5435/brokerx_event_store"
+                        .to_string()
                 }),
             max_connections: env::var("EVENT_STORE_DB_MAX_CONNECTIONS")
                 .unwrap_or_else(|_| "10".to_string())

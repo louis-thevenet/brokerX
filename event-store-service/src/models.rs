@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 // ============================================================================
@@ -261,15 +261,27 @@ pub struct SagaState {
 }
 
 /// Message in the outbox table
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct OutboxMessage {
+    #[schema(value_type = String, format = Uuid)]
     pub outbox_id: Uuid,
+
+    #[schema(value_type = String, format = Uuid)]
     pub order_id: OrderId,
+
     pub event_type: OrderEventType,
     pub payload: serde_json::Value,
+
+    #[schema(value_type = String)]
     pub created_at: DateTime<Utc>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
     pub processed_at: Option<DateTime<Utc>>,
+
     pub processing_attempts: i32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
 }
 
@@ -347,7 +359,7 @@ pub struct PublishEventResponse {
 }
 
 /// Query parameters for event history
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
 pub struct EventHistoryQuery {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i64>,

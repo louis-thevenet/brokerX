@@ -323,7 +323,7 @@ services:
       - .env
     environment:
       - RUST_LOG=info
-      - EVENT_STORE_DATABASE_URL=postgres://brokerx_user:password123@event-store-db:5432/brokerx_events
+      - EVENT_STORE_DATABASE_URL=postgres://brokerx_user:password123@event-store-db:5432/brokerx_event_store
       - EVENT_STORE_SERVICE_PORT=3005
     ports:
       - "3005:3005"

@@ -86,8 +86,7 @@ CREATE TRIGGER trigger_saga_state_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_saga_state_updated_at();
 
--- Grant permissions
-GRANT ALL PRIVILEGES ON DATABASE brokerx_event_store TO brokerx_user;
+-- Grant permissions (database already created by Docker)
 GRANT ALL PRIVILEGES ON TABLE order_events TO brokerx_user;
 GRANT ALL PRIVILEGES ON TABLE saga_state TO brokerx_user;
 GRANT ALL PRIVILEGES ON TABLE outbox TO brokerx_user;
