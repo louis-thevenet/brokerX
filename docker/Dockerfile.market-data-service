@@ -17,6 +17,7 @@ COPY user-service ./user-service
 COPY order-service ./order-service
 COPY market-data-service ./market-data-service
 COPY order-execution-orchestrator-service ./order-execution-orchestrator-service
+COPY event-store-service ./event-store-service
 COPY api_gateway ./api_gateway
 
 # Build the application

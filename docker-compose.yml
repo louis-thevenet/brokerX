@@ -146,6 +146,70 @@ services:
       - "-c"
       - "max_wal_size=4GB"
 
+  # Event Store Database
+  event-store-db:
+    image: postgres:15
+    container_name: brokerx-event-store-db
+    environment:
+      POSTGRES_DB: brokerx_events
+      POSTGRES_USER: brokerx_user
+      POSTGRES_PASSWORD: password123
+    ports:
+      - "5435:5432"
+    volumes:
+      - event_store_db_data:/var/lib/postgresql/data
+      - ./docker/init-event-store-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - brokerx-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brokerx_user -d brokerx_events"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=128MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=2MB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+
+  # Redis for Event Streaming
+  redis:
+    image: redis:7-alpine
+    container_name: brokerx-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - brokerx-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
   # ========== MICROSERVICES ==========
 
   # User Service
@@ -248,6 +312,32 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+        
+  # Event Store Service
+  event-store-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.event-store-service
+    container_name: brokerx-event-store-service
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - EVENT_STORE_DATABASE_URL=postgres://brokerx_user:password123@event-store-db:5432/brokerx_events
+      - EVENT_STORE_SERVICE_PORT=3005
+    ports:
+      - "3005:3005"
+    networks:
+      - brokerx-network
+    depends_on:
+      event-store-db:
+        condition: service_healthy
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+        
   # API Gateway
   api-gateway:
     build:
@@ -365,6 +455,8 @@ volumes:
   user_db_data:
   order_db_data:
   market_data_db_data:
+  event_store_db_data:
+  redis_data:
   prometheus_data:
   grafana_data:
 
