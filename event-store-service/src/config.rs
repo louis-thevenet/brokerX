@@ -4,6 +4,7 @@ use std::env;
 pub struct DatabaseConfig {
     pub database_url: String,
     pub max_connections: u32,
+    pub redis_url: String,
 }
 
 impl DatabaseConfig {
@@ -19,6 +20,8 @@ impl DatabaseConfig {
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
                 .unwrap_or(10),
+            redis_url: env::var("REDIS_URL")
+                .unwrap_or_else(|_| "redis://localhost:6380".to_string()),
         }
     }
 }

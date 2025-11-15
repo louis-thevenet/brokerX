@@ -15,6 +15,7 @@ mod api;
 mod config;
 mod error;
 mod models;
+mod redis_client;
 mod repository;
 
 #[cfg(test)]
@@ -24,7 +25,9 @@ use models::{
     EventHistoryQuery, HealthResponse, MessageResponse, OrderEvent, OrderEventType, OrderSide,
     OrderType, OutboxMessage, PublishEventRequest, PublishEventResponse, SagaState, SagaStep,
 };
+use redis_client::RedisClient;
 use repository::EventStoreRepository;
+use std::sync::Arc;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -68,6 +71,7 @@ struct ApiDoc;
 pub struct AppState {
     pub db: PgPool,
     pub repository: EventStoreRepository,
+    pub redis_client: Arc<RedisClient>,
 }
 
 #[tokio::main]
@@ -95,8 +99,20 @@ async fn main() -> color_eyre::Result<()> {
     // Create repository
     let repository = EventStoreRepository::new(db.clone());
 
+    // Connect to Redis
+    info!("Connecting to Redis...");
+    let redis_client = Arc::new(RedisClient::new(&db_config.redis_url).await?);
+
+    // Health check Redis
+    redis_client.ping().await?;
+    info!("Redis connection verified");
+
     // Create application state
-    let app_state = AppState { db, repository };
+    let app_state = AppState {
+        db,
+        repository,
+        redis_client,
+    };
 
     // Create router
     let app = Router::new()

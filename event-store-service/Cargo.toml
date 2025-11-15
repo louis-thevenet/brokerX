@@ -28,6 +28,8 @@ color-eyre = "0.6"
 thiserror = "1.0"
 dashmap = "*"
 sysinfo = "0.29"
+redis = { version = "0.24", features = ["aio", "tokio-comp", "connection-manager"] }
+metrics = "0.23"
 
 utoipa = { version = "5.4.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = {version="9.0.2", features = ["axum"]}
