@@ -151,7 +151,7 @@ services:
     image: postgres:15
     container_name: brokerx-event-store-db
     environment:
-      POSTGRES_DB: brokerx_events
+      POSTGRES_DB: brokerx_event_store
       POSTGRES_USER: brokerx_user
       POSTGRES_PASSWORD: password123
     ports:
@@ -162,7 +162,7 @@ services:
     networks:
       - brokerx-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U brokerx_user -d brokerx_events"]
+      test: ["CMD-SHELL", "pg_isready -U brokerx_user -d brokerx_event_store"]
       interval: 10s
       timeout: 5s
       retries: 5

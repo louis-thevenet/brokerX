@@ -1,7 +1,7 @@
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 use config::DatabaseConfig;
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use tracing::info;
@@ -11,8 +11,13 @@ use utoipa_swagger_ui::SwaggerUi;
 mod api;
 mod config;
 mod models;
+mod repository;
+
+#[cfg(test)]
+mod tests;
 
 use models::{HealthResponse, MessageResponse};
+use repository::EventStoreRepository;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -32,6 +37,7 @@ struct ApiDoc;
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    pub repository: EventStoreRepository,
 }
 
 #[tokio::main]
@@ -56,8 +62,11 @@ async fn main() -> color_eyre::Result<()> {
         .await?;
     info!("Database connection established");
 
+    // Create repository
+    let repository = EventStoreRepository::new(db.clone());
+
     // Create application state
-    let app_state = AppState { db };
+    let app_state = AppState { db, repository };
 
     // Create router
     let app = Router::new()
