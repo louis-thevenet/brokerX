@@ -1,5 +1,7 @@
 mod api;
 mod config;
+mod event_consumer;
+mod event_publisher;
 mod models;
 mod repository;
 mod service;
@@ -7,6 +9,8 @@ mod service;
 #[cfg(test)]
 mod tests;
 
+use crate::event_consumer::UserEventConsumer;
+use crate::event_publisher::EventPublisher;
 use crate::repository::UserRepository;
 use axum::{
     Router,
@@ -18,7 +22,7 @@ use service::UserService;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use sysinfo::{System, SystemExt};
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -26,6 +30,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(Clone)]
 pub struct AppState {
     user_service: Arc<UserService>,
+    event_publisher: Arc<EventPublisher>,
 }
 
 #[derive(OpenApi)]
@@ -128,9 +133,27 @@ async fn main() -> color_eyre::Result<()> {
     let table_name = "users".to_string();
     let user_repo = UserRepository::new(pool, table_name);
     let user_service = Arc::new(UserService::new(user_repo));
-    let app_state = AppState { user_service };
+
+    let event_store_url =
+        std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
+    let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+
+    let app_state = AppState {
+        user_service,
+        event_publisher,
+    };
 
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6380".to_string());
+    let event_consumer = UserEventConsumer::new(app_state.user_service.clone(), redis_url);
+
+    tokio::spawn(async move {
+        if let Err(e) = event_consumer.start().await {
+            error!("Event consumer error: {}", e);
+        }
+    });
 
     // Build routes
     let app = Router::new()

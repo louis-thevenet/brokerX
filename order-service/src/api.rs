@@ -1,3 +1,4 @@
+use crate::event_publisher::PublishEventRequest;
 use crate::models::{Order, OrderError, OrderSide, OrderStatus, OrderType};
 use axum::{
     extract::{Path, Query, State},
@@ -187,12 +188,29 @@ pub async fn create_order(
         filled_price: None,
     };
 
-    match state.order_service.create_order(order).await {
+    match state.order_service.create_order(order.clone()).await {
         Ok((order_id, order)) => {
             info!(
                 "Order {} created successfully for {}",
                 order_id, payload.client_id
             );
+
+            let event = PublishEventRequest {
+                order_id,
+                user_id: payload.client_id,
+                event_type: "ORDER_CREATED".to_string(),
+                symbol: order.symbol.clone(),
+                quantity: order.quantity,
+                order_side: format!("{:?}", order.order_side),
+                order_type: format!("{:?}", order.order_type),
+                filled_quantity: None,
+                average_price: None,
+            };
+
+            if let Err(e) = state.event_publisher.publish_event(event).await {
+                error!("Failed to publish ORDER_CREATED event: {}", e);
+            }
+
             (
                 StatusCode::CREATED,
                 Json(OrderResponse::from((order_id, order))),

@@ -1,5 +1,7 @@
 mod api;
 mod config;
+mod event_consumer;
+mod event_publisher;
 mod execution_simulator;
 mod models;
 mod repository;
@@ -16,6 +18,8 @@ use axum::{
     routing::post,
 };
 use axum_prometheus::PrometheusMetricLayer;
+use event_consumer::MarketDataEventConsumer;
+use event_publisher::EventPublisher;
 use repository::MarketDataRepository;
 use service::MarketDataService;
 use std::sync::Arc;
@@ -152,7 +156,21 @@ async fn main() -> color_eyre::Result<()> {
     let market_data_service = Arc::new(MarketDataService::new(repository.clone()));
     let execution_simulator = Arc::new(execution_simulator::ExecutionSimulator::new(repository));
 
+    let event_store_url =
+        std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
+    let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+
     info!("Services initialized");
+
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6380".to_string());
+    let event_consumer = MarketDataEventConsumer::new(market_data_service.clone(), redis_url);
+
+    tokio::spawn(async move {
+        if let Err(e) = event_consumer.start().await {
+            error!("Event consumer error: {}", e);
+        }
+    });
 
     // Start background task for periodic price simulation
     info!("Starting background price simulation task (30s interval)");
@@ -179,6 +197,7 @@ async fn main() -> color_eyre::Result<()> {
     let app_state = AppState {
         market_data_service,
         execution_simulator,
+        event_publisher,
     };
 
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();

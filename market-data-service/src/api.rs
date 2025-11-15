@@ -1,5 +1,5 @@
+use crate::event_publisher::{EventPublisher, PublishEventRequest};
 use crate::execution_simulator::ExecutionSimulator;
-/// Market Data API Handlers
 use crate::models::{
     ExecuteOrderRequest, ExecuteOrderResponse, HistoricalPricesQuery, HistoricalPricesResponse,
     MarketPriceResponse, MarketPricesResponse,
@@ -22,6 +22,7 @@ use utoipa::ToSchema;
 pub struct AppState {
     pub market_data_service: Arc<MarketDataService>,
     pub execution_simulator: Arc<ExecutionSimulator>,
+    pub event_publisher: Arc<EventPublisher>,
 }
 
 // ============================================================================
@@ -337,7 +338,11 @@ pub async fn execute_order(
         request.order_type, request.side
     );
 
-    match state.execution_simulator.execute_order(request).await {
+    match state
+        .execution_simulator
+        .execute_order(request.clone())
+        .await
+    {
         Ok(response) => {
             let status_code = match response.status {
                 crate::models::ExecutionStatus::FullyFilled
@@ -349,6 +354,23 @@ pub async fn execute_order(
                         response.average_price.unwrap_or(0.0)
                     );
                     info!("Order {} executed successfully", response.order_id);
+
+                    let event = PublishEventRequest {
+                        order_id: response.order_id,
+                        user_id: request.user_id,
+                        event_type: "ORDER_EXECUTED".to_string(),
+                        symbol: request.symbol.clone(),
+                        quantity: request.quantity,
+                        order_side: format!("{:?}", request.side),
+                        order_type: format!("{:?}", request.order_type),
+                        filled_quantity: Some(response.filled_quantity),
+                        average_price: response.average_price,
+                    };
+
+                    if let Err(e) = state.event_publisher.publish_event(event).await {
+                        error!("Failed to publish ORDER_EXECUTED event: {}", e);
+                    }
+
                     StatusCode::OK
                 }
                 crate::models::ExecutionStatus::Rejected => {
@@ -357,6 +379,23 @@ pub async fn execute_order(
                         response.order_id,
                         response.message.as_deref().unwrap_or("Unknown")
                     );
+
+                    let event = PublishEventRequest {
+                        order_id: response.order_id,
+                        user_id: request.user_id,
+                        event_type: "ORDER_REJECTED".to_string(),
+                        symbol: request.symbol.clone(),
+                        quantity: request.quantity,
+                        order_side: format!("{:?}", request.side),
+                        order_type: format!("{:?}", request.order_type),
+                        filled_quantity: None,
+                        average_price: None,
+                    };
+
+                    if let Err(e) = state.event_publisher.publish_event(event).await {
+                        error!("Failed to publish ORDER_REJECTED event: {}", e);
+                    }
+
                     StatusCode::UNPROCESSABLE_ENTITY
                 }
             };

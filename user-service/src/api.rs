@@ -1,3 +1,4 @@
+use crate::event_publisher::PublishEventRequest;
 use crate::models::{AuthError, Holding, User};
 use axum::{
     extract::{Path, State},
@@ -44,9 +45,13 @@ pub struct WithdrawRequest {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UpdateHoldingsRequest {
+    #[schema(value_type = String)]
+    pub order_id: Uuid,
     pub symbol: String,
     pub quantity_change: i64,
     pub execution_price: f64,
+    pub order_side: String,
+    pub order_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -432,6 +437,23 @@ pub async fn update_holdings(
                 "Updated holdings for user {}: {} {}",
                 user_id, payload.quantity_change, payload.symbol
             );
+
+            let event = PublishEventRequest {
+                order_id: payload.order_id,
+                user_id,
+                event_type: "HOLDINGS_UPDATED".to_string(),
+                symbol: payload.symbol.clone(),
+                quantity: payload.quantity_change.unsigned_abs(),
+                order_side: payload.order_side.clone(),
+                order_type: payload.order_type.clone(),
+                filled_quantity: Some(payload.quantity_change.unsigned_abs()),
+                average_price: Some(payload.execution_price),
+            };
+
+            if let Err(e) = state.event_publisher.publish_event(event).await {
+                error!("Failed to publish HOLDINGS_UPDATED event: {}", e);
+            }
+
             StatusCode::OK.into_response()
         }
         Err(e) => {

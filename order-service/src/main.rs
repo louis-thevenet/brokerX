@@ -1,5 +1,7 @@
 mod api;
 mod config;
+mod event_consumer;
+mod event_publisher;
 mod models;
 mod repository;
 mod service;
@@ -15,10 +17,12 @@ use axum::{
 
 use axum_prometheus::PrometheusMetricLayer;
 use config::DatabaseConfig;
+use event_consumer::OrderEventConsumer;
+use event_publisher::EventPublisher;
 use service::OrderService;
 use std::sync::Arc;
 use sysinfo::{System, SystemExt};
-use tracing::info;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -26,6 +30,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(Clone)]
 pub struct AppState {
     order_service: Arc<OrderService>,
+    event_publisher: Arc<EventPublisher>,
 }
 
 #[derive(OpenApi)]
@@ -124,9 +129,26 @@ async fn main() -> color_eyre::Result<()> {
             .expect("Failed to initialize order service"),
     );
 
-    let app_state = AppState { order_service };
+    let event_store_url =
+        std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
+    let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+
+    let app_state = AppState {
+        order_service,
+        event_publisher,
+    };
 
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
+
+    let redis_url =
+        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6380".to_string());
+    let event_consumer = OrderEventConsumer::new(app_state.order_service.clone(), redis_url);
+
+    tokio::spawn(async move {
+        if let Err(e) = event_consumer.start().await {
+            error!("Event consumer error: {}", e);
+        }
+    });
 
     // Build routes
     let app = Router::new()
