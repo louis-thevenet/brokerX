@@ -224,6 +224,8 @@ services:
       - RUST_LOG=info
       - USER_DATABASE_URL=postgres://brokerx_user:password123@user-db:5432/brokerx_users
       - USER_SERVICE_PORT=3001
+      - REDIS_URL=redis://redis:6379
+      - EVENT_STORE_URL=http://event-store-service:3005
     ports:
       - "3001:3001"
     networks:
@@ -231,6 +233,10 @@ services:
     depends_on:
       user-db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      event-store-service:
+        condition: service_started
     restart: unless-stopped
     ulimits:
       nofile:
@@ -248,6 +254,10 @@ services:
       - RUST_LOG=info
       - ORDER_DATABASE_URL=postgres://brokerx_user:password123@order-db:5432/brokerx_orders
       - ORDER_SERVICE_PORT=3002
+      - REDIS_URL=redis://redis:6379
+      - EVENT_STORE_URL=http://event-store-service:3005
+      - USER_SERVICE_URL=http://user-service:3001
+      - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
     ports:
       - "3002:3002"
     networks:
@@ -255,6 +265,14 @@ services:
     depends_on:
       order-db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      event-store-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      market-data-service:
+        condition: service_started
     restart: unless-stopped
     ulimits:
       nofile:
@@ -272,6 +290,8 @@ services:
       - RUST_LOG=info
       - MARKET_DATA_DATABASE_URL=postgres://brokerx_user:password123@market-data-db:5432/brokerx_market_data
       - MARKET_DATA_SERVICE_PORT=3003
+      - REDIS_URL=redis://redis:6379
+      - EVENT_STORE_URL=http://event-store-service:3005
     ports:
       - "3003:3003"
     networks:
@@ -279,39 +299,43 @@ services:
     depends_on:
       market-data-db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      event-store-service:
+        condition: service_started
     restart: unless-stopped
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
   # Order Execution Orchestrator Service
-  order-execution-orchestrator-service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.order-execution-orchestrator-service
-    container_name: brokerx-order-execution-orchestrator-service
-    env_file:
-      - .env
-    environment:
-      - RUST_LOG=info
-      - ORDER_EXECUTION_ORCHESTRATOR_SERVICE_PORT=3004
-      - USER_SERVICE_URL=http://user-service:3001
-      - ORDER_SERVICE_URL=http://order-service:3002
-      - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
-      - API_GATEWAY_URL=http://api-gateway:8080
-    ports:
-      - "3004:3004"
-    networks:
-      - brokerx-network
-    depends_on:
-      - user-service
-      - order-service
-      - market-data-service
-    restart: unless-stopped
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
+  # order-execution-orchestrator-service:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.order-execution-orchestrator-service
+  #   container_name: brokerx-order-execution-orchestrator-service
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - RUST_LOG=info
+  #     - ORDER_EXECUTION_ORCHESTRATOR_SERVICE_PORT=3004
+  #     - USER_SERVICE_URL=http://user-service:3001
+  #     - ORDER_SERVICE_URL=http://order-service:3002
+  #     - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
+  #     - API_GATEWAY_URL=http://api-gateway:8080
+  #   ports:
+  #     - "3004:3004"
+  #   networks:
+  #     - brokerx-network
+  #   depends_on:
+  #     - user-service
+  #     - order-service
+  #     - market-data-service
+  #   restart: unless-stopped
+  #   ulimits:
+  #     nofile:
+  #       soft: 65536
+  #       hard: 65536
         
   # Event Store Service
   event-store-service:
@@ -368,7 +392,7 @@ services:
       - user-service
       - order-service
       - market-data-service
-      - order-execution-orchestrator-service
+      # - order-execution-orchestrator-service
     restart: unless-stopped
     ulimits:
       nofile:
