@@ -5,6 +5,7 @@ mod event_publisher;
 mod models;
 mod repository;
 mod service;
+mod trade_validation;
 
 #[cfg(test)]
 mod tests;
@@ -131,7 +132,7 @@ async fn main() -> color_eyre::Result<()> {
 
     let event_store_url =
         std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
-    let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+    let event_publisher = Arc::new(EventPublisher::new(event_store_url.clone()));
 
     let app_state = AppState {
         order_service,
@@ -142,7 +143,20 @@ async fn main() -> color_eyre::Result<()> {
 
     let redis_url =
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6380".to_string());
-    let event_consumer = OrderEventConsumer::new(app_state.order_service.clone(), redis_url);
+
+    let user_service_url =
+        std::env::var("USER_SERVICE_URL").unwrap_or_else(|_| "http://localhost:3001".to_string());
+
+    let market_data_service_url = std::env::var("MARKET_DATA_SERVICE_URL")
+        .unwrap_or_else(|_| "http://localhost:3003".to_string());
+
+    let event_consumer = OrderEventConsumer::new(
+        app_state.order_service.clone(),
+        redis_url,
+        event_store_url,
+        user_service_url,
+        market_data_service_url,
+    );
 
     tokio::spawn(async move {
         if let Err(e) = event_consumer.start().await {

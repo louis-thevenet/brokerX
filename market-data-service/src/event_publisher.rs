@@ -1,3 +1,4 @@
+use brokerx_events::{OrderSide, OrderType};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
@@ -10,10 +11,11 @@ pub struct PublishEventRequest {
     pub event_type: String,
     pub symbol: String,
     pub quantity: u64,
-    pub order_side: String,
-    pub order_type: String,
+    pub order_side: OrderSide,
+    pub order_type: OrderType,
     pub filled_quantity: Option<u64>,
     pub average_price: Option<f64>,
+    pub occurred_at: String, // ISO 8601 timestamp
 }
 
 pub struct EventPublisher {

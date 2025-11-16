@@ -154,17 +154,21 @@ async fn main() -> color_eyre::Result<()> {
 
     let repository = MarketDataRepository::new(pool);
     let market_data_service = Arc::new(MarketDataService::new(repository.clone()));
-    let execution_simulator = Arc::new(execution_simulator::ExecutionSimulator::new(repository));
 
     let event_store_url =
         std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
     let event_publisher = Arc::new(EventPublisher::new(event_store_url));
 
+    let execution_simulator = Arc::new(
+        execution_simulator::ExecutionSimulator::new(repository)
+            .with_event_publisher(event_publisher.clone()),
+    );
+
     info!("Services initialized");
 
     let redis_url =
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6380".to_string());
-    let event_consumer = MarketDataEventConsumer::new(market_data_service.clone(), redis_url);
+    let event_consumer = MarketDataEventConsumer::new(execution_simulator.clone(), redis_url);
 
     tokio::spawn(async move {
         if let Err(e) = event_consumer.start().await {

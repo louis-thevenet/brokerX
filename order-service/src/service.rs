@@ -155,4 +155,12 @@ impl OrderService {
 
         Ok(())
     }
+
+    pub async fn update_order_status(
+        &self,
+        order_id: &OrderId,
+        status: OrderStatus,
+    ) -> Result<(), OrderError> {
+        self.order_repo.update_order_status(order_id, status).await
+    }
 }

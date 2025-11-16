@@ -59,7 +59,12 @@ pub struct OrderEventPayload {
     pub causation_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    #[serde(default = "default_timestamp")]
     pub occurred_at: String, // ISO 8601 timestamp
+}
+
+fn default_timestamp() -> String {
+    chrono::Utc::now().to_rfc3339()
 }
 
 #[cfg(test)]

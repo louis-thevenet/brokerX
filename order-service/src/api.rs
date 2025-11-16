@@ -201,10 +201,17 @@ pub async fn create_order(
                 event_type: "ORDER_CREATED".to_string(),
                 symbol: order.symbol.clone(),
                 quantity: order.quantity,
-                order_side: format!("{:?}", order.order_side),
-                order_type: format!("{:?}", order.order_type),
+                order_side: match order.order_side {
+                    OrderSide::Buy => brokerx_events::OrderSide::Buy,
+                    OrderSide::Sell => brokerx_events::OrderSide::Sell,
+                },
+                order_type: match order.order_type {
+                    OrderType::Market => brokerx_events::OrderType::Market,
+                    OrderType::Limit { price } => brokerx_events::OrderType::Limit { price },
+                },
                 filled_quantity: None,
                 average_price: None,
+                occurred_at: chrono::Utc::now().to_rfc3339(),
             };
 
             if let Err(e) = state.event_publisher.publish_event(event).await {

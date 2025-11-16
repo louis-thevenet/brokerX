@@ -361,10 +361,19 @@ pub async fn execute_order(
                         event_type: "ORDER_EXECUTED".to_string(),
                         symbol: request.symbol.clone(),
                         quantity: request.quantity,
-                        order_side: format!("{:?}", request.side),
-                        order_type: format!("{:?}", request.order_type),
+                        order_side: match request.side {
+                            crate::models::OrderSide::Buy => brokerx_events::OrderSide::Buy,
+                            crate::models::OrderSide::Sell => brokerx_events::OrderSide::Sell,
+                        },
+                        order_type: match request.order_type {
+                            crate::models::OrderType::Market => brokerx_events::OrderType::Market,
+                            crate::models::OrderType::Limit { price } => {
+                                brokerx_events::OrderType::Limit { price }
+                            }
+                        },
                         filled_quantity: Some(response.filled_quantity),
                         average_price: response.average_price,
+                        occurred_at: chrono::Utc::now().to_rfc3339(),
                     };
 
                     if let Err(e) = state.event_publisher.publish_event(event).await {
@@ -386,10 +395,19 @@ pub async fn execute_order(
                         event_type: "ORDER_REJECTED".to_string(),
                         symbol: request.symbol.clone(),
                         quantity: request.quantity,
-                        order_side: format!("{:?}", request.side),
-                        order_type: format!("{:?}", request.order_type),
+                        order_side: match request.side {
+                            crate::models::OrderSide::Buy => brokerx_events::OrderSide::Buy,
+                            crate::models::OrderSide::Sell => brokerx_events::OrderSide::Sell,
+                        },
+                        order_type: match request.order_type {
+                            crate::models::OrderType::Market => brokerx_events::OrderType::Market,
+                            crate::models::OrderType::Limit { price } => {
+                                brokerx_events::OrderType::Limit { price }
+                            }
+                        },
                         filled_quantity: None,
                         average_price: None,
+                        occurred_at: chrono::Utc::now().to_rfc3339(),
                     };
 
                     if let Err(e) = state.event_publisher.publish_event(event).await {
