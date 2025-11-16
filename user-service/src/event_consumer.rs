@@ -84,7 +84,7 @@ impl UserEventConsumer {
                     }
                     OrderSide::Sell => {
                         user_service
-                            .update_user_holding(&user_id, &event.symbol, -(quantity as i64), price)
+                            .update_user_holding(&user_id, &event.symbol, -quantity, price)
                             .await?;
 
                         info!(

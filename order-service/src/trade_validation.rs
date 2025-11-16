@@ -323,10 +323,10 @@ impl TradeValidator {
             .get(&url)
             .send()
             .await
-            .map_err(|e| format!("Failed to get user: {}", e))?
+            .map_err(|e| format!("Failed to get user: {e}"))?
             .json::<UserData>()
             .await
-            .map_err(|e| format!("Failed to parse user data: {}", e))
+            .map_err(|e| format!("Failed to parse user data: {e}"))
     }
 
     /// Get market price from market data service
@@ -337,10 +337,10 @@ impl TradeValidator {
             .get(&url)
             .send()
             .await
-            .map_err(|e| format!("Failed to fetch price: {}", e))?
+            .map_err(|e| format!("Failed to fetch price: {e}"))?
             .json::<MarketPriceResponse>()
             .await
-            .map_err(|e| format!("Failed to parse price data: {}", e))?;
+            .map_err(|e| format!("Failed to parse price data: {e}"))?;
         Ok(price_data.price)
     }
 

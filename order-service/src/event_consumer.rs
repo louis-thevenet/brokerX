@@ -155,7 +155,7 @@ impl OrderEventConsumer {
                     .validate_trade(
                         event.user_id.parse()?,
                         &event.symbol,
-                        event.quantity.abs() as u64, // Convert i64 to u64
+                        event.quantity.unsigned_abs(), // Convert i64 to u64
                         &model_side,
                         &model_type,
                     )
@@ -174,7 +174,7 @@ impl OrderEventConsumer {
                         user_id: event.user_id.parse()?,
                         event_type: "ORDER_VALIDATED".to_string(),
                         symbol: event.symbol.clone(),
-                        quantity: event.quantity.abs() as u64,
+                        quantity: event.quantity.unsigned_abs(),
                         order_side: event.order_side.clone(),
                         order_type: event.order_type.clone(),
                         filled_quantity: None,

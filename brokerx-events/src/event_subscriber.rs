@@ -91,31 +91,3 @@ impl EventSubscriber {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq)]
-    struct TestEvent {
-        id: String,
-        message: String,
-    }
-
-    #[tokio::test]
-    async fn test_event_subscriber() {
-        let subscriber = EventSubscriber::new("redis://localhost:6380", "test_channel");
-
-        let result = subscriber
-            .subscribe(|event: TestEvent| {
-                println!("Received test event: {event:?}");
-                Ok(())
-            })
-            .await;
-
-        // This will run forever, so we just test that it doesn't error immediately
-        assert!(result.is_ok() || result.is_err());
-    }
-}

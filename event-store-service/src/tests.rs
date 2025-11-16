@@ -398,7 +398,7 @@ async fn test_outbox_failure_handling() {
 
     // Mark as failed multiple times
     for i in 1..=3 {
-        repo.mark_outbox_failed(message.outbox_id, &format!("Error attempt {}", i))
+        repo.mark_outbox_failed(message.outbox_id, &format!("Error attempt {i}"))
             .await
             .unwrap();
     }

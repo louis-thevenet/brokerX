@@ -198,7 +198,7 @@ pub async fn get_saga_state(
         .await
         .map_err(|e| {
             error!("Failed to fetch saga state: {}", e);
-            EventStoreError::InternalError(format!("Failed to fetch saga state: {}", e))
+            EventStoreError::InternalError(format!("Failed to fetch saga state: {e}"))
         })?;
 
     match saga {
@@ -210,8 +210,7 @@ pub async fn get_saga_state(
             Ok(Json(saga))
         }
         None => Err(EventStoreError::NotFound(format!(
-            "No saga found for order {}",
-            order_id
+            "No saga found for order {order_id}"
         ))),
     }
 }
@@ -243,7 +242,7 @@ pub async fn get_unprocessed_outbox(
         .await
         .map_err(|e| {
             error!("Failed to fetch outbox messages: {}", e);
-            EventStoreError::InternalError(format!("Failed to fetch outbox: {}", e))
+            EventStoreError::InternalError(format!("Failed to fetch outbox: {e}"))
         })?;
 
     info!("Found {} unprocessed outbox messages", messages.len());

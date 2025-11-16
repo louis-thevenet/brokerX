@@ -70,7 +70,7 @@ impl EventPublisher {
                         "Failed to publish event"
                     );
                     metrics::counter!("events_publish_errors_total", "event_type" => event.event_type).increment(1);
-                    Err(format!("Event Store returned {}: {}", status, body).into())
+                    Err(format!("Event Store returned {status}: {body}").into())
                 }
             }
             Err(e) => {
