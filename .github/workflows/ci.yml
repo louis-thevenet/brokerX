@@ -62,6 +62,34 @@ jobs:
           --health-start-period 30s
         ports:
           - 5434:5432
+      
+      # Event Store Service Database (NEW - for event-driven architecture)
+      event-store-db:
+        image: postgres:15
+        env:
+          POSTGRES_DB: brokerx_event_store
+          POSTGRES_USER: brokerx_user
+          POSTGRES_PASSWORD: password123
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd "pg_isready -U brokerx_user -d brokerx_event_store"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+        ports:
+          - 5435:5432
+      
+      # Redis (NEW - for event pub/sub)
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
     
     steps:
       - name: Checkout repository
@@ -72,14 +100,15 @@ jobs:
       
       - uses: Swatinem/rust-cache@v2
       
-      - name: Install PostgreSQL client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install PostgreSQL client and Redis CLI
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client redis-tools
       
       - name: Initialize databases
         run: |
           PGPASSWORD=password123 psql -h localhost -p 5432 -U brokerx_user -d brokerx_users -f docker/init-user-db.sql
           PGPASSWORD=password123 psql -h localhost -p 5433 -U brokerx_user -d brokerx_orders -f docker/init-order-db.sql
           PGPASSWORD=password123 psql -h localhost -p 5434 -U brokerx_user -d brokerx_market_data -f docker/init-market-data-db.sql
+          PGPASSWORD=password123 psql -h localhost -p 5435 -U brokerx_user -d brokerx_event_store -f docker/init-event-store-db.sql
         env:
           PGPASSWORD: password123
       
@@ -91,8 +120,19 @@ jobs:
           USER_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5432/brokerx_users
           ORDER_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5433/brokerx_orders
           MARKET_DATA_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5434/brokerx_market_data
-          # Fallback URL for tests that don't specify a service
+          EVENT_STORE_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5435/brokerx_event_store
           DATABASE_URL: postgresql://brokerx_user:password123@localhost:5432/brokerx_users
+          REDIS_URL: redis://localhost:6379
+          EVENT_STORE_URL: http://localhost:3005
+      
+      - name: Test event architecture connectivity
+        run: |
+          # Test Redis connectivity
+          redis-cli -h localhost -p 6379 ping
+          # Test database connections
+          PGPASSWORD=password123 psql -h localhost -p 5435 -U brokerx_user -d brokerx_event_store -c "SELECT 'Event Store DB connected' as status;"
+        env:
+          PGPASSWORD: password123
 
 
   fmt:
