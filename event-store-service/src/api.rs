@@ -10,8 +10,8 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::error::{EventStoreError, Result};
 use crate::models::{
-    EventHistoryQuery, HealthResponse, OrderEvent, OutboxMessage, PublishEventRequest,
-    PublishEventResponse, SagaState,
+    EventHistoryQuery, HealthResponse, MessageResponse, OrderEvent, OutboxMessage,
+    PublishEventRequest, PublishEventResponse, SagaState, UpdateSagaStepRequest,
 };
 
 /// Health check endpoint
@@ -213,6 +213,53 @@ pub async fn get_saga_state(
             "No saga found for order {order_id}"
         ))),
     }
+}
+
+/// Update saga step for an order
+#[utoipa::path(
+    put,
+    path = "/v1/saga/{order_id}/step",
+    params(
+        ("order_id" = Uuid, Path, description = "Order ID")
+    ),
+    request_body = UpdateSagaStepRequest,
+    responses(
+        (status = 200, description = "Saga step updated successfully", body = MessageResponse),
+        (status = 404, description = "Order not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "saga"
+)]
+pub async fn update_saga_step(
+    State(state): State<AppState>,
+    Path(order_id): Path<Uuid>,
+    Json(request): Json<UpdateSagaStepRequest>,
+) -> Result<impl IntoResponse> {
+    debug!(
+        "Updating saga step for order {} to {:?}",
+        order_id, request.step
+    );
+
+    state
+        .repository
+        .update_saga_step(order_id, request.step.clone())
+        .await
+        .map_err(|e| {
+            error!("Failed to update saga step: {}", e);
+            EventStoreError::InternalError(format!("Failed to update saga step: {e}"))
+        })?;
+
+    info!(
+        "Saga step updated for order {} to {:?}",
+        order_id, request.step
+    );
+
+    Ok((
+        StatusCode::OK,
+        Json(MessageResponse {
+            message: "Saga step updated successfully".to_string(),
+        }),
+    ))
 }
 
 /// Get unprocessed outbox messages (for debugging)

@@ -13,6 +13,7 @@ pub struct OrderEventConsumer {
     validator: Arc<TradeValidator>,
     event_publisher: Arc<EventPublisher>,
     redis_url: String,
+    event_store_url: String,
 }
 
 impl OrderEventConsumer {
@@ -31,13 +32,14 @@ impl OrderEventConsumer {
             market_data_service_url,
             ValidationConfig::default(),
         ));
-        let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+        let event_publisher = Arc::new(EventPublisher::new(event_store_url.clone()));
 
         Self {
             order_service,
             validator,
             event_publisher,
             redis_url,
+            event_store_url,
         }
     }
 
@@ -46,16 +48,24 @@ impl OrderEventConsumer {
 
         info!("Order Service event consumer starting - listening for ORDER_CREATED");
 
+        let event_store_url = self.event_store_url.clone();
+
         subscriber
             .subscribe(move |event: OrderEventPayload| {
                 let order_service = self.order_service.clone();
                 let validator = self.validator.clone();
                 let event_publisher = self.event_publisher.clone();
+                let event_store_url = event_store_url.clone();
 
                 tokio::spawn(async move {
-                    if let Err(e) =
-                        Self::handle_event_async(event, order_service, validator, event_publisher)
-                            .await
+                    if let Err(e) = Self::handle_event_async(
+                        event,
+                        order_service,
+                        validator,
+                        event_publisher,
+                        event_store_url,
+                    )
+                    .await
                     {
                         error!("Error handling event: {}", e);
                     }
@@ -71,6 +81,7 @@ impl OrderEventConsumer {
         order_service: Arc<OrderService>,
         validator: Arc<TradeValidator>,
         event_publisher: Arc<EventPublisher>,
+        event_store_url: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // IDEMPOTENCY CHECK
         let event_id =
@@ -94,8 +105,14 @@ impl OrderEventConsumer {
         }
 
         // Process event and mark as processed
-        let result =
-            Self::process_event(&event, order_service.clone(), validator, event_publisher).await;
+        let result = Self::process_event(
+            &event,
+            order_service.clone(),
+            validator,
+            event_publisher,
+            &event_store_url,
+        )
+        .await;
 
         // Mark event as processed (success or failure) to prevent reprocessing
         let processing_result = if result.is_ok() { "success" } else { "failure" };
@@ -123,6 +140,7 @@ impl OrderEventConsumer {
         order_service: Arc<OrderService>,
         validator: Arc<TradeValidator>,
         event_publisher: Arc<EventPublisher>,
+        event_store_url: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match event.event_type {
             OrderEventType::OrderCreated => {
@@ -184,6 +202,9 @@ impl OrderEventConsumer {
 
                     event_publisher.publish_event(validated_request).await?;
                     metrics::counter!("order_validation_total", "result" => "passed").increment(1);
+
+                    // Update saga state to VALIDATED
+                    Self::update_saga_state(event_store_url, &event.order_id, "VALIDATED").await?;
                 } else {
                     warn!(
                         order_id = %event.order_id,
@@ -208,6 +229,9 @@ impl OrderEventConsumer {
                     event_publisher.publish_event(failed_request).await?;
                     metrics::counter!("order_validation_total", "result" => "rejected")
                         .increment(1);
+
+                    // Update saga state to FAILED for rejected orders
+                    Self::update_saga_state(event_store_url, &event.order_id, "FAILED").await?;
                 }
             }
             OrderEventType::OrderValidated => {
@@ -282,6 +306,9 @@ impl OrderEventConsumer {
 
                 metrics::counter!("order_events_processed_total", "event_type" => "executed")
                     .increment(1);
+
+                // Update saga state to EXECUTED
+                Self::update_saga_state(event_store_url, &event.order_id, "EXECUTED").await?;
             }
             OrderEventType::OrderPartiallyFilled => {
                 let new_filled_qty = event.filled_quantity.unwrap_or(0).unsigned_abs();
@@ -424,6 +451,31 @@ impl OrderEventConsumer {
 
                 metrics::counter!("order_events_processed_total", "event_type" => "completed")
                     .increment(1);
+
+                // Update saga state to COMPLETED
+                Self::update_saga_state(event_store_url, &event.order_id, "COMPLETED").await?;
+            }
+            OrderEventType::OrderCancelled => {
+                info!(
+                    order_id = %event.order_id,
+                    "Order cancelled event received - updating status to Cancelled"
+                );
+
+                // Update order status to Cancelled
+                let order_id = event.order_id.parse()?;
+                let cancelled_status = OrderStatus::Cancelled {
+                    date: chrono::Utc::now(),
+                };
+                order_service
+                    .update_order_status(&order_id, cancelled_status)
+                    .await
+                    .map_err(|e| format!("Failed to update order status: {e}"))?;
+
+                metrics::counter!("order_events_processed_total", "event_type" => "cancelled")
+                    .increment(1);
+
+                // Update saga state to FAILED for cancelled orders
+                Self::update_saga_state(event_store_url, &event.order_id, "FAILED").await?;
             }
             _ => {
                 info!(
@@ -435,5 +487,40 @@ impl OrderEventConsumer {
         }
 
         Ok(())
+    }
+
+    async fn update_saga_state(
+        event_store_url: &str,
+        order_id: &str,
+        step: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let client = Client::new();
+        let url = format!("{}/v1/saga/{}/step", event_store_url, order_id);
+
+        let payload = serde_json::json!({
+            "step": step
+        });
+
+        let response = client
+            .put(&url)
+            .json(&payload)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            info!(
+                "Successfully updated saga state for order {} to {}",
+                order_id, step
+            );
+            Ok(())
+        } else {
+            warn!(
+                "Failed to update saga state for order {}: HTTP {}",
+                order_id,
+                response.status()
+            );
+            Ok(()) // Don't fail the entire event processing for saga state update failures
+        }
     }
 }

@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use config::DatabaseConfig;
 use sqlx::PgPool;
@@ -39,6 +39,7 @@ use std::sync::Arc;
         api::get_order_events,
         api::get_user_events,
         api::get_saga_state,
+        api::update_saga_step,
         api::get_unprocessed_outbox,
     ),
     components(schemas(
@@ -54,6 +55,8 @@ use std::sync::Arc;
         SagaStep,
         OutboxMessage,
         EventHistoryQuery,
+        models::UpdateSagaStepRequest,
+        models::MessageResponse,
     )),
     tags(
         (name = "health", description = "Health check endpoints"),
@@ -130,6 +133,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/events/order/{order_id}", get(api::get_order_events))
         .route("/v1/events/user/{user_id}", get(api::get_user_events))
         .route("/v1/saga/{order_id}", get(api::get_saga_state))
+        .route("/v1/saga/{order_id}/step", put(api::update_saga_step))
         .route("/v1/outbox/unprocessed", get(api::get_unprocessed_outbox))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive())

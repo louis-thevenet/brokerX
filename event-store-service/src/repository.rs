@@ -112,7 +112,37 @@ impl EventStoreRepository {
         .execute(&mut *tx)
         .await?;
 
-        // 4. Commit transaction
+        // 4. Initialize saga state for ORDER_CREATED events
+        if request.event_type == OrderEventType::OrderCreated {
+            debug!("Initializing saga state for ORDER_CREATED event");
+
+            sqlx::query(
+                r"
+                INSERT INTO saga_state (
+                    order_id, user_id, current_step,
+                    symbol, quantity, order_side, order_type, price,
+                    correlation_id
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (order_id) DO NOTHING
+                ",
+            )
+            .bind(request.order_id)
+            .bind(request.user_id)
+            .bind("CREATED")
+            .bind(&request.symbol)
+            .bind(request.quantity)
+            .bind(request.order_side.to_string())
+            .bind(serde_json::to_value(&request.order_type).unwrap())
+            .bind(request.price)
+            .bind(correlation_id)
+            .execute(&mut *tx)
+            .await?;
+
+            debug!("Saga state initialized for order {}", request.order_id);
+        }
+
+        // 5. Commit transaction
         tx.commit().await?;
 
         debug!("Event {} and outbox message committed", event_id);
@@ -330,7 +360,7 @@ impl EventStoreRepository {
         Ok(())
     }
 
-    /// Update saga state
+    /// Update saga state with current step and optional completion
     pub async fn update_saga_state(
         &self,
         order_id: OrderId,
@@ -375,6 +405,40 @@ impl EventStoreRepository {
 
         debug!("Saga state updated for order {}", order_id);
 
+        Ok(())
+    }
+
+    /// Simple saga step update for event consumers
+    pub async fn update_saga_step(
+        &self,
+        order_id: OrderId,
+        new_step: SagaStep,
+    ) -> color_eyre::Result<()> {
+        debug!(
+            "Updating saga step for order {} to {:?}",
+            order_id, new_step
+        );
+
+        let completed_at = if new_step == SagaStep::Completed || new_step == SagaStep::Failed {
+            Some(chrono::Utc::now())
+        } else {
+            None
+        };
+
+        sqlx::query(
+            r"
+            UPDATE saga_state 
+            SET current_step = $1, updated_at = NOW(), completed_at = $2
+            WHERE order_id = $3
+            ",
+        )
+        .bind(new_step.to_string())
+        .bind(completed_at)
+        .bind(order_id)
+        .execute(&self.pool)
+        .await?;
+
+        debug!("Saga step updated for order {} to {:?}", order_id, new_step);
         Ok(())
     }
 

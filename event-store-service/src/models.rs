@@ -31,6 +31,8 @@ pub enum OrderEventType {
     OrderFilled,
     /// Order has been partially filled
     OrderPartiallyFilled,
+    /// Order has been cancelled
+    OrderCancelled,
     /// Funds have been debited from user account (buy orders)
     FundsDebited,
     /// Funds have been credited to user account (sell orders)
@@ -50,6 +52,7 @@ impl std::fmt::Display for OrderEventType {
             OrderEventType::OrderExecuted => write!(f, "ORDER_EXECUTED"),
             OrderEventType::OrderFilled => write!(f, "ORDER_FILLED"),
             OrderEventType::OrderPartiallyFilled => write!(f, "ORDER_PARTIALLY_FILLED"),
+            OrderEventType::OrderCancelled => write!(f, "ORDER_CANCELLED"),
             OrderEventType::FundsDebited => write!(f, "FUNDS_DEBITED"),
             OrderEventType::FundsCredited => write!(f, "FUNDS_CREDITED"),
             OrderEventType::HoldingsUpdated => write!(f, "HOLDINGS_UPDATED"),
@@ -384,6 +387,12 @@ pub struct HealthResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct MessageResponse {
     pub message: String,
+}
+
+/// Request to update saga step
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct UpdateSagaStepRequest {
+    pub step: SagaStep,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
