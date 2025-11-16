@@ -1,5 +1,4 @@
 use brokerx_events::{OrderSide, OrderType};
-use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};

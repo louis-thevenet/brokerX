@@ -27,6 +27,7 @@ pub enum OrderType {
 pub enum OrderStatus {
     Pending,
     PartiallyFilled {
+        date: DateTime<Utc>,
         filled_quantity: u64,
     },
     Filled {

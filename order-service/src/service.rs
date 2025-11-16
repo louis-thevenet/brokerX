@@ -29,7 +29,6 @@ impl OrderService {
 
     pub async fn create_order(&self, order: Order) -> Result<(OrderId, Order), OrderError> {
         debug!("Creating order for user: {}", order.client_id);
-        // No validation - API Gateway has already done pre-trade checks
         self.order_repo.create_order(order).await
     }
 
@@ -38,7 +37,6 @@ impl OrderService {
         order_id: &OrderId,
     ) -> Result<Option<(OrderId, Order)>, OrderError> {
         let order = self.order_repo.get_order_by_id(order_id).await?;
-
         Ok(order.map(|o| (*order_id, o)))
     }
 
@@ -139,7 +137,7 @@ impl OrderService {
             OrderStatus::Filled { .. }
             | OrderStatus::Rejected { .. }
             | OrderStatus::Cancelled { .. }
-            | OrderStatus::PartiallyFilled { filled_quantity: _ } => {
+            | OrderStatus::PartiallyFilled { .. } => {
                 return Err(OrderError::OrderCannotBeCancelled);
             }
             OrderStatus::Pending => {}
@@ -162,5 +160,32 @@ impl OrderService {
         status: OrderStatus,
     ) -> Result<(), OrderError> {
         self.order_repo.update_order_status(order_id, status).await
+    }
+
+    pub async fn is_event_processed(&self, event_id: &uuid::Uuid) -> Result<bool, OrderError> {
+        self.order_repo.is_event_processed(event_id).await
+    }
+
+    pub async fn mark_event_processed(
+        &self,
+        event_id: uuid::Uuid,
+        order_id: uuid::Uuid,
+        event_type: &str,
+        event_payload: serde_json::Value,
+        result: &str,
+    ) -> Result<(), OrderError> {
+        self.order_repo
+            .mark_event_processed(event_id, order_id, event_type, event_payload, result)
+            .await
+    }
+
+    pub async fn atomic_increment_filled_quantity(
+        &self,
+        order_id: &OrderId,
+        increment_qty: u64,
+    ) -> Result<u64, OrderError> {
+        self.order_repo
+            .atomic_increment_filled_quantity(order_id, increment_qty)
+            .await
     }
 }

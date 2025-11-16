@@ -116,39 +116,51 @@ impl ExecutionSimulator {
                 .await?;
         }
 
-        // Publish ORDER_EXECUTED event if configured
+        // Publish appropriate event based on execution status
         if let Some(event_publisher) = &self.event_publisher {
-            if execution.status == ExecutionStatus::FullyFilled {
-                let event_order_side = match request.side {
-                    OrderSide::Buy => brokerx_events::OrderSide::Buy,
-                    OrderSide::Sell => brokerx_events::OrderSide::Sell,
-                };
+            let event_type = match execution.status {
+                ExecutionStatus::FullyFilled => "ORDER_EXECUTED",
+                ExecutionStatus::PartiallyFilled => "ORDER_PARTIALLY_FILLED",
+                ExecutionStatus::Rejected => "ORDER_REJECTED",
+            };
 
-                let event_order_type = match request.order_type {
-                    OrderType::Market => brokerx_events::OrderType::Market,
-                    OrderType::Limit { price } => brokerx_events::OrderType::Limit { price },
-                };
+            let event_order_side = match request.side {
+                OrderSide::Buy => brokerx_events::OrderSide::Buy,
+                OrderSide::Sell => brokerx_events::OrderSide::Sell,
+            };
 
-                let publish_event = crate::event_publisher::PublishEventRequest {
-                    order_id: request.order_id,
-                    user_id: request.user_id,
-                    event_type: "ORDER_EXECUTED".to_string(),
-                    symbol: symbol.clone(),
-                    quantity: request.quantity,
-                    order_side: event_order_side,
-                    order_type: event_order_type,
-                    filled_quantity: Some(execution.filled_quantity),
-                    average_price: execution.average_price,
-                    occurred_at: chrono::Utc::now().to_rfc3339(),
-                };
+            let event_order_type = match request.order_type {
+                OrderType::Market => brokerx_events::OrderType::Market,
+                OrderType::Limit { price } => brokerx_events::OrderType::Limit { price },
+            };
 
-                if let Err(e) = event_publisher.publish_event(publish_event).await {
-                    warn!(
-                        order_id = %request.order_id,
-                        error = %e,
-                        "Failed to publish ORDER_EXECUTED event"
-                    );
-                }
+            let publish_event = crate::event_publisher::PublishEventRequest {
+                order_id: request.order_id,
+                user_id: request.user_id,
+                event_type: event_type.to_string(),
+                symbol: symbol.clone(),
+                quantity: request.quantity,
+                order_side: event_order_side,
+                order_type: event_order_type,
+                filled_quantity: Some(execution.filled_quantity),
+                average_price: execution.average_price,
+                occurred_at: chrono::Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) = event_publisher.publish_event(publish_event).await {
+                warn!(
+                    order_id = %request.order_id,
+                    event_type = event_type,
+                    error = %e,
+                    "Failed to publish execution event"
+                );
+            } else {
+                info!(
+                    order_id = %request.order_id,
+                    event_type = event_type,
+                    filled_quantity = execution.filled_quantity,
+                    "Published execution event successfully"
+                );
             }
         }
 
@@ -421,7 +433,7 @@ impl ExecutionSimulator {
     ) -> Result<()> {
         if let Some(exec_price) = execution.average_price {
             info!(
-                "📝 [UPDATE STATE] {} | Updating market state: price=${:.2}, filled_quantity={}",
+                "[UPDATE STATE] {} | Updating market state: price=${:.2}, filled_quantity={}",
                 symbol, exec_price, execution.filled_quantity
             );
 
@@ -430,12 +442,8 @@ impl ExecutionSimulator {
                 .update_market_state(symbol, exec_price, execution.filled_quantity as i64)
                 .await?;
 
-            // Note: We don't insert execution prices as new market price points
-            // because that would replace the market volume with the order quantity.
-            // The regular price simulation updates will generate proper market prices.
-
             info!(
-                "✅ [STATE UPDATED] {} | Market simulation state updated successfully",
+                "[STATE UPDATED] {} | Market simulation state updated successfully",
                 symbol
             );
         }

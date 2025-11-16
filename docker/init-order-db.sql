@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS orders (
     status_date TIMESTAMPTZ,
     status_reason TEXT,
     filled_price DOUBLE PRECISION,
+    version INTEGER NOT NULL DEFAULT 0,  -- For optimistic locking
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -43,10 +44,28 @@ CREATE TRIGGER trigger_orders_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_orders_updated_at();
 
+-- Create processed_events table for idempotency
+CREATE TABLE IF NOT EXISTS processed_events (
+    event_id UUID PRIMARY KEY,
+    order_id UUID NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    event_payload JSONB NOT NULL,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processing_result VARCHAR(20) NOT NULL CHECK (processing_result IN ('success', 'failure', 'duplicate')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for processed_events
+CREATE INDEX IF NOT EXISTS idx_processed_events_order_id ON processed_events(order_id);
+CREATE INDEX IF NOT EXISTS idx_processed_events_event_type ON processed_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_processed_events_created_at ON processed_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_processed_events_order_event ON processed_events(order_id, event_type);
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON DATABASE brokerx_orders TO brokerx_user;
 GRANT ALL PRIVILEGES ON TABLE orders TO brokerx_user;
+GRANT ALL PRIVILEGES ON TABLE processed_events TO brokerx_user;
 
 -- Log initialization
-SELECT 'Order database initialized successfully with orders table' as status;
+SELECT 'Order database initialized successfully with orders and processed_events tables' as status;
 

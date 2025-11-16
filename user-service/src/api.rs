@@ -438,16 +438,38 @@ pub async fn update_holdings(
                 user_id, payload.quantity_change, payload.symbol
             );
 
+            // Parse order_side and order_type from strings
+            let order_side = match payload.order_side.to_lowercase().as_str() {
+                "buy" => brokerx_events::OrderSide::Buy,
+                "sell" => brokerx_events::OrderSide::Sell,
+                _ => {
+                    error!("Invalid order_side: {}", payload.order_side);
+                    return (StatusCode::BAD_REQUEST, "Invalid order_side").into_response();
+                }
+            };
+
+            let order_type = match payload.order_type.to_lowercase().as_str() {
+                "market" => brokerx_events::OrderType::Market,
+                "limit" => brokerx_events::OrderType::Limit {
+                    price: payload.execution_price,
+                },
+                _ => {
+                    error!("Invalid order_type: {}", payload.order_type);
+                    return (StatusCode::BAD_REQUEST, "Invalid order_type").into_response();
+                }
+            };
+
             let event = PublishEventRequest {
                 order_id: payload.order_id,
                 user_id,
                 event_type: "HOLDINGS_UPDATED".to_string(),
                 symbol: payload.symbol.clone(),
                 quantity: payload.quantity_change.unsigned_abs(),
-                order_side: payload.order_side.clone(),
-                order_type: payload.order_type.clone(),
+                order_side,
+                order_type,
                 filled_quantity: Some(payload.quantity_change.unsigned_abs()),
                 average_price: Some(payload.execution_price),
+                occurred_at: chrono::Utc::now().to_rfc3339(),
             };
 
             if let Err(e) = state.event_publisher.publish_event(event).await {

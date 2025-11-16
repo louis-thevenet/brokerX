@@ -2135,35 +2135,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "order-execution-orchestrator-service"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-prometheus",
- "chrono",
- "color-eyre",
- "dashmap",
- "dotenvy",
- "metrics 0.24.2",
- "mfa_adapter",
- "reqwest 0.12.23",
- "serde",
- "serde_json",
- "sqlx",
- "sysinfo",
- "thiserror 1.0.69",
- "tokio",
- "tokio-test",
- "tower 0.5.2",
- "tower-http 0.6.6",
- "tracing",
- "tracing-subscriber",
- "utoipa",
- "utoipa-swagger-ui",
- "uuid",
-]
-
-[[package]]
 name = "order-service"
 version = "0.1.0"
 dependencies = [

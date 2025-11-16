@@ -147,7 +147,11 @@ async fn main() -> color_eyre::Result<()> {
 
     let redis_url =
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6380".to_string());
-    let event_consumer = UserEventConsumer::new(app_state.user_service.clone(), redis_url);
+    let event_consumer = UserEventConsumer::new(
+        app_state.user_service.clone(),
+        app_state.event_publisher.clone(),
+        redis_url,
+    );
 
     tokio::spawn(async move {
         if let Err(e) = event_consumer.start().await {
