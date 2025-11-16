@@ -63,7 +63,6 @@ jobs:
         ports:
           - 5434:5432
       
-      # Event Store Service Database (NEW - for event-driven architecture)
       event-store-db:
         image: postgres:15
         env:
@@ -80,7 +79,6 @@ jobs:
         ports:
           - 5435:5432
       
-      # Redis (NEW - for event pub/sub)
       redis:
         image: redis:7-alpine
         options: >-
@@ -89,7 +87,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 6379:6379
+          - 6380:6379
     
     steps:
       - name: Checkout repository
@@ -122,13 +120,13 @@ jobs:
           MARKET_DATA_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5434/brokerx_market_data
           EVENT_STORE_DATABASE_URL: postgresql://brokerx_user:password123@localhost:5435/brokerx_event_store
           DATABASE_URL: postgresql://brokerx_user:password123@localhost:5432/brokerx_users
-          REDIS_URL: redis://localhost:6379
+          REDIS_URL: redis://localhost:6380
           EVENT_STORE_URL: http://localhost:3005
       
       - name: Test event architecture connectivity
         run: |
           # Test Redis connectivity
-          redis-cli -h localhost -p 6379 ping
+          redis-cli -h localhost -p 6380 ping
           # Test database connections
           PGPASSWORD=password123 psql -h localhost -p 5435 -U brokerx_user -d brokerx_event_store -c "SELECT 'Event Store DB connected' as status;"
         env:

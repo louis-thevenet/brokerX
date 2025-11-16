@@ -24,10 +24,10 @@
       "release-type": "rust",
       "component": "api-gateway"
     },
-    "order-execution-orchestrator-service": {
-      "path": "order-execution-orchestrator-service",
+    "brokerx-events": {
+      "path": "brokerx-events",
       "release-type": "rust",
-      "component": "order-execution-orchestrator-service"
+      "component": "brokerx-events"
     }
   },
   "plugins": [
@@ -44,7 +44,7 @@
         "order-service",
         "market-data-service",
         "api-gateway",
-        "order-execution-orchestrator-service"
+        "brokerx-events"
       ]
     }
   ]
