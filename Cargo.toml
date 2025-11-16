@@ -5,7 +5,6 @@ members = [
     "order-service",
     "market-data-service",
     "api_gateway",
-    "order-execution-orchestrator-service",
     "event-store-service",
     "brokerx-events"
 ]

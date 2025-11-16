@@ -16,7 +16,6 @@ COPY mfa_adapter ./mfa_adapter
 COPY user-service ./user-service
 COPY order-service ./order-service
 COPY market-data-service ./market-data-service
-COPY order-execution-orchestrator-service ./order-execution-orchestrator-service
 COPY api_gateway ./api_gateway
 COPY brokerx-events ./brokerx-events
 COPY event-store-service ./event-store-service
