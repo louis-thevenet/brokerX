@@ -18,12 +18,11 @@ pub enum NotificationType {
     },
     /// MFA/OTP notifications (backward compatibility)
     Mfa { challenge_id: String, code: String },
-    /// Market data notifications (for future use)
+    /// Market data notifications
     MarketData {
-        symbol: String,
-        price: f64,
-        change: f64,
-        change_percent: f64,
+        symbols: Vec<MarketDataSymbol>,
+        holdings: Option<Vec<HoldingData>>,
+        frequency: String, // "hourly", "daily", "weekly"
     },
     /// General system notifications
     System {
@@ -31,6 +30,30 @@ pub enum NotificationType {
         message: String,
         priority: Priority,
     },
+}
+
+/// Market data for a specific symbol
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MarketDataSymbol {
+    pub symbol: String,
+    pub price: f64,
+    pub change: f64,
+    pub change_percent: f64,
+    pub high: f64,
+    pub low: f64,
+    pub volume: i64,
+}
+
+/// Holding data for portfolio summary
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HoldingData {
+    pub symbol: String,
+    pub quantity: u64,
+    pub average_cost: f64,
+    pub current_price: f64,
+    pub total_value: f64,
+    pub profit_loss: f64,
+    pub profit_loss_percent: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -118,6 +141,28 @@ impl Notification {
     /// Create an MFA notification (for backward compatibility)
     pub fn mfa(user_id: String, user_email: String, challenge_id: String, code: String) -> Self {
         let notification_type = NotificationType::Mfa { challenge_id, code };
+
+        Self::new(
+            user_id,
+            user_email,
+            notification_type,
+            vec![DeliveryChannel::Email],
+        )
+    }
+
+    /// Create a market data report notification
+    pub fn market_data_report(
+        user_id: String,
+        user_email: String,
+        symbols: Vec<MarketDataSymbol>,
+        holdings: Option<Vec<HoldingData>>,
+        frequency: String,
+    ) -> Self {
+        let notification_type = NotificationType::MarketData {
+            symbols,
+            holdings,
+            frequency,
+        };
 
         Self::new(
             user_id,

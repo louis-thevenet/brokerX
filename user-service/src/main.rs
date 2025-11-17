@@ -47,10 +47,17 @@ pub struct AppState {
         api::verify_user_email,
         api::authenticate_user,
         api::health_check,
+        api::get_subscription,
+        api::upsert_subscription,
+        api::delete_subscription,
+        api::update_subscription_last_sent,
     ),
     components(schemas(
         models::User,
         models::Holding,
+        models::MarketDataSubscription,
+        models::SubscriptionRequest,
+        models::SubscriptionFrequency,
         api::CreateUserRequest,
         api::UpdateUserRequest,
         api::UpdateHoldingsRequest,
@@ -170,6 +177,16 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/users/{id}/holdings", get(api::get_holdings))
         .route("/v1/users/{id}/holdings", post(api::update_holdings))
         .route("/v1/users/{id}/validate-trade", post(api::validate_trade))
+        .route("/v1/users/{id}/subscription", get(api::get_subscription))
+        .route("/v1/users/{id}/subscription", put(api::upsert_subscription))
+        .route(
+            "/v1/users/{id}/subscription",
+            axum::routing::delete(api::delete_subscription),
+        )
+        .route(
+            "/v1/users/{id}/subscription/last-sent",
+            axum::routing::patch(api::update_subscription_last_sent),
+        )
         .route("/v1/users/by-email/{email}", get(api::get_user_by_email))
         .route("/v1/users/{id}/verify", post(api::verify_user_email))
         .route("/v1/auth/login", post(api::authenticate_user))

@@ -297,6 +297,123 @@ impl UserClient {
             )))
         }
     }
+
+    // ============================================================================
+    // Market Data Subscription Methods
+    // ============================================================================
+
+    /// Get user's market data subscription
+    pub async fn get_subscription(
+        &self,
+        user_id: Uuid,
+    ) -> ApiResult<crate::models::MarketDataSubscription> {
+        debug!("Getting subscription for user: {}", user_id);
+        let response = self
+            .client
+            .get(format!(
+                "{}/v1/users/{}/subscription",
+                self.base_url, user_id
+            ))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let subscription = response.json().await?;
+            Ok(subscription)
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
+            )))
+        }
+    }
+
+    /// Create or update user's market data subscription
+    pub async fn upsert_subscription(
+        &self,
+        user_id: Uuid,
+        request: &crate::models::SubscriptionRequest,
+    ) -> ApiResult<crate::models::MarketDataSubscription> {
+        debug!("Creating/updating subscription for user: {}", user_id);
+        let response = self
+            .client
+            .put(format!(
+                "{}/v1/users/{}/subscription",
+                self.base_url, user_id
+            ))
+            .json(request)
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let subscription = response.json().await?;
+            Ok(subscription)
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else if response.status() == reqwest::StatusCode::BAD_REQUEST {
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::BadRequest(error_text))
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
+            )))
+        }
+    }
+
+    /// Delete user's market data subscription
+    pub async fn delete_subscription(&self, user_id: Uuid) -> ApiResult<()> {
+        debug!("Deleting subscription for user: {}", user_id);
+        let response = self
+            .client
+            .delete(format!(
+                "{}/v1/users/{}/subscription",
+                self.base_url, user_id
+            ))
+            .send()
+            .await?;
+
+        if response.status().is_success() || response.status() == reqwest::StatusCode::NO_CONTENT {
+            Ok(())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
+            )))
+        }
+    }
+
+    /// Update subscription last_sent_at timestamp
+    pub async fn update_subscription_last_sent(&self, user_id: Uuid) -> ApiResult<()> {
+        debug!("Updating last_sent_at for user subscription: {}", user_id);
+        let response = self
+            .client
+            .patch(format!(
+                "{}/v1/users/{}/subscription/last-sent",
+                self.base_url, user_id
+            ))
+            .send()
+            .await?;
+
+        if response.status().is_success() || response.status() == reqwest::StatusCode::NO_CONTENT {
+            Ok(())
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            Err(ApiError::NotFound)
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            Err(ApiError::ServiceUnavailable(format!(
+                "User service error {status}: {error_text}"
+            )))
+        }
+    }
 }
 
 pub struct OrderClient {

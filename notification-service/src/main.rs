@@ -1,5 +1,7 @@
 use color_eyre::Result;
-use notification_service::{NotificationEventConsumer, NotificationService};
+use notification_service::{
+    DirectNotificationConsumer, NotificationEventConsumer, NotificationService,
+};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::{error, info};
@@ -76,15 +78,28 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Create and start direct notification consumer
+    let direct_consumer =
+        DirectNotificationConsumer::new(notification_service.clone(), config.redis_url.clone())
+            .expect("Failed to create direct notification consumer");
+
+    let direct_consumer_handle = tokio::spawn(async move {
+        if let Err(e) = direct_consumer.start().await {
+            error!("Direct notification consumer error: {}", e);
+        }
+    });
+
     info!("Notification Service is ready and listening for events");
+    info!("Listening for: 1) Order execution events 2) Direct notification requests");
     info!("Email notifications: Enabled (check SMTP configuration)");
 
     // Wait for shutdown signal
     signal::ctrl_c().await?;
     info!("Shutdown signal received, stopping services...");
 
-    // Cancel the consumer task
+    // Cancel the consumer tasks
     consumer_handle.abort();
+    direct_consumer_handle.abort();
 
     info!("Notification Service stopped");
     Ok(())

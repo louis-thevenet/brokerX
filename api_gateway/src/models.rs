@@ -520,3 +520,62 @@ impl OrderServiceResponse {
         }
     }
 }
+
+// ============================================================================
+// Market Data Subscription Models
+// ============================================================================
+
+/// Subscription frequency for market data reports
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SubscriptionFrequency {
+    Hourly,
+    Daily,
+    Weekly,
+}
+
+impl std::fmt::Display for SubscriptionFrequency {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubscriptionFrequency::Hourly => write!(f, "hourly"),
+            SubscriptionFrequency::Daily => write!(f, "daily"),
+            SubscriptionFrequency::Weekly => write!(f, "weekly"),
+        }
+    }
+}
+
+/// Market data subscription
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct MarketDataSubscription {
+    #[schema(value_type = String, format = Uuid)]
+    pub id: Option<Uuid>,
+    #[schema(value_type = String, format = Uuid)]
+    pub user_id: Uuid,
+    pub symbols: Vec<String>,
+    pub frequency: SubscriptionFrequency,
+    pub include_holdings: bool,
+    pub is_active: bool,
+    #[schema(value_type = String)]
+    pub created_at: DateTime<Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: DateTime<Utc>,
+    #[schema(value_type = Option<String>)]
+    pub last_sent_at: Option<DateTime<Utc>>,
+}
+
+/// Request to create or update a market data subscription
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SubscriptionRequest {
+    /// Symbols to subscribe to (e.g., ["AAPL", "GOOGL"])
+    #[schema(example = json!(["AAPL", "GOOGL", "MSFT"]))]
+    pub symbols: Vec<String>,
+    /// Frequency of reports
+    pub frequency: SubscriptionFrequency,
+    /// Whether to include user's holdings in the report
+    #[serde(default = "default_include_holdings")]
+    pub include_holdings: bool,
+}
+
+fn default_include_holdings() -> bool {
+    true
+}

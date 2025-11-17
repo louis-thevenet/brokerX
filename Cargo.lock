@@ -71,6 +71,7 @@ dependencies = [
  "jsonwebtoken",
  "moka",
  "notification-service",
+ "redis 0.27.6",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
@@ -274,6 +275,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "backon"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
+dependencies = [
+ "fastrand",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -358,7 +368,7 @@ dependencies = [
  "color-eyre",
  "futures-util",
  "metrics 0.23.1",
- "redis",
+ "redis 0.24.0",
  "serde",
  "serde_json",
  "tokio",
@@ -837,7 +847,7 @@ dependencies = [
  "dashmap",
  "dotenvy",
  "metrics 0.23.1",
- "redis",
+ "redis 0.24.0",
  "serde",
  "serde_json",
  "sqlx",
@@ -1998,6 +2008,7 @@ dependencies = [
  "futures-util",
  "lettre",
  "rand 0.8.5",
+ "redis 0.27.6",
  "reqwest 0.12.23",
  "serde",
  "serde_json",
@@ -2161,7 +2172,7 @@ dependencies = [
  "metrics 0.24.2",
  "metrics-exporter-prometheus 0.16.2",
  "notification-service",
- "redis",
+ "redis 0.24.0",
  "reqwest 0.12.23",
  "serde",
  "serde_json",
@@ -2538,6 +2549,32 @@ dependencies = [
  "socket2 0.4.10",
  "tokio",
  "tokio-retry",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
+name = "redis"
+version = "0.27.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09d8f99a4090c89cc489a94833c901ead69bfbf3877b4867d5482e321ee875bc"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "backon",
+ "bytes",
+ "combine",
+ "futures",
+ "futures-util",
+ "itertools",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "pin-project-lite",
+ "ryu",
+ "sha1_smol",
+ "socket2 0.5.10",
+ "tokio",
  "tokio-util",
  "url",
 ]

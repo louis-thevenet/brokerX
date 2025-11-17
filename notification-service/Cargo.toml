@@ -20,3 +20,4 @@ reqwest = { version = "0.12", features = ["json"] }
 brokerx-events = { path = "../brokerx-events" }
 async-trait = "0.1"
 tracing-subscriber = "0.3"
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }

@@ -386,6 +386,7 @@ services:
       - ORDER_SERVICE_URL=http://order-service:3002
       - MARKET_DATA_SERVICE_URL=http://market-data-service:3003
       - ORCHESTRATOR_SERVICE_URL=http://order-execution-orchestrator-service:3004
+      - REDIS_URL=redis://redis:6379
       - JWT_SECRET=docker-jwt-secret-change-in-production-please
       - JWT_EXPIRY_HOURS=24
       - CORS_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000

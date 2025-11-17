@@ -573,7 +573,7 @@ impl OrderEventConsumer {
         step: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let client = Client::new();
-        let url = format!("{}/v1/saga/{}/step", event_store_url, order_id);
+        let url = format!("{event_store_url}/v1/saga/{order_id}/step");
 
         let payload = serde_json::json!({
             "step": step

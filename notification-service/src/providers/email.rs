@@ -135,7 +135,7 @@ impl EmailProvider {
                 );
 
                 let price_text = if let Some(p) = price {
-                    format!("at ${:.2}", p)
+                    format!("at ${p:.2}")
                 } else {
                     "at market price".to_string()
                 };
@@ -359,13 +359,12 @@ impl EmailProvider {
     </div>
 </body>
 </html>
-                    "#,
-                    code = code
+                    "#
                 );
                 (subject, body)
             }
             NotificationType::System { title, message, .. } => {
-                let subject = format!("BrokerX: {}", title);
+                let subject = format!("BrokerX: {title}");
                 let body = format!(
                     r#"
 <!DOCTYPE html>
@@ -393,21 +392,108 @@ impl EmailProvider {
     </div>
 </body>
 </html>
-                    "#,
-                    title = title,
-                    message = message
+                    "#
                 );
                 (subject, body)
             }
             NotificationType::MarketData {
-                symbol,
-                price,
-                change,
-                change_percent,
+                symbols,
+                holdings,
+                frequency,
             } => {
-                let subject = format!("BrokerX: Market Alert - {}", symbol);
-                let change_direction = if *change >= 0.0 { "↗" } else { "↘" };
-                let change_color = if *change >= 0.0 { "#28a745" } else { "#dc3545" };
+                let subject = format!("BrokerX: {} Market Data Report", frequency.to_uppercase());
+
+                // Build symbols table
+                let mut symbols_html = String::new();
+                for sym in symbols {
+                    let change_color = if sym.change >= 0.0 {
+                        "#28a745"
+                    } else {
+                        "#dc3545"
+                    };
+                    let change_direction = if sym.change >= 0.0 { "↗" } else { "↘" };
+
+                    symbols_html.push_str(&format!(
+                        r#"
+                        <tr>
+                            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>{}</strong></td>
+                            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${:.2}</td>
+                            <td style="padding: 10px; border-bottom: 1px solid #dee2e6; color: {};">{} ${:.2} ({:.1}%)</td>
+                            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${:.2}</td>
+                            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${:.2}</td>
+                            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{}</td>
+                        </tr>
+                        "#,
+                        sym.symbol, sym.price, change_color, change_direction, sym.change, sym.change_percent, sym.high, sym.low, sym.volume
+                    ));
+                }
+
+                // Build holdings table if available
+                let holdings_html = if let Some(holds) = holdings {
+                    let mut holdings_rows = String::new();
+                    let mut total_value = 0.0;
+                    let mut total_pl = 0.0;
+
+                    for hold in holds {
+                        total_value += hold.total_value;
+                        total_pl += hold.profit_loss;
+                        let pl_color = if hold.profit_loss >= 0.0 {
+                            "#28a745"
+                        } else {
+                            "#dc3545"
+                        };
+
+                        holdings_rows.push_str(&format!(
+                            r#"
+                            <tr>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>{}</strong></td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{}</td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${:.2}</td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${:.2}</td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${:.2}</td>
+                                <td style="padding: 10px; border-bottom: 1px solid #dee2e6; color: {};">${:.2} ({:.1}%)</td>
+                            </tr>
+                            "#,
+                            hold.symbol, hold.quantity, hold.average_cost, hold.current_price, hold.total_value, pl_color, hold.profit_loss, hold.profit_loss_percent
+                        ));
+                    }
+
+                    let total_pl_color = if total_pl >= 0.0 {
+                        "#28a745"
+                    } else {
+                        "#dc3545"
+                    };
+
+                    format!(
+                        r#"
+                        <div style="margin-top: 30px;">
+                            <h2>Your Portfolio</h2>
+                            <table style="width: 100%; border-collapse: collapse; background-color: white; border-radius: 5px; overflow: hidden;">
+                                <thead style="background-color: #007bff; color: white;">
+                                    <tr>
+                                        <th style="padding: 12px; text-align: left;">Symbol</th>
+                                        <th style="padding: 12px; text-align: left;">Shares</th>
+                                        <th style="padding: 12px; text-align: left;">Avg Cost</th>
+                                        <th style="padding: 12px; text-align: left;">Current</th>
+                                        <th style="padding: 12px; text-align: left;">Value</th>
+                                        <th style="padding: 12px; text-align: left;">P&L</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {holdings_rows}
+                                    <tr style="background-color: #f8f9fa; font-weight: bold;">
+                                        <td colspan="4" style="padding: 12px; border-top: 2px solid #dee2e6;">TOTAL</td>
+                                        <td style="padding: 12px; border-top: 2px solid #dee2e6;">${total_value:.2}</td>
+                                        <td style="padding: 12px; border-top: 2px solid #dee2e6; color: {total_pl_color};">${total_pl:.2}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        "#
+                    )
+                } else {
+                    String::new()
+                };
 
                 let body = format!(
                     r#"
@@ -415,37 +501,58 @@ impl EmailProvider {
 <html>
 <head>
     <style>
-        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; }}
-        .market-data {{ background-color: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }}
-        .price {{ font-size: 24px; font-weight: bold; }}
-        .change {{ color: {change_color}; font-weight: bold; }}
-        .footer {{ color: #666; font-size: 12px; text-align: center; margin-top: 20px; }}
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }}
+        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }}
+        .content {{ background-color: white; padding: 30px; border-radius: 0 0 8px 8px; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; background-color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        th {{ background-color: #007bff; color: white; padding: 12px; text-align: left; }}
+        td {{ padding: 10px; border-bottom: 1px solid #dee2e6; }}
+        .footer {{ color: #666; font-size: 12px; text-align: center; margin-top: 30px; padding: 20px; }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>BrokerX Market Alert</h1>
-        <h2>{symbol} Price Update</h2>
+        <h1>📊 {} Market Data Report</h1>
+        <p style="margin: 0; opacity: 0.9;">Generated at {}</p>
     </div>
     
-    <div class="market-data">
-        <p class="price">${price:.2}</p>
-        <p class="change">{change_direction} ${change:.2} ({change_percent:.1}%)</p>
+    <div class="content">
+        <h2>Market Overview</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Change</th>
+                    <th>High</th>
+                    <th>Low</th>
+                    <th>Volume</th>
+                </tr>
+            </thead>
+            <tbody>
+                {}
+            </tbody>
+        </table>
+        
+        {}
+        
+        <p style="margin-top: 30px; color: #666; font-size: 14px;">
+            This is your {} market data report. You can manage your subscription settings in your BrokerX account.
+        </p>
     </div>
     
     <div class="footer">
-        <p>This is an automated market alert from BrokerX. Please do not reply to this email.</p>
+        <p>This is an automated message from BrokerX. Please do not reply to this email.</p>
+        <p>To unsubscribe from market data reports, please visit your account settings.</p>
     </div>
 </body>
 </html>
                     "#,
-                    symbol = symbol,
-                    price = price,
-                    change = change,
-                    change_percent = change_percent,
-                    change_direction = change_direction,
-                    change_color = change_color
+                    frequency.to_uppercase(),
+                    chrono::Utc::now().format("%Y-%m-%d %H:%M UTC"),
+                    symbols_html,
+                    holdings_html,
+                    frequency
                 );
                 (subject, body)
             }
@@ -476,7 +583,7 @@ impl EmailProvider {
                 };
 
                 let price_text = if let Some(p) = price {
-                    format!("${:.2}", p)
+                    format!("${p:.2}")
                 } else {
                     "Market".to_string()
                 };
@@ -489,11 +596,11 @@ impl EmailProvider {
                     "║  Order ID: {:<44} ║",
                     order_id.chars().take(44).collect::<String>()
                 );
-                println!("║  Symbol: {:<46} ║", symbol);
+                println!("║  Symbol: {symbol:<46} ║");
                 println!("║  Side: {:<48} ║", side.to_uppercase());
-                println!("║  Quantity: {:<44} ║", quantity);
-                println!("║  Filled: {:<46} ║", filled_quantity);
-                println!("║  Price: {:<47} ║", price_text);
+                println!("║  Quantity: {quantity:<44} ║");
+                println!("║  Filled: {filled_quantity:<46} ║");
+                println!("║  Price: {price_text:<47} ║");
                 println!(
                     "║  Status: {} {:<43} ║",
                     status_emoji,
@@ -506,7 +613,7 @@ impl EmailProvider {
                 println!("║          OTP VERIFICATION CODE           ║");
                 println!("╠══════════════════════════════════════════╣");
                 println!("║  Email: {:<32} ║", notification.user_email);
-                println!("║  Code:  {:<32} ║", code);
+                println!("║  Code:  {code:<32} ║");
                 println!("║  Valid for: 5 minutes                    ║");
                 println!("╚══════════════════════════════════════════╝\n");
             }
@@ -570,12 +677,12 @@ impl NotificationProvider for EmailProvider {
         if mfa_bypass {
             match &notification.notification_type {
                 NotificationType::Mfa { code, .. } => {
-                    println!("EMAIL BYPASSED - MFA Code: {}", code);
+                    println!("EMAIL BYPASSED - MFA Code: {code}");
                 }
                 NotificationType::OrderExecution {
                     order_id, status, ..
                 } => {
-                    println!("EMAIL BYPASSED - Order {} Status: {}", order_id, status);
+                    println!("EMAIL BYPASSED - Order {order_id} Status: {status}");
                 }
                 _ => {} // No logging for other types
             }
