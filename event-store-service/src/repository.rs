@@ -316,6 +316,7 @@ impl EventStoreRepository {
     // ========================================================================
 
     /// Initialize saga state for a new order
+    #[allow(clippy::too_many_arguments)]
     pub async fn init_saga_state(
         &self,
         order_id: OrderId,

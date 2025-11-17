@@ -874,7 +874,9 @@ async fn send_immediate_subscription_notification(
                 // Fetch current prices for all holdings
                 let symbols: Vec<String> = holdings_vec.iter().map(|h| h.symbol.clone()).collect();
 
-                if !symbols.is_empty() {
+                if symbols.is_empty() {
+                    None
+                } else {
                     match state.market_data_client.get_prices(&symbols).await {
                         Ok(prices_response) => {
                             // Parse the response - it's a MarketPricesResponse with a "prices" field
@@ -904,8 +906,6 @@ async fn send_immediate_subscription_notification(
                             None
                         }
                     }
-                } else {
-                    None
                 }
             }
             Err(e) => {

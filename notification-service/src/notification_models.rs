@@ -109,6 +109,8 @@ impl Notification {
     }
 
     /// Create an order execution notification
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn order_execution(
         user_id: String,
         user_email: String,
@@ -184,7 +186,7 @@ impl Notification {
             // Exponential backoff: 1min, 2min, 4min
             let backoff_minutes = 2_u32.pow(self.attempts - 1);
             self.next_retry_at =
-                Some(Utc::now() + chrono::Duration::minutes(backoff_minutes as i64));
+                Some(Utc::now() + chrono::Duration::minutes(i64::from(backoff_minutes)));
         } else {
             self.next_retry_at = None;
         }

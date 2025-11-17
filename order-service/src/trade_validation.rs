@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tracing::{debug, warn};
 use uuid::Uuid;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct UserData {
     pub id: Option<Uuid>,
@@ -19,6 +20,7 @@ pub struct UserData {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct HoldingData {
     pub symbol: String,
     pub quantity: u64,
@@ -26,6 +28,7 @@ pub struct HoldingData {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct MarketPriceResponse {
     pub symbol: String,
     pub price: f64,
@@ -45,6 +48,7 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    #[must_use]
     pub fn valid() -> Self {
         Self {
             valid: true,
@@ -53,26 +57,9 @@ impl ValidationResult {
         }
     }
 
-    pub fn invalid(error: ValidationError) -> Self {
-        Self {
-            valid: false,
-            errors: vec![error],
-            warnings: Vec::new(),
-        }
-    }
-
-    pub fn with_warning(mut self, warning: String) -> Self {
-        self.warnings.push(warning);
-        self
-    }
-
     pub fn add_error(&mut self, error: ValidationError) {
         self.valid = false;
         self.errors.push(error);
-    }
-
-    pub fn first_error(&self) -> Option<&ValidationError> {
-        self.errors.first()
     }
 }
 
@@ -253,6 +240,7 @@ impl std::fmt::Display for ValidationError {
 
 /// Configuration for trade validation rules
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ValidationConfig {
     /// Maximum order size in shares
     pub max_order_quantity: u64,

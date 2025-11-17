@@ -35,10 +35,10 @@ impl NotificationHelper {
             .map(|s| {
                 // Calculate change and change_percent from open price
                 let change = s.price - s.open;
-                let change_percent = if s.open != 0.0 {
-                    (change / s.open) * 100.0
-                } else {
+                let change_percent = if s.open == 0.0 {
                     0.0
+                } else {
+                    (change / s.open) * 100.0
                 };
 
                 MarketDataSymbol {

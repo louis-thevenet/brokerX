@@ -139,16 +139,6 @@ impl UserService {
         self.user_repo.delete_subscription(user_id).await
     }
 
-    /// Get active subscriptions by frequency (for scheduled tasks)
-    pub async fn get_active_subscriptions_by_frequency(
-        &self,
-        frequency: crate::models::SubscriptionFrequency,
-    ) -> Result<Vec<(MarketDataSubscription, User)>, AuthError> {
-        self.user_repo
-            .get_active_subscriptions_by_frequency(frequency)
-            .await
-    }
-
     /// Update subscription last sent timestamp
     pub async fn update_subscription_last_sent(
         &self,

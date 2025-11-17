@@ -444,11 +444,6 @@ pub trait SubscriptionRepoExt {
 
     async fn delete_subscription(&self, user_id: &UserId) -> Result<(), AuthError>;
 
-    async fn get_active_subscriptions_by_frequency(
-        &self,
-        frequency: SubscriptionFrequency,
-    ) -> Result<Vec<(MarketDataSubscription, User)>, AuthError>;
-
     async fn update_subscription_last_sent(&self, subscription_id: &Uuid) -> Result<(), AuthError>;
 }
 
@@ -587,64 +582,6 @@ impl SubscriptionRepoExt for UserRepository {
             .map_err(AuthError::UserRepo)?;
 
         Ok(())
-    }
-
-    async fn get_active_subscriptions_by_frequency(
-        &self,
-        frequency: SubscriptionFrequency,
-    ) -> Result<Vec<(MarketDataSubscription, User)>, AuthError> {
-        let query = r#"
-            SELECT 
-                s.id, s.user_id, s.symbols, s.frequency, s.include_holdings, s.is_active, 
-                s.created_at, s.updated_at, s.last_sent_at,
-                u.id as user_id, u.email, u.password_hash, u.firstname, u.surname, 
-                u.balance, u.is_verified, u.created_at as user_created_at, u.holdings
-            FROM market_data_subscriptions s
-            JOIN users u ON s.user_id = u.id
-            WHERE s.frequency = $1 AND s.is_active = true
-        "#;
-
-        let rows = sqlx::query(query)
-            .bind(frequency.to_string())
-            .fetch_all(&self.pool)
-            .await
-            .map_err(AuthError::UserRepo)?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            let subscription = MarketDataSubscription {
-                id: row.try_get("id").ok(),
-                user_id: row.try_get("user_id").unwrap(),
-                symbols: row.try_get("symbols").unwrap(),
-                frequency: row
-                    .try_get::<String, _>("frequency")
-                    .unwrap()
-                    .parse()
-                    .unwrap(),
-                include_holdings: row.try_get("include_holdings").unwrap(),
-                is_active: row.try_get("is_active").unwrap(),
-                created_at: row.try_get("created_at").unwrap(),
-                updated_at: row.try_get("updated_at").unwrap(),
-                last_sent_at: row.try_get("last_sent_at").ok(),
-            };
-
-            let user = User {
-                id: row.try_get("user_id").ok(),
-                email: row.try_get("email").unwrap(),
-                password_hash: row.try_get("password_hash").unwrap(),
-                firstname: row.try_get("firstname").unwrap(),
-                surname: row.try_get("surname").unwrap(),
-                balance: row.try_get("balance").unwrap(),
-                is_verified: row.try_get("is_verified").unwrap(),
-                created_at: row.try_get("user_created_at").unwrap(),
-                holdings: serde_json::from_value(row.try_get("holdings").unwrap())
-                    .unwrap_or_default(),
-            };
-
-            results.push((subscription, user));
-        }
-
-        Ok(results)
     }
 
     async fn update_subscription_last_sent(&self, subscription_id: &Uuid) -> Result<(), AuthError> {
