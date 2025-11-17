@@ -309,7 +309,7 @@ services:
         soft: 65536
         hard: 65536
         
- # Event Store Service
+  # Event Store Service
   event-store-service:
     build:
       context: .
@@ -336,8 +336,41 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-        
-  # API Gateway
+
+  # Notification Service  
+  notification-service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.notification-service
+    container_name: brokerx-notification-service
+    env_file:
+      - .env
+    environment:
+      - MFA_BYPASS=false
+      - RUST_LOG=info
+      - REDIS_URL=redis://redis:6379
+      - USER_SERVICE_URL=http://user-service:3001
+      - PORT=3006
+      # SMTP Configuration (optional - will use console fallback if not set)
+      # - SMTP_HOST=smtp.gmail.com
+      # - SMTP_PORT=587
+      # - SMTP_USERNAME=your-email@gmail.com
+      # - SMTP_PASSWORD=your-app-password
+      # - SMTP_FROM_EMAIL=noreply@brokerx.local
+    ports:
+      - "3006:3006"
+    networks:
+      - brokerx-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536  # API Gateway
   api-gateway:
     build:
       context: .
@@ -346,7 +379,7 @@ services:
     env_file:
       - .env
     environment:
-      - MFA_BYPASS=true
+      - MFA_BYPASS=false
       - RUST_LOG=info
       - API_GATEWAY_ADDRESS=0.0.0.0:8080
       - USER_SERVICE_URL=http://user-service:3001

@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Copy workspace files (need all members for workspace to work)
 COPY Cargo.toml Cargo.lock ./
-COPY mfa_adapter ./mfa_adapter
+COPY notification-service ./notification-service
 COPY user-service ./user-service
 COPY order-service ./order-service
 COPY market-data-service ./market-data-service

@@ -1,6 +1,6 @@
 [workspace]
 members = [ 
-    "mfa_adapter", 
+    "notification-service", 
     "user-service",
     "order-service",
     "market-data-service",

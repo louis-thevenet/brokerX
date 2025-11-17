@@ -1,14 +1,19 @@
+// Legacy MFA support for backward compatibility
+// This module provides the original MFA interface while using the new notification system internally
+
+use crate::notification_models::Notification;
+use crate::providers::EmailProvider;
+use crate::service::NotificationService;
 use color_eyre::Result;
-use lettre::message::header::ContentType;
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::{Message, SmtpTransport, Transport};
 use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tracing::debug;
+use uuid::Uuid;
 
-// MFA Error types
+pub use crate::providers::email::EmailConfig;
+
 #[derive(Debug, Clone)]
 pub enum MfaError {
     SendingFailed(String),
@@ -32,7 +37,7 @@ impl std::fmt::Display for MfaError {
 
 impl std::error::Error for MfaError {}
 
-// OTP Challenge structure
+// OTP Challenge structure (kept for compatibility)
 #[derive(Debug, Clone)]
 pub struct OtpChallenge {
     pub id: String,
@@ -43,7 +48,6 @@ pub struct OtpChallenge {
     pub expires_at: SystemTime,
 }
 
-// MFA Provider trait
 pub trait MfaProvider: Send + Sync {
     fn generate_otp(
         &self,
@@ -65,78 +69,9 @@ pub trait MfaProvider: Send + Sync {
     ) -> Result<OtpChallenge, MfaError>;
 }
 
-#[derive(Debug, Clone)]
-pub struct EmailConfig {
-    pub smtp_server: String,
-    pub smtp_port: u16,
-    pub username: String,
-    pub password: String,
-    pub from_email: String,
-    pub from_name: String,
-}
-
-impl EmailConfig {
-    /// Create a test configuration that doesn't require environment variables
-    pub fn new_test_config() -> Self {
-        Self {
-            smtp_server: "test.smtp.com".to_string(),
-            smtp_port: 587,
-            username: "test_user".to_string(),
-            password: "test_password".to_string(),
-            from_email: "test@example.com".to_string(),
-            from_name: "Test Sender".to_string(),
-        }
-    }
-}
-
-impl EmailConfig {
-    /// Create ``EmailConfig`` from environment variables
-    /// Required environment variables:
-    /// - ``SMTP_USERNAME``: SMTP username for authentication
-    /// - ``SMTP_PASSWORD``: SMTP password for authentication  
-    /// - ``SMTP_FROM_EMAIL``: Email address to send from
-    ///
-    /// Optional environment variables:
-    /// - ``SMTP_SERVER``: SMTP server hostname (default: smtp.gmail.com)
-    /// - ``SMTP_PORT``: SMTP server port (default: 587)
-    /// - ``SMTP_FROM_NAME``: Display name for sender (default: ``BrokerX`` Security)
-    pub fn from_env() -> Result<Self, String> {
-        let _ = dotenvy::dotenv();
-
-        let smtp_server =
-            std::env::var("SMTP_SERVER").unwrap_or_else(|_| "smtp.gmail.com".to_string());
-
-        let smtp_port = std::env::var("SMTP_PORT")
-            .unwrap_or_else(|_| "587".to_string())
-            .parse()
-            .map_err(|_| "Invalid SMTP_PORT: must be a valid port number".to_string())?;
-
-        let username = std::env::var("SMTP_USERNAME")
-            .map_err(|_| "SMTP_USERNAME environment variable must be set".to_string())?;
-
-        let password = std::env::var("SMTP_PASSWORD")
-            .map_err(|_| "SMTP_PASSWORD environment variable must be set".to_string())?;
-
-        let from_email = std::env::var("SMTP_FROM_EMAIL")
-            .map_err(|_| "SMTP_FROM_EMAIL environment variable must be set".to_string())?;
-
-        let from_name =
-            std::env::var("SMTP_FROM_NAME").unwrap_or_else(|_| "BrokerX Security".to_string());
-
-        Ok(Self {
-            smtp_server,
-            smtp_port,
-            username,
-            password,
-            from_email,
-            from_name,
-        })
-    }
-}
-
-#[derive(Debug)]
+/// Legacy EmailOtpProvider that wraps the new notification system
 pub struct EmailOtpProvider {
-    config: Option<EmailConfig>,
+    notification_service: Arc<NotificationService>,
     challenges: Arc<Mutex<HashMap<String, OtpChallenge>>>,
     challenge_duration: Duration,
 }
@@ -144,31 +79,47 @@ pub struct EmailOtpProvider {
 impl EmailOtpProvider {
     #[must_use]
     pub fn new(config: EmailConfig) -> Self {
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            crate::notification_models::DeliveryChannel::Email,
+            Arc::new(EmailProvider::new(config)) as Arc<dyn crate::providers::NotificationProvider>,
+        );
+
+        let notification_service = Arc::new(NotificationService::with_providers(providers));
+
         Self {
-            config: Some(config),
+            notification_service,
             challenges: Arc::new(Mutex::new(HashMap::new())),
             challenge_duration: Duration::from_secs(300), // 5 minutes
         }
     }
 
     pub fn new_with_default_config() -> Self {
-        // Try to load config from env, fall back to console logging if not available
-        match EmailConfig::from_env() {
-            Ok(config) => Self::new(config),
-            Err(e) => {
-                tracing::warn!("Failed to load SMTP config ({}), will use console logging fallback for OTP codes", e);
-                Self::new_without_email()
-            }
+        let notification_service = Arc::new(NotificationService::new());
+
+        Self {
+            notification_service,
+            challenges: Arc::new(Mutex::new(HashMap::new())),
+            challenge_duration: Duration::from_secs(300), // 5 minutes
         }
     }
 
     /// Create `EmailOtpProvider` without email configuration (console logging only)
     #[must_use]
     pub fn new_without_email() -> Self {
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            crate::notification_models::DeliveryChannel::Email,
+            Arc::new(EmailProvider::new_console_fallback())
+                as Arc<dyn crate::providers::NotificationProvider>,
+        );
+
+        let notification_service = Arc::new(NotificationService::with_providers(providers));
+
         Self {
-            config: None,
+            notification_service,
             challenges: Arc::new(Mutex::new(HashMap::new())),
-            challenge_duration: Duration::from_secs(300), // 5 minutes
+            challenge_duration: Duration::from_secs(300),
         }
     }
 
@@ -198,85 +149,37 @@ impl EmailOtpProvider {
         format!("{:06}", rng.gen_range(100_000..999_999))
     }
 
-    fn send_email(&self, to_email: &str, code: &str) -> Result<(), MfaError> {
-        // If no SMTP config, log to console instead
-        let Some(config) = &self.config else {
-            tracing::info!(
-                "📧 OTP Code for {}: {} (SMTP not configured, showing in console)",
-                to_email,
-                code
-            );
-            println!("\n╔══════════════════════════════════════════╗");
-            println!("║          OTP VERIFICATION CODE           ║");
-            println!("╠══════════════════════════════════════════╣");
-            println!("║  Email: {to_email:<32} ║");
-            println!("║  Code:  {code:<32} ║");
-            println!("║  Valid for: 5 minutes                    ║");
-            println!("╚══════════════════════════════════════════╝\n");
-            return Ok(());
-        };
+    async fn send_mfa_notification(
+        &self,
+        user_email: &str,
+        challenge_id: &str,
+        code: &str,
+    ) -> Result<(), MfaError> {
+        // Create a fake user ID for MFA notifications (in real system, you'd get this from somewhere)
+        let user_id = Uuid::new_v4().to_string();
 
-        let email_body = format!(
-            r#"
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 8px; }}
-        .code {{ font-size: 32px; font-weight: bold; color: #007bff; text-align: center; margin: 20px 0; }}
-        .footer {{ color: #666; font-size: 12px; text-align: center; margin-top: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>BrokerX Security Verification</h1>
-    </div>
-    
-    <p>Hello,</p>
-    
-    <p>You have requested to sign in to your BrokerX account. Please use the verification code below:</p>
-    
-    <div class="code">{code}</div>
-    
-    <p>This code will expire in 5 minutes for security reasons.</p>
-    
-    <p>If you did not request this code, please ignore this email.</p>
-    
-    <div class="footer">
-        <p>This is an automated message from BrokerX. Please do not reply to this email.</p>
-    </div>
-</body>
-</html>
-            "#
+        let notification = Notification::mfa(
+            user_id,
+            user_email.to_string(),
+            challenge_id.to_string(),
+            code.to_string(),
         );
 
-        let email = Message::builder()
-            .from(
-                format!("{} <{}>", config.from_name, config.from_email)
-                    .parse()
-                    .map_err(|e| MfaError::SendingFailed(format!("Invalid from address: {e}")))?,
-            )
-            .to(to_email
-                .parse()
-                .map_err(|e| MfaError::SendingFailed(format!("Invalid to address: {e}")))?)
-            .subject("BrokerX - Your Verification Code")
-            .header(ContentType::TEXT_HTML)
-            .body(email_body)
-            .map_err(|e| MfaError::SendingFailed(format!("Failed to build email: {e}")))?;
+        let results = self
+            .notification_service
+            .send_notification(notification)
+            .await
+            .map_err(|e| MfaError::SendingFailed(e.to_string()))?;
 
-        let creds = Credentials::new(config.username.clone(), config.password.clone());
-
-        let mailer = SmtpTransport::relay(&config.smtp_server)
-            .map_err(|e| MfaError::SendingFailed(format!("SMTP relay error: {e}")))?
-            .credentials(creds)
-            .build();
-
-        mailer
-            .send(&email)
-            .map_err(|e| MfaError::SendingFailed(format!("Failed to send email: {e}")))?;
-
-        Ok(())
+        // Check if at least one channel succeeded
+        let success = results.iter().any(|result| result.success);
+        if success {
+            Ok(())
+        } else {
+            Err(MfaError::SendingFailed(
+                "Failed to send notification via any channel".to_string(),
+            ))
+        }
     }
 }
 
@@ -288,9 +191,11 @@ impl MfaProvider for EmailOtpProvider {
     ) -> Result<String, MfaError> {
         let challenge = self.generate_challenge(challenge_id.clone(), user_email)?;
         let code = challenge.code.clone();
-        self.send_email(user_email, &code)?;
+        self.send_mfa_notification(user_email, &challenge_id, &code)
+            .await?;
         Ok(code)
     }
+
     fn generate_otp_no_email(
         &self,
         challenge_id: String,
@@ -299,6 +204,7 @@ impl MfaProvider for EmailOtpProvider {
         let challenge = self.generate_challenge(challenge_id.clone(), user_email)?;
         Ok(challenge.code)
     }
+
     fn generate_challenge(
         &self,
         challenge_id: String,
@@ -373,8 +279,6 @@ impl MfaProvider for EmailOtpProvider {
 
 #[cfg(test)]
 mod tests {
-    use uuid::Uuid;
-
     use super::*;
 
     #[test]

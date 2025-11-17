@@ -49,6 +49,7 @@ impl OrderEventConsumer {
         info!("Order Service event consumer starting - listening for ORDER_CREATED");
 
         let event_store_url = self.event_store_url.clone();
+        let redis_url = self.redis_url.clone();
 
         subscriber
             .subscribe(move |event: OrderEventPayload| {
@@ -56,6 +57,7 @@ impl OrderEventConsumer {
                 let validator = self.validator.clone();
                 let event_publisher = self.event_publisher.clone();
                 let event_store_url = event_store_url.clone();
+                let redis_url = redis_url.clone();
 
                 tokio::spawn(async move {
                     if let Err(e) = Self::handle_event_async(
@@ -64,6 +66,7 @@ impl OrderEventConsumer {
                         validator,
                         event_publisher,
                         event_store_url,
+                        redis_url,
                     )
                     .await
                     {
@@ -82,6 +85,7 @@ impl OrderEventConsumer {
         validator: Arc<TradeValidator>,
         event_publisher: Arc<EventPublisher>,
         event_store_url: String,
+        redis_url: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // IDEMPOTENCY CHECK
         let event_id =
@@ -111,6 +115,7 @@ impl OrderEventConsumer {
             validator,
             event_publisher,
             &event_store_url,
+            &redis_url,
         )
         .await;
 
@@ -141,6 +146,7 @@ impl OrderEventConsumer {
         validator: Arc<TradeValidator>,
         event_publisher: Arc<EventPublisher>,
         event_store_url: &str,
+        redis_url: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         match event.event_type {
             OrderEventType::OrderCreated => {
@@ -285,6 +291,14 @@ impl OrderEventConsumer {
 
                 metrics::counter!("order_events_processed_total", "event_type" => "rejected")
                     .increment(1);
+
+                // Publish notification event for rejection
+                if let Err(e) = Self::publish_notification_event(event, redis_url).await {
+                    error!(
+                        "Failed to publish notification event for order {}: {}",
+                        event.order_id, e
+                    );
+                }
             }
             OrderEventType::OrderExecuted => {
                 info!(
@@ -307,6 +321,14 @@ impl OrderEventConsumer {
                 metrics::counter!("order_events_processed_total", "event_type" => "executed")
                     .increment(1);
 
+                // Publish notification event for immediate execution
+                if let Err(e) = Self::publish_notification_event(event, redis_url).await {
+                    error!(
+                        "Failed to publish notification event for order {}: {}",
+                        event.order_id, e
+                    );
+                }
+
                 // Update saga state to EXECUTED
                 Self::update_saga_state(event_store_url, &event.order_id, "EXECUTED").await?;
             }
@@ -320,7 +342,6 @@ impl OrderEventConsumer {
                     "Order partially filled - using atomic cumulative fill update"
                 );
 
-                // 🔒 ATOMIC UPDATE - Use database-level atomic increment to prevent race conditions
                 let cumulative_filled = order_service
                     .atomic_increment_filled_quantity(&order_id, new_filled_qty)
                     .await
@@ -352,26 +373,68 @@ impl OrderEventConsumer {
                     "Atomic partial fill update complete"
                 );
 
-                // Check if order is now fully filled (atomic update handles this)
-                match current_order.status {
-                    OrderStatus::Filled { .. } => {
-                        info!(
-                            order_id = %event.order_id,
-                            cumulative_filled = cumulative_filled,
-                            "✅ Order fully filled through atomic update"
-                        );
-                        // No retry needed - order is complete
-                    }
-                    OrderStatus::PartiallyFilled { .. } if remaining_qty > 0 => {
-                        info!(
-                            order_id = %event.order_id,
-                            remaining_quantity = remaining_qty,
-                            cumulative_filled = cumulative_filled,
-                            total_quantity = current_order.quantity,
-                            "Re-publishing ORDER_VALIDATED for remaining quantity"
-                        );
+                if matches!(current_order.status, OrderStatus::Filled { .. }) {
+                    // Order completed - send "filled" notification
+                    info!(
+                        order_id = %event.order_id,
+                        cumulative_filled = cumulative_filled,
+                        "Order completed through partial fills - sending FILLED notification"
+                    );
 
-                        // Create retry event with remaining quantity
+                    // Create a NEW completion event
+                    let completion_event = OrderEventPayload {
+                        event_id: uuid::Uuid::new_v4().to_string(),
+                        order_id: event.order_id.clone(),
+                        user_id: event.user_id.clone(),
+                        event_type: OrderEventType::OrderCompleted,
+                        symbol: event.symbol.clone(),
+                        quantity: current_order.quantity as i64,
+                        order_side: event.order_side.clone(),
+                        order_type: event.order_type.clone(),
+                        price: event.price,
+                        filled_quantity: Some(cumulative_filled as i64),
+                        average_price: event.average_price,
+                        correlation_id: event.correlation_id.clone(),
+                        causation_id: Some(event.event_id.clone()),
+                        metadata: None,
+                        occurred_at: chrono::Utc::now().to_rfc3339(),
+                    };
+
+                    if let Err(e) =
+                        Self::publish_notification_event(&completion_event, redis_url).await
+                    {
+                        error!(
+                            "Failed to publish completion notification for order {}: {}",
+                            event.order_id, e
+                        );
+                    }
+
+                    metrics::counter!("order_events_processed_total", "event_type" => "completed_via_partial_fill")
+                        .increment(1);
+                } else {
+                    // Order still partial - send "partially_filled" notification
+                    info!(
+                        order_id = %event.order_id,
+                        cumulative_filled = cumulative_filled,
+                        remaining_quantity = remaining_qty,
+                        "📊 Order still partial - sending PARTIAL notification"
+                    );
+
+                    // Update the event with cumulative filled quantity
+                    let mut partial_event = event.clone();
+                    partial_event.filled_quantity = Some(cumulative_filled as i64);
+
+                    if let Err(e) =
+                        Self::publish_notification_event(&partial_event, redis_url).await
+                    {
+                        error!(
+                            "Failed to publish partial fill notification for order {}: {}",
+                            event.order_id, e
+                        );
+                    }
+
+                    // Re-publish ORDER_VALIDATED for remaining quantity
+                    if remaining_qty > 0 {
                         let retry_event = crate::event_publisher::PublishEventRequest {
                             order_id: uuid::Uuid::parse_str(&event.order_id)?,
                             user_id: uuid::Uuid::parse_str(&event.user_id)?,
@@ -391,26 +454,12 @@ impl OrderEventConsumer {
                                 error = %e,
                                 "Failed to publish retry ORDER_VALIDATED event"
                             );
-                        } else {
-                            info!(
-                                order_id = %event.order_id,
-                                remaining_quantity = remaining_qty,
-                                "✅ Retry ORDER_VALIDATED published successfully"
-                            );
                         }
                     }
-                    _ => {
-                        warn!(
-                            order_id = %event.order_id,
-                            status = ?current_order.status,
-                            remaining_quantity = remaining_qty,
-                            "Unexpected status after partial fill"
-                        );
-                    }
-                }
 
-                metrics::counter!("order_events_processed_total", "event_type" => "partially_filled")
-                    .increment(1);
+                    metrics::counter!("order_events_processed_total", "event_type" => "partially_filled")
+                        .increment(1);
+                }
             }
             OrderEventType::OrderFailed => {
                 warn!(
@@ -452,6 +501,10 @@ impl OrderEventConsumer {
                 metrics::counter!("order_events_processed_total", "event_type" => "completed")
                     .increment(1);
 
+                // NOTE: Notification already sent by OrderPartiallyFilled handler (when it detects completion)
+                // OR by OrderExecuted handler (for immediate fills)
+                // No need to send duplicate here
+
                 // Update saga state to COMPLETED
                 Self::update_saga_state(event_store_url, &event.order_id, "COMPLETED").await?;
             }
@@ -489,6 +542,31 @@ impl OrderEventConsumer {
         Ok(())
     }
 
+    // Helper function to publish notification events
+    async fn publish_notification_event(
+        original_event: &OrderEventPayload,
+        redis_url: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Publish the original event directly to notification_events channel
+        // This preserves the original event type (OrderExecuted, OrderCompleted, etc.)
+        // so the notification service can handle it appropriately
+        let redis_client = redis::Client::open(redis_url)?;
+        let mut redis_conn = redis_client.get_async_connection().await?;
+
+        let notification_payload = serde_json::to_string(original_event)?;
+        let _: () = redis::cmd("PUBLISH")
+            .arg("notification_events")
+            .arg(&notification_payload)
+            .query_async(&mut redis_conn)
+            .await?;
+
+        info!(
+            "Published notification event for order {} (trigger: {:?})",
+            original_event.order_id, original_event.event_type
+        );
+
+        Ok(())
+    }
     async fn update_saga_state(
         event_store_url: &str,
         order_id: &str,

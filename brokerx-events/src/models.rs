@@ -21,6 +21,8 @@ pub enum OrderEventType {
     RefundIssued,
     HoldingsReverted,
     OrderCompensated,
+    // Notification events
+    NotificationSent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

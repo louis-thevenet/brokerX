@@ -3,7 +3,7 @@
 /// This module provides a clean, professional API for MFA operations in the API Gateway.
 /// It encapsulates all MFA logic and provides clear, REST-compliant methods.
 use crate::error::{ApiError, ApiResult};
-use mfa_adapter::{EmailOtpProvider, MfaError, MfaProvider};
+use notification_service::{EmailOtpProvider, MfaError, MfaProvider};
 use std::sync::Arc;
 use std::time::SystemTime;
 use uuid::Uuid;

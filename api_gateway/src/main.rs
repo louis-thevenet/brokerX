@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // Initialize MFA provider with environment configuration (falls back to console logging if SMTP not configured)
-    let mfa_provider = Arc::new(mfa_adapter::EmailOtpProvider::new_with_default_config());
+    let mfa_provider = Arc::new(notification_service::EmailOtpProvider::new_with_default_config());
     let mfa_service = mfa_service::MfaService::new(mfa_provider);
 
     let app_state = AppState {
