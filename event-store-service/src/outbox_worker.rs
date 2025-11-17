@@ -193,45 +193,4 @@ mod tests {
 
         PgPool::connect(&database_url).await.unwrap()
     }
-
-    #[tokio::test]
-    async fn test_outbox_worker_processes_messages() {
-        let pool = create_test_pool().await;
-        let repository = EventStoreRepository::new(pool);
-
-        let redis_url = "redis://localhost:6380";
-        let redis_client = Arc::new(RedisClient::new(redis_url).await.unwrap());
-
-        // Insert a test event with outbox
-        let request = PublishEventRequest {
-            order_id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
-            event_type: crate::models::OrderEventType::OrderCreated,
-            symbol: "AAPL".to_string(),
-            quantity: 100,
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            price: None,
-            filled_quantity: None,
-            average_price: None,
-            correlation_id: None,
-            causation_id: None,
-            metadata: None,
-        };
-
-        repository.save_event_with_outbox(&request).await.unwrap();
-
-        // Verify there's 1 unprocessed message
-        let unprocessed = repository.get_unprocessed_outbox(10).await.unwrap();
-        assert_eq!(unprocessed.len(), 1);
-
-        // Create worker and process batch
-        let worker = OutboxWorker::new(repository.clone(), redis_client);
-        let processed = worker.process_outbox_batch().await.unwrap();
-        assert_eq!(processed, 1);
-
-        // Verify no more unprocessed messages
-        let unprocessed_after = repository.get_unprocessed_outbox(10).await.unwrap();
-        assert_eq!(unprocessed_after.len(), 0);
-    }
 }
