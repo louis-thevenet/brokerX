@@ -14,6 +14,7 @@ use crate::event_publisher::EventPublisher;
 use crate::repository::UserRepository;
 use axum::{
     Router,
+    http::{HeaderValue, Method},
     response::IntoResponse,
     routing::{get, post, put},
 };
@@ -22,6 +23,7 @@ use service::UserService;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use sysinfo::{System, SystemExt};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -166,6 +168,46 @@ async fn main() -> color_eyre::Result<()> {
         }
     });
 
+    // Configure CORS
+    let cors_layer = if config.cors_allowed_origins.is_empty() {
+        tracing::info!(
+            "No CORS origins configured for User Service, allowing permissive CORS for internal service"
+        );
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::PATCH,
+                Method::OPTIONS,
+            ])
+            .allow_headers(Any)
+    } else {
+        tracing::info!(
+            "CORS configured with allowed origins: {:?}",
+            config.cors_allowed_origins
+        );
+        let origins: Vec<HeaderValue> = config
+            .cors_allowed_origins
+            .iter()
+            .filter_map(|origin| origin.parse().ok())
+            .collect();
+
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::PATCH,
+                Method::OPTIONS,
+            ])
+            .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::ACCEPT])
+    };
+
     // Build routes
     let app = Router::new()
         .route("/v1/health", get(api::health_check))
@@ -194,6 +236,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/metrics", get(|| async move { metric_handle.render() }))
         .route("/v1/metrics/system", get(system_metrics_handler))
         .layer(prometheus_layer)
+        .layer(cors_layer)
         .with_state(app_state);
 
     // Start server

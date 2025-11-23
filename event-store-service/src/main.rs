@@ -1,12 +1,13 @@
 use axum::{
     Router,
+    http::{HeaderValue, Method},
     routing::{get, post, put},
 };
-use config::DatabaseConfig;
+use config::{Config, DatabaseConfig};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -90,8 +91,9 @@ async fn main() -> color_eyre::Result<()> {
         .init();
 
     // Load configuration
+    let config = Config::from_env();
     let db_config = DatabaseConfig::from_env();
-    info!("Event Store Service starting");
+    info!("Event Store Service starting on port {}", config.port);
 
     // Connect to database
     info!("Connecting to database...");
@@ -126,6 +128,33 @@ async fn main() -> color_eyre::Result<()> {
         redis_client,
     };
 
+    // Configure CORS
+    let cors_layer = if config.cors_allowed_origins.is_empty() {
+        tracing::warn!(
+            "No CORS origins configured for Event Store Service, denying all cross-origin requests for security"
+        );
+        // Don't allow any origins by default for internal service
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
+            .allow_headers(Any)
+    } else {
+        tracing::info!(
+            "CORS configured with allowed origins: {:?}",
+            config.cors_allowed_origins
+        );
+        let origins: Vec<HeaderValue> = config
+            .cors_allowed_origins
+            .iter()
+            .filter_map(|origin| origin.parse().ok())
+            .collect();
+
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
+            .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::ACCEPT])
+    };
+
     // Create router
     let app = Router::new()
         .route("/v1/health", get(api::health))
@@ -136,16 +165,11 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/saga/{order_id}/step", put(api::update_saga_step))
         .route("/v1/outbox/unprocessed", get(api::get_unprocessed_outbox))
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .layer(CorsLayer::permissive())
+        .layer(cors_layer)
         .with_state(app_state);
 
     // Get port from environment
-    let port = std::env::var("EVENT_STORE_SERVICE_PORT")
-        .unwrap_or_else(|_| "3005".to_string())
-        .parse::<u16>()
-        .unwrap_or(3005);
-
-    let addr = format!("0.0.0.0:{port}");
+    let addr = format!("0.0.0.0:{}", config.port);
     info!("Event Store Service listening on {}", addr);
 
     // Start main server

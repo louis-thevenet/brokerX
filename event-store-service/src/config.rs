@@ -1,6 +1,35 @@
 use std::env;
 
 #[derive(Debug, Clone)]
+pub struct Config {
+    pub port: u16,
+    pub cors_allowed_origins: Vec<String>,
+}
+
+impl Config {
+    pub fn from_env() -> Self {
+        // Parse CORS allowed origins from comma-separated list
+        let cors_origins = env::var("CORS_ALLOWED_ORIGINS").unwrap_or_else(|_| String::new());
+
+        let cors_allowed_origins: Vec<String> = cors_origins
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        let port = env::var("EVENT_STORE_SERVICE_PORT")
+            .unwrap_or_else(|_| "3005".to_string())
+            .parse()
+            .expect("EVENT_STORE_SERVICE_PORT must be a valid port number");
+
+        Self {
+            port,
+            cors_allowed_origins,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct DatabaseConfig {
     pub database_url: String,
     pub max_connections: u32,

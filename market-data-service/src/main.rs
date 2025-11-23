@@ -13,6 +13,7 @@ mod tests;
 use api::AppState;
 use axum::{
     Router,
+    http::{HeaderValue, Method},
     response::{IntoResponse, Response},
     routing::get,
     routing::post,
@@ -24,6 +25,7 @@ use repository::MarketDataRepository;
 use service::MarketDataService;
 use std::sync::Arc;
 use sysinfo::{System, SystemExt};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{debug, error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
@@ -206,6 +208,32 @@ async fn main() -> color_eyre::Result<()> {
 
     let (prometheus_layer, metric_handle) = PrometheusMetricLayer::pair();
 
+    // Configure CORS
+    let cors_layer = if config.cors_allowed_origins.is_empty() {
+        tracing::info!(
+            "No CORS origins configured for Market Data Service, allowing permissive CORS for internal service"
+        );
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers(Any)
+    } else {
+        tracing::info!(
+            "CORS configured with allowed origins: {:?}",
+            config.cors_allowed_origins
+        );
+        let origins: Vec<HeaderValue> = config
+            .cors_allowed_origins
+            .iter()
+            .filter_map(|origin| origin.parse().ok())
+            .collect();
+
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::ACCEPT])
+    };
+
     // Build the router
     let app = Router::new()
         // Health check
@@ -227,6 +255,7 @@ async fn main() -> color_eyre::Result<()> {
         .route("/v1/metrics", get(|| async move { metric_handle.render() }))
         .route("/v1/metrics/system", get(system_metrics_handler))
         .layer(prometheus_layer)
+        .layer(cors_layer)
         // Add state and middleware
         .with_state(app_state)
         .layer(tower_http::trace::TraceLayer::new_for_http());
