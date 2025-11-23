@@ -1242,8 +1242,10 @@ function showAuthSection() {
   document.getElementById('dashboard-section').classList.add('hidden');
   document.getElementById('profile-section').classList.add('hidden');
   document.getElementById('market-data-section').classList.add('hidden');
+  document.getElementById('holdings-section').classList.add('hidden');
   document.getElementById('trading-section').classList.add('hidden');
   document.getElementById('orders-section').classList.add('hidden');
+  document.getElementById('subscription-section').classList.add('hidden');
   stopMarketDataRefresh();
   clearMfaState();
 }
@@ -1257,6 +1259,7 @@ function showDashboard() {
   document.getElementById('holdings-section').classList.remove('hidden');
   document.getElementById('trading-section').classList.remove('hidden');
   document.getElementById('orders-section').classList.remove('hidden');
+  document.getElementById('subscription-section').classList.remove('hidden');
 
   // Load data when showing dashboard
   // Load market data first, then holdings (so prices are available)
@@ -1264,6 +1267,7 @@ function showDashboard() {
     loadHoldings();
   });
   loadOrders();
+  loadSubscription();
   startMarketDataRefresh();
 }
 
@@ -1331,5 +1335,170 @@ function setupMfaAutoSubmit() {
     if (mfaSection) {
       observer.observe(mfaSection, { attributes: true });
     }
+  }
+}
+
+// ============================================================================
+// Market Data Subscription Functions
+// ============================================================================
+
+let isEditingSubscription = false;
+
+async function loadSubscription() {
+  try {
+    const response = await makeApiCall('/v1/me/subscription');
+    
+    if (response.ok) {
+      const subscription = await response.json();
+      displaySubscription(subscription);
+    } else if (response.status === 404) {
+      // No subscription exists
+      displayNoSubscription();
+    } else {
+      const error = await response.json();
+      showMessage('subscription-message', error.message || 'Failed to load subscription', true);
+    }
+  } catch (err) {
+    console.error('Load subscription error:', err);
+    showMessage('subscription-message', 'Network error occurred', true);
+  }
+}
+
+function displaySubscription(subscription) {
+  document.getElementById('current-subscription').classList.remove('hidden');
+  document.getElementById('no-subscription').classList.add('hidden');
+  document.getElementById('subscription-form').classList.add('hidden');
+  
+  const details = document.getElementById('subscription-details');
+  const symbolsList = subscription.symbols.join(', ');
+  const frequencyText = subscription.frequency.charAt(0).toUpperCase() + subscription.frequency.slice(1);
+  const includingHoldings = subscription.include_holdings ? 'Yes' : 'No';
+  const lastSent = subscription.last_sent_at 
+    ? new Date(subscription.last_sent_at).toLocaleString()
+    : 'Never';
+  
+  details.innerHTML = `
+    <p style="margin: 8px 0;"><strong>Symbols:</strong> ${symbolsList}</p>
+    <p style="margin: 8px 0;"><strong>Frequency:</strong> ${frequencyText}</p>
+    <p style="margin: 8px 0;"><strong>Include Holdings:</strong> ${includingHoldings}</p>
+    <p style="margin: 8px 0;"><strong>Status:</strong> <span style="color: #4caf50;">Active</span></p>
+    <p style="margin: 8px 0; color: #666; font-size: 0.9rem;"><strong>Last Sent:</strong> ${lastSent}</p>
+  `;
+}
+
+function displayNoSubscription() {
+  document.getElementById('current-subscription').classList.add('hidden');
+  document.getElementById('no-subscription').classList.remove('hidden');
+  document.getElementById('subscription-form').classList.remove('hidden');
+  document.getElementById('subscription-form-title').textContent = 'Create Subscription';
+  document.getElementById('cancel-sub-edit').classList.add('hidden');
+  
+  // Clear form
+  document.getElementById('sub-symbols').value = '';
+  document.getElementById('sub-frequency').value = '';
+  document.getElementById('sub-include-holdings').checked = true;
+  isEditingSubscription = false;
+}
+
+function editSubscription() {
+  isEditingSubscription = true;
+  
+  // Load current subscription data into form
+  makeApiCall('/v1/me/subscription')
+    .then(async response => {
+      if (response.ok) {
+        const subscription = await response.json();
+        
+        document.getElementById('sub-symbols').value = subscription.symbols.join(', ');
+        document.getElementById('sub-frequency').value = subscription.frequency;
+        document.getElementById('sub-include-holdings').checked = subscription.include_holdings;
+        
+        // Show form
+        document.getElementById('current-subscription').classList.add('hidden');
+        document.getElementById('no-subscription').classList.add('hidden');
+        document.getElementById('subscription-form').classList.remove('hidden');
+        document.getElementById('subscription-form-title').textContent = 'Edit Subscription';
+        document.getElementById('cancel-sub-edit').classList.remove('hidden');
+      }
+    });
+}
+
+function cancelSubscriptionEdit() {
+  isEditingSubscription = false;
+  loadSubscription();
+}
+
+async function saveSubscription(event) {
+  event.preventDefault();
+  
+  const symbolsInput = document.getElementById('sub-symbols').value;
+  const frequency = document.getElementById('sub-frequency').value;
+  const includeHoldings = document.getElementById('sub-include-holdings').checked;
+  
+  // Parse symbols (remove whitespace and split by comma)
+  const symbols = symbolsInput
+    .split(',')
+    .map(s => s.trim().toUpperCase())
+    .filter(s => s.length > 0);
+  
+  if (symbols.length === 0) {
+    showMessage('subscription-message', 'Please enter at least one symbol', true);
+    return;
+  }
+  
+  try {
+    const response = await makeApiCall('/v1/me/subscription', {
+      method: 'PUT',
+      body: JSON.stringify({
+        symbols,
+        frequency,
+        include_holdings: includeHoldings
+      })
+    });
+    
+    if (response.ok) {
+      const subscription = await response.json();
+      const action = isEditingSubscription ? 'updated' : 'created';
+      showMessage('subscription-message', `Subscription ${action} successfully! You'll receive ${frequency} market reports.`);
+      isEditingSubscription = false;
+      
+      // Reload subscription display
+      setTimeout(() => {
+        loadSubscription();
+      }, 1500);
+    } else {
+      const error = await response.json();
+      showMessage('subscription-message', error.message || 'Failed to save subscription', true);
+    }
+  } catch (err) {
+    console.error('Save subscription error:', err);
+    showMessage('subscription-message', 'Network error occurred', true);
+  }
+}
+
+async function deleteSubscription() {
+  if (!confirm('Are you sure you want to unsubscribe from market data reports? You will no longer receive email updates.')) {
+    return;
+  }
+  
+  try {
+    const response = await makeApiCall('/v1/me/subscription', {
+      method: 'DELETE'
+    });
+    
+    if (response.ok || response.status === 204) {
+      showMessage('subscription-message', 'Successfully unsubscribed from market data reports.');
+      
+      // Show no subscription view
+      setTimeout(() => {
+        displayNoSubscription();
+      }, 1500);
+    } else {
+      const error = await response.json();
+      showMessage('subscription-message', error.message || 'Failed to delete subscription', true);
+    }
+  } catch (err) {
+    console.error('Delete subscription error:', err);
+    showMessage('subscription-message', 'Network error occurred', true);
   }
 }

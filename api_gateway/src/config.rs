@@ -11,6 +11,7 @@ pub struct Config {
     pub jwt_expiry_hours: i64,
     pub cors_allowed_origins: Vec<String>,
     pub mfa_bypass: bool,
+    pub redis_url: String,
 }
 
 impl Config {
@@ -48,6 +49,8 @@ impl Config {
                 .unwrap_or_else(|_| "false".to_string())
                 .to_lowercase()
                 == "true",
+            redis_url: env::var("REDIS_URL")
+                .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
         }
     }
 }

@@ -6,6 +6,7 @@ mod error;
 mod mfa_service;
 mod middleware;
 mod models;
+mod notification_helper;
 
 use api::ApiDoc;
 use axum::{
@@ -32,6 +33,7 @@ pub struct AppState {
     pub market_data_execution_client: Arc<clients::MarketDataExecutionClient>,
     pub orchestrator_client: Arc<clients::OrchestratorClient>,
     pub mfa_service: mfa_service::MfaService,
+    pub notification_helper: Arc<notification_helper::NotificationHelper>,
 }
 
 #[tokio::main]
@@ -63,8 +65,14 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // Initialize MFA provider with environment configuration (falls back to console logging if SMTP not configured)
-    let mfa_provider = Arc::new(mfa_adapter::EmailOtpProvider::new_with_default_config());
+    let mfa_provider = Arc::new(notification_service::EmailOtpProvider::new_with_default_config());
     let mfa_service = mfa_service::MfaService::new(mfa_provider);
+
+    // Initialize notification helper
+    let notification_helper = Arc::new(
+        notification_helper::NotificationHelper::new(&config.redis_url)
+            .expect("Failed to initialize notification helper"),
+    );
 
     let app_state = AppState {
         config: config.clone(),
@@ -74,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         market_data_execution_client,
         orchestrator_client,
         mfa_service,
+        notification_helper,
     };
 
     let app = create_router(app_state);
@@ -136,6 +145,9 @@ fn create_router(app_state: AppState) -> Router {
         .route("/v1/me", get(api::get_me))
         .route("/v1/me", put(api::update_me))
         .route("/v1/me/deposit", post(api::deposit_funds))
+        .route("/v1/me/subscription", get(api::get_my_subscription))
+        .route("/v1/me/subscription", put(api::upsert_my_subscription))
+        .route("/v1/me/subscription", delete(api::delete_my_subscription))
         .route("/v1/orders", post(api::create_order))
         .route("/v1/orders", get(api::get_my_orders))
         .route("/v1/orders/{id}", get(api::get_order))

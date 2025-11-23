@@ -12,6 +12,7 @@ pub struct OrderRepository {
 }
 
 impl OrderRepository {
+    #[must_use]
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
@@ -29,9 +30,15 @@ impl OrderRepository {
         // Extract status fields
         let (status_variant, reason, status_filled_quantity, status_date) = match &order.status {
             OrderStatus::Pending => ("Pending", None, None, None),
-            OrderStatus::PartiallyFilled { filled_quantity } => {
-                ("PartiallyFilled", None, Some(*filled_quantity as i64), None)
-            }
+            OrderStatus::PartiallyFilled {
+                filled_quantity,
+                date,
+            } => (
+                "PartiallyFilled",
+                None,
+                Some(*filled_quantity as i64),
+                Some(*date),
+            ),
             OrderStatus::Filled { date } => {
                 ("Filled", None, Some(order.quantity as i64), Some(*date))
             }
@@ -149,6 +156,7 @@ impl OrderRepository {
                     "Pending" => OrderStatus::Pending,
                     "PartiallyFilled" => OrderStatus::PartiallyFilled {
                         filled_quantity: status_filled_quantity.unwrap_or(0) as u64,
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Filled" => OrderStatus::Filled {
                         date: status_date.unwrap_or_else(Utc::now),
@@ -238,6 +246,7 @@ impl OrderRepository {
                     "Pending" => OrderStatus::Pending,
                     "PartiallyFilled" => OrderStatus::PartiallyFilled {
                         filled_quantity: status_filled_quantity.unwrap_or(0) as u64,
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Filled" => OrderStatus::Filled {
                         date: status_date.unwrap_or_else(Utc::now),
@@ -343,6 +352,7 @@ impl OrderRepository {
                     "Pending" => OrderStatus::Pending,
                     "PartiallyFilled" => OrderStatus::PartiallyFilled {
                         filled_quantity: status_filled_quantity.unwrap_or(0) as u64,
+                        date: status_date.unwrap_or_else(Utc::now),
                     },
                     "Filled" => OrderStatus::Filled {
                         date: status_date.unwrap_or_else(Utc::now),
@@ -385,9 +395,15 @@ impl OrderRepository {
         // Extract status fields
         let (status_variant, reason, status_filled_quantity, status_date) = match &order.status {
             OrderStatus::Pending => ("Pending", None, None, None),
-            OrderStatus::PartiallyFilled { filled_quantity } => {
-                ("PartiallyFilled", None, Some(*filled_quantity as i64), None)
-            }
+            OrderStatus::PartiallyFilled {
+                filled_quantity,
+                date,
+            } => (
+                "PartiallyFilled",
+                None,
+                Some(*filled_quantity as i64),
+                Some(*date),
+            ),
             OrderStatus::Filled { date } => {
                 ("Filled", None, Some(order.quantity as i64), Some(*date))
             }
@@ -455,9 +471,15 @@ impl OrderRepository {
         // Extract status fields
         let (status_variant, status_reason, status_filled_quantity, status_date) = match &status {
             OrderStatus::Pending => ("Pending", None, None, None),
-            OrderStatus::PartiallyFilled { filled_quantity } => {
-                ("PartiallyFilled", None, Some(*filled_quantity as i64), None)
-            }
+            OrderStatus::PartiallyFilled {
+                filled_quantity,
+                date,
+            } => (
+                "PartiallyFilled",
+                None,
+                Some(*filled_quantity as i64),
+                Some(*date),
+            ),
             OrderStatus::Filled { date } => {
                 // For Filled status, we need to get the order quantity
                 // This is a simplified approach - in production you might handle this differently
@@ -498,5 +520,142 @@ impl OrderRepository {
         }
 
         Ok(())
+    }
+
+    /// Check if an event has already been processed (idempotency)
+    pub async fn is_event_processed(&self, event_id: &Uuid) -> Result<bool, OrderError> {
+        let result = sqlx::query(
+            r"
+            SELECT event_id FROM processed_events WHERE event_id = $1
+            ",
+        )
+        .bind(event_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+
+        Ok(result.is_some())
+    }
+
+    /// Mark an event as processed (idempotency)
+    pub async fn mark_event_processed(
+        &self,
+        event_id: Uuid,
+        order_id: Uuid,
+        event_type: &str,
+        event_payload: serde_json::Value,
+        result: &str,
+    ) -> Result<(), OrderError> {
+        sqlx::query(
+            r"
+            INSERT INTO processed_events (event_id, order_id, event_type, event_payload, processing_result)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (event_id) DO NOTHING
+            "
+        )
+        .bind(event_id)
+        .bind(order_id)
+        .bind(event_type)
+        .bind(event_payload)
+        .bind(result)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+
+        Ok(())
+    }
+
+    /// Atomically increment the filled quantity for a partially filled order
+    /// Returns the new cumulative filled quantity
+    pub async fn atomic_increment_filled_quantity(
+        &self,
+        order_id: &OrderId,
+        increment_qty: u64,
+    ) -> Result<u64, OrderError> {
+        // Use a transaction to ensure atomicity
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+
+        // Lock the row and get current filled quantity
+        let row = sqlx::query(
+            r"
+            SELECT status_variant, status_filled_quantity, quantity, version
+            FROM orders
+            WHERE id = $1
+            FOR UPDATE
+            ",
+        )
+        .bind(order_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?
+        .ok_or(OrderError::OrderNotFound)?;
+
+        let status_variant: String = row.get("status_variant");
+        let current_filled: Option<i64> = row.get("status_filled_quantity");
+        let total_quantity: i64 = row.get("quantity");
+        let current_version: i32 = row.get("version");
+
+        // Calculate new filled quantity
+        let previous_filled = if status_variant == "PartiallyFilled" {
+            current_filled.unwrap_or(0) as u64
+        } else {
+            0u64
+        };
+
+        let new_cumulative_filled = previous_filled + increment_qty;
+
+        // Safety check: don't exceed total quantity
+        if new_cumulative_filled > total_quantity as u64 {
+            tx.rollback()
+                .await
+                .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+            return Err(OrderError::InvalidOrder);
+        }
+
+        // Determine new status
+        let new_status = if new_cumulative_filled >= total_quantity as u64 {
+            "Filled"
+        } else {
+            "PartiallyFilled"
+        };
+
+        // Update with optimistic locking (increment version)
+        let result = sqlx::query(
+            r"
+            UPDATE orders
+            SET 
+                status_variant = $1,
+                status_filled_quantity = $2,
+                status_date = NOW(),
+                version = version + 1
+            WHERE id = $3 AND version = $4
+            RETURNING status_filled_quantity
+            ",
+        )
+        .bind(new_status)
+        .bind(new_cumulative_filled as i64)
+        .bind(order_id)
+        .bind(current_version)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+
+        if result.is_none() {
+            // Version mismatch - concurrent update detected
+            tx.rollback()
+                .await
+                .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+            return Err(OrderError::OrderCannotBeModified);
+        }
+
+        tx.commit()
+            .await
+            .map_err(|e| OrderError::Repository(DbError::Sqlx(e)))?;
+
+        Ok(new_cumulative_filled)
     }
 }

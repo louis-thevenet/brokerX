@@ -1,10 +1,13 @@
-use crate::models::{AuthError, Holding, User, UserId};
+use crate::models::{
+    AuthError, Holding, MarketDataSubscription, SubscriptionFrequency, User, UserId,
+};
 use color_eyre::Result;
 use dashmap::DashMap;
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::error;
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct UserRepository {
@@ -410,6 +413,187 @@ impl UserRepoExt for UserRepository {
                 }
             }
         }
+
+        Ok(())
+    }
+}
+
+// Subscription repository methods
+#[allow(async_fn_in_trait)]
+pub trait SubscriptionRepoExt {
+    async fn create_subscription(
+        &self,
+        user_id: &UserId,
+        symbols: Vec<String>,
+        frequency: SubscriptionFrequency,
+        include_holdings: bool,
+    ) -> Result<MarketDataSubscription, AuthError>;
+
+    async fn get_user_subscription(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<MarketDataSubscription>, AuthError>;
+
+    async fn update_subscription(
+        &self,
+        user_id: &UserId,
+        symbols: Vec<String>,
+        frequency: SubscriptionFrequency,
+        include_holdings: bool,
+    ) -> Result<MarketDataSubscription, AuthError>;
+
+    async fn delete_subscription(&self, user_id: &UserId) -> Result<(), AuthError>;
+
+    async fn update_subscription_last_sent(&self, subscription_id: &Uuid) -> Result<(), AuthError>;
+}
+
+impl SubscriptionRepoExt for UserRepository {
+    async fn create_subscription(
+        &self,
+        user_id: &UserId,
+        symbols: Vec<String>,
+        frequency: SubscriptionFrequency,
+        include_holdings: bool,
+    ) -> Result<MarketDataSubscription, AuthError> {
+        let id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+
+        let query = r#"
+            INSERT INTO market_data_subscriptions (id, user_id, symbols, frequency, include_holdings, is_active, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, true, $6, $6)
+            RETURNING id, user_id, symbols, frequency, include_holdings, is_active, created_at, updated_at, last_sent_at
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(id)
+            .bind(user_id)
+            .bind(&symbols)
+            .bind(frequency.to_string())
+            .bind(include_holdings)
+            .bind(now)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
+
+        Ok(MarketDataSubscription {
+            id: row.try_get("id").ok(),
+            user_id: row.try_get("user_id").unwrap(),
+            symbols: row.try_get("symbols").unwrap(),
+            frequency: row
+                .try_get::<String, _>("frequency")
+                .unwrap()
+                .parse()
+                .unwrap(),
+            include_holdings: row.try_get("include_holdings").unwrap(),
+            is_active: row.try_get("is_active").unwrap(),
+            created_at: row.try_get("created_at").unwrap(),
+            updated_at: row.try_get("updated_at").unwrap(),
+            last_sent_at: row.try_get("last_sent_at").ok(),
+        })
+    }
+
+    async fn get_user_subscription(
+        &self,
+        user_id: &UserId,
+    ) -> Result<Option<MarketDataSubscription>, AuthError> {
+        let query = r#"
+            SELECT id, user_id, symbols, frequency, include_holdings, is_active, created_at, updated_at, last_sent_at
+            FROM market_data_subscriptions
+            WHERE user_id = $1
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
+
+        if let Some(row) = row {
+            Ok(Some(MarketDataSubscription {
+                id: row.try_get("id").ok(),
+                user_id: row.try_get("user_id").unwrap(),
+                symbols: row.try_get("symbols").unwrap(),
+                frequency: row
+                    .try_get::<String, _>("frequency")
+                    .unwrap()
+                    .parse()
+                    .unwrap(),
+                include_holdings: row.try_get("include_holdings").unwrap(),
+                is_active: row.try_get("is_active").unwrap(),
+                created_at: row.try_get("created_at").unwrap(),
+                updated_at: row.try_get("updated_at").unwrap(),
+                last_sent_at: row.try_get("last_sent_at").ok(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn update_subscription(
+        &self,
+        user_id: &UserId,
+        symbols: Vec<String>,
+        frequency: SubscriptionFrequency,
+        include_holdings: bool,
+    ) -> Result<MarketDataSubscription, AuthError> {
+        let now = chrono::Utc::now();
+
+        let query = r#"
+            UPDATE market_data_subscriptions
+            SET symbols = $1, frequency = $2, include_holdings = $3, updated_at = $4
+            WHERE user_id = $5
+            RETURNING id, user_id, symbols, frequency, include_holdings, is_active, created_at, updated_at, last_sent_at
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(&symbols)
+            .bind(frequency.to_string())
+            .bind(include_holdings)
+            .bind(now)
+            .bind(user_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
+
+        Ok(MarketDataSubscription {
+            id: row.try_get("id").ok(),
+            user_id: row.try_get("user_id").unwrap(),
+            symbols: row.try_get("symbols").unwrap(),
+            frequency: row
+                .try_get::<String, _>("frequency")
+                .unwrap()
+                .parse()
+                .unwrap(),
+            include_holdings: row.try_get("include_holdings").unwrap(),
+            is_active: row.try_get("is_active").unwrap(),
+            created_at: row.try_get("created_at").unwrap(),
+            updated_at: row.try_get("updated_at").unwrap(),
+            last_sent_at: row.try_get("last_sent_at").ok(),
+        })
+    }
+
+    async fn delete_subscription(&self, user_id: &UserId) -> Result<(), AuthError> {
+        let query = "DELETE FROM market_data_subscriptions WHERE user_id = $1";
+
+        sqlx::query(query)
+            .bind(user_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
+
+        Ok(())
+    }
+
+    async fn update_subscription_last_sent(&self, subscription_id: &Uuid) -> Result<(), AuthError> {
+        let now = chrono::Utc::now();
+        let query = "UPDATE market_data_subscriptions SET last_sent_at = $1 WHERE id = $2";
+
+        sqlx::query(query)
+            .bind(now)
+            .bind(subscription_id)
+            .execute(&self.pool)
+            .await
+            .map_err(AuthError::UserRepo)?;
 
         Ok(())
     }

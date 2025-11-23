@@ -2,12 +2,42 @@
 //!
 //! Provides comprehensive pre-trade and post-trade validation checks
 
-use crate::clients::{ApiGatewayClient, UserClient, UserServiceResponse};
 use crate::models::{OrderSide, OrderType};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, warn};
 use uuid::Uuid;
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserData {
+    pub id: Option<Uuid>,
+    pub email: String,
+    pub balance: f64,
+    pub is_verified: bool,
+    pub holdings: std::collections::HashMap<String, HoldingData>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct HoldingData {
+    pub symbol: String,
+    pub quantity: u64,
+    pub average_cost: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct MarketPriceResponse {
+    pub symbol: String,
+    pub price: f64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub volume: i64,
+    pub timestamp: String, // ISO 8601 string from the API
+}
 
 /// Result of trade validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +48,7 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
+    #[must_use]
     pub fn valid() -> Self {
         Self {
             valid: true,
@@ -26,26 +57,9 @@ impl ValidationResult {
         }
     }
 
-    pub fn invalid(error: ValidationError) -> Self {
-        Self {
-            valid: false,
-            errors: vec![error],
-            warnings: Vec::new(),
-        }
-    }
-
-    pub fn with_warning(mut self, warning: String) -> Self {
-        self.warnings.push(warning);
-        self
-    }
-
     pub fn add_error(&mut self, error: ValidationError) {
         self.valid = false;
         self.errors.push(error);
-    }
-
-    pub fn first_error(&self) -> Option<&ValidationError> {
-        self.errors.first()
     }
 }
 
@@ -226,6 +240,7 @@ impl std::fmt::Display for ValidationError {
 
 /// Configuration for trade validation rules
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ValidationConfig {
     /// Maximum order size in shares
     pub max_order_quantity: u64,
@@ -267,24 +282,54 @@ impl Default for ValidationConfig {
 }
 
 /// Trade validator that performs pre-trade and post-trade checks
-/// Now uses API Gateway for cached price lookups (100ms TTL)
 pub struct TradeValidator {
-    user_client: Arc<UserClient>,
-    api_gateway_client: Arc<ApiGatewayClient>,
+    http_client: Arc<Client>,
+    user_service_url: String,
+    market_data_service_url: String,
     config: ValidationConfig,
 }
 
 impl TradeValidator {
     pub fn new(
-        user_client: Arc<UserClient>,
-        api_gateway_client: Arc<ApiGatewayClient>,
+        http_client: Arc<Client>,
+        user_service_url: String,
+        market_data_service_url: String,
         config: ValidationConfig,
     ) -> Self {
         Self {
-            user_client,
-            api_gateway_client,
+            http_client,
+            user_service_url,
+            market_data_service_url,
             config,
         }
+    }
+
+    /// Get user data from user service
+    async fn get_user(&self, user_id: Uuid) -> Result<UserData, String> {
+        let url = format!("{}/v1/users/{}", self.user_service_url, user_id);
+        self.http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to get user: {e}"))?
+            .json::<UserData>()
+            .await
+            .map_err(|e| format!("Failed to parse user data: {e}"))
+    }
+
+    /// Get market price from market data service
+    async fn get_price(&self, symbol: &str) -> Result<f64, String> {
+        let url = format!("{}/v1/prices/{}", self.market_data_service_url, symbol);
+        let price_data = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch price: {e}"))?
+            .json::<MarketPriceResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse price data: {e}"))?;
+        Ok(price_data.price)
     }
 
     /// Perform pre-trade validation
@@ -317,7 +362,7 @@ impl TradeValidator {
         }
 
         // 3. Get user data
-        let user = match self.user_client.get_user(user_id).await {
+        let user = match self.get_user(user_id).await {
             Ok(user) => user,
             Err(e) => {
                 warn!("Failed to fetch user {}: {}", user_id, e);
@@ -334,14 +379,10 @@ impl TradeValidator {
         }
 
         // 5. Get market price and validate symbol is active
-        // NOW: Uses API Gateway's cached prices (100ms TTL) instead of direct market-data calls
-        let market_price = match self.api_gateway_client.get_price(symbol).await {
-            Ok(price_data) => price_data.price,
+        let market_price = match self.get_price(symbol).await {
+            Ok(price) => price,
             Err(e) => {
-                warn!(
-                    "Failed to get price for symbol {} from API Gateway: {}",
-                    symbol, e
-                );
+                warn!("Failed to get price for symbol {}: {}", symbol, e);
                 result.add_error(ValidationError::InvalidSymbol {
                     symbol: symbol.to_string(),
                 });
@@ -453,7 +494,7 @@ impl TradeValidator {
 
     fn validate_buying_power(
         &self,
-        user: &UserServiceResponse,
+        user: &UserData,
         required_amount: f64,
     ) -> Result<(), ValidationError> {
         let buying_power = user.balance * self.config.buying_power_multiplier;
@@ -481,7 +522,7 @@ impl TradeValidator {
 
     fn validate_holdings(
         &self,
-        user: &UserServiceResponse,
+        user: &UserData,
         symbol: &str,
         required_quantity: u64,
     ) -> Result<(), ValidationError> {
@@ -532,7 +573,7 @@ impl TradeValidator {
 
     fn validate_concentration_limit(
         &self,
-        user: &UserServiceResponse,
+        user: &UserData,
         symbol: &str,
         additional_quantity: u64,
         market_price: f64,

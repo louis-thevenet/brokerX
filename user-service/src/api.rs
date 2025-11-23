@@ -1,4 +1,5 @@
-use crate::models::{AuthError, Holding, User};
+use crate::event_publisher::PublishEventRequest;
+use crate::models::{AuthError, Holding, MarketDataSubscription, SubscriptionRequest, User};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -44,9 +45,13 @@ pub struct WithdrawRequest {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UpdateHoldingsRequest {
+    #[schema(value_type = String)]
+    pub order_id: Uuid,
     pub symbol: String,
     pub quantity_change: i64,
     pub execution_price: f64,
+    pub order_side: String,
+    pub order_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -432,6 +437,45 @@ pub async fn update_holdings(
                 "Updated holdings for user {}: {} {}",
                 user_id, payload.quantity_change, payload.symbol
             );
+
+            // Parse order_side and order_type from strings
+            let order_side = match payload.order_side.to_lowercase().as_str() {
+                "buy" => brokerx_events::OrderSide::Buy,
+                "sell" => brokerx_events::OrderSide::Sell,
+                _ => {
+                    error!("Invalid order_side: {}", payload.order_side);
+                    return (StatusCode::BAD_REQUEST, "Invalid order_side").into_response();
+                }
+            };
+
+            let order_type = match payload.order_type.to_lowercase().as_str() {
+                "market" => brokerx_events::OrderType::Market,
+                "limit" => brokerx_events::OrderType::Limit {
+                    price: payload.execution_price,
+                },
+                _ => {
+                    error!("Invalid order_type: {}", payload.order_type);
+                    return (StatusCode::BAD_REQUEST, "Invalid order_type").into_response();
+                }
+            };
+
+            let event = PublishEventRequest {
+                order_id: payload.order_id,
+                user_id,
+                event_type: "HOLDINGS_UPDATED".to_string(),
+                symbol: payload.symbol.clone(),
+                quantity: payload.quantity_change.unsigned_abs(),
+                order_side,
+                order_type,
+                filled_quantity: Some(payload.quantity_change.unsigned_abs()),
+                average_price: Some(payload.execution_price),
+                occurred_at: chrono::Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) = state.event_publisher.publish_event(event).await {
+                error!("Failed to publish HOLDINGS_UPDATED event: {}", e);
+            }
+
             StatusCode::OK.into_response()
         }
         Err(e) => {
@@ -648,4 +692,200 @@ pub async fn validate_trade(
     };
 
     Json(response).into_response()
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/users/{id}/subscription",
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    responses(
+        (status = 200, description = "User's subscription", body = MarketDataSubscription),
+        (status = 404, description = "User or subscription not found")
+    ),
+    tag = "users"
+)]
+pub async fn get_subscription(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    debug!("Getting subscription for user: {}", user_id);
+
+    match state.user_service.get_subscription(&user_id).await {
+        Ok(Some(subscription)) => {
+            info!("Subscription found for user: {}", user_id);
+            Ok((StatusCode::OK, Json(subscription)))
+        }
+        Ok(None) => {
+            info!("No subscription found for user: {}", user_id);
+            Err((StatusCode::NOT_FOUND, "No subscription found".to_string()))
+        }
+        Err(e) => {
+            error!("Failed to get subscription for user {}: {}", user_id, e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get subscription: {e}"),
+            ))
+        }
+    }
+}
+
+/// Create or update user's market data subscription
+#[utoipa::path(
+    put,
+    path = "/v1/users/{id}/subscription",
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    request_body = SubscriptionRequest,
+    responses(
+        (status = 200, description = "Subscription updated", body = MarketDataSubscription),
+        (status = 201, description = "Subscription created", body = MarketDataSubscription),
+        (status = 400, description = "Invalid request"),
+        (status = 404, description = "User not found")
+    ),
+    tag = "users"
+)]
+pub async fn upsert_subscription(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+    Json(request): Json<SubscriptionRequest>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    info!("Creating/updating subscription for user: {}", user_id);
+
+    // Validate symbols
+    if request.symbols.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "At least one symbol is required".to_string(),
+        ));
+    }
+
+    // Check if user exists
+    if state.user_service.get_user(&user_id).await.is_err() {
+        return Err((StatusCode::NOT_FOUND, "User not found".to_string()));
+    }
+
+    match state
+        .user_service
+        .upsert_subscription(&user_id, request)
+        .await
+    {
+        Ok((subscription, is_new)) => {
+            if is_new {
+                info!("Subscription created for user: {}", user_id);
+                Ok((StatusCode::CREATED, Json(subscription)))
+            } else {
+                info!("Subscription updated for user: {}", user_id);
+                Ok((StatusCode::OK, Json(subscription)))
+            }
+        }
+        Err(e) => {
+            error!(
+                "Failed to create/update subscription for user {}: {}",
+                user_id, e
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create/update subscription: {e}"),
+            ))
+        }
+    }
+}
+
+/// Delete user's market data subscription
+#[utoipa::path(
+    delete,
+    path = "/v1/users/{id}/subscription",
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    responses(
+        (status = 204, description = "Subscription deleted"),
+        (status = 404, description = "User or subscription not found")
+    ),
+    tag = "users"
+)]
+pub async fn delete_subscription(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    info!("Deleting subscription for user: {}", user_id);
+
+    match state.user_service.delete_subscription(&user_id).await {
+        Ok(()) => {
+            info!("Subscription deleted for user: {}", user_id);
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(AuthError::UserNotFound) => Err((
+            StatusCode::NOT_FOUND,
+            "User or subscription not found".to_string(),
+        )),
+        Err(e) => {
+            error!("Failed to delete subscription for user {}: {}", user_id, e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to delete subscription: {e}"),
+            ))
+        }
+    }
+}
+
+/// Update subscription last_sent_at timestamp
+#[utoipa::path(
+    patch,
+    path = "/v1/users/{id}/subscription/last-sent",
+    params(
+        ("id" = Uuid, Path, description = "User ID")
+    ),
+    responses(
+        (status = 204, description = "Timestamp updated"),
+        (status = 404, description = "User or subscription not found")
+    ),
+    tag = "users"
+)]
+pub async fn update_subscription_last_sent(
+    State(state): State<AppState>,
+    Path(user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    info!("Updating last_sent_at for user subscription: {}", user_id);
+
+    // Get subscription to find its ID
+    match state.user_service.get_subscription(&user_id).await {
+        Ok(Some(subscription)) => {
+            if let Some(subscription_id) = subscription.id {
+                match state
+                    .user_service
+                    .update_subscription_last_sent(&subscription_id)
+                    .await
+                {
+                    Ok(()) => {
+                        info!("Updated last_sent_at for subscription: {}", subscription_id);
+                        Ok(StatusCode::NO_CONTENT)
+                    }
+                    Err(e) => {
+                        error!("Failed to update last_sent_at: {}", e);
+                        Err((
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("Failed to update timestamp: {e}"),
+                        ))
+                    }
+                }
+            } else {
+                Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Subscription ID is missing".to_string(),
+                ))
+            }
+        }
+        Ok(None) => Err((StatusCode::NOT_FOUND, "No subscription found".to_string())),
+        Err(e) => {
+            error!("Failed to get subscription: {}", e);
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to get subscription: {e}"),
+            ))
+        }
+    }
 }

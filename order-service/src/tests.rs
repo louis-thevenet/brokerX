@@ -8,12 +8,15 @@ use std::sync::Arc;
 use tower::ServiceExt; // for `oneshot`
 use uuid::Uuid;
 
-use crate::models::{OrderSide, OrderType};
 use crate::service::OrderService;
 use crate::{ApiDoc, AppState};
 use crate::{
     api::{CreateOrderRequest, OrderResponse},
     config::DatabaseConfig,
+};
+use crate::{
+    event_publisher::EventPublisher,
+    models::{OrderSide, OrderType},
 };
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
@@ -46,7 +49,13 @@ async fn create_test_setup() -> (Router, Uuid, Uuid) {
             .expect("Failed to create order service for testing"),
     );
 
-    let app_state = AppState { order_service };
+    let event_store_url =
+        std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
+    let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+    let app_state = AppState {
+        order_service,
+        event_publisher,
+    };
 
     // Build the same router as in main.rs
     let app = Router::new()

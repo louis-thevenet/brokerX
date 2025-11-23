@@ -4,11 +4,12 @@ use crate::error::{ApiError, ApiResult};
 use crate::middleware::AuthenticatedUser;
 use crate::models::{
     CreateOrderRequest, DepositRequest, ErrorResponse, HealthResponse, HoldingResponse,
-    LoginRequest, LoginResponse, LogoutRequest, MarketPriceResponse, MarketPricesResponse,
-    MessageResponse, MfaChallengeResponse, OrderAcceptedResponse, OrderResponse, OrderSide,
-    OrderStatus, OrderType, PaginatedResponse, PaginationInfo, PaginationQuery, RegisterRequest,
-    RegisterResponse, SymbolsResponse, UpdateOrderRequest, UpdateUserRequest, UserResponse,
-    VerifyMfaRequest, VerifyMfaResponse,
+    LoginRequest, LoginResponse, LogoutRequest, MarketDataSubscription, MarketPriceResponse,
+    MarketPricesResponse, MessageResponse, MfaChallengeResponse, OrderAcceptedResponse,
+    OrderResponse, OrderSide, OrderStatus, OrderType, PaginatedResponse, PaginationInfo,
+    PaginationQuery, RegisterRequest, RegisterResponse, SubscriptionFrequency, SubscriptionRequest,
+    SymbolsResponse, UpdateOrderRequest, UpdateUserRequest, UserResponse, VerifyMfaRequest,
+    VerifyMfaResponse,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -39,6 +40,9 @@ use uuid::Uuid;
         get_market_prices,
         get_market_symbols,
         get_market_history,
+        get_my_subscription,
+        upsert_my_subscription,
+        delete_my_subscription,
     ),
     components(
         schemas(
@@ -69,7 +73,10 @@ use uuid::Uuid;
             MarketPriceResponse,
             MarketPricesResponse,
             SymbolsResponse,
-            ErrorResponse
+            ErrorResponse,
+            MarketDataSubscription,
+            SubscriptionRequest,
+            SubscriptionFrequency,
         )
     ),
     tags(
@@ -715,4 +722,213 @@ pub async fn get_market_history(
         .get_historical_prices(&symbol, limit)
         .await?;
     Ok(Json(history))
+}
+
+// ============================================================================
+// Market Data Subscription Endpoints
+// ============================================================================
+
+/// Get user's market data subscription
+///
+/// Returns the authenticated user's market data subscription settings.
+#[utoipa::path(
+    get,
+    path = "/v1/me/subscription",
+    responses(
+        (status = 200, description = "User's subscription", body = MarketDataSubscription),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user"
+)]
+pub async fn get_my_subscription(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+) -> ApiResult<impl IntoResponse> {
+    info!("User {} fetching subscription", user_id);
+    let subscription = state.user_client.get_subscription(user_id).await?;
+    Ok(Json(subscription))
+}
+
+/// Create or update user's market data subscription
+///
+/// Subscribe to market data reports for specific symbols.
+/// If a subscription already exists, it will be updated with the new settings.
+#[utoipa::path(
+    put,
+    path = "/v1/me/subscription",
+    request_body = SubscriptionRequest,
+    responses(
+        (status = 200, description = "Subscription updated", body = MarketDataSubscription),
+        (status = 201, description = "Subscription created", body = MarketDataSubscription),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user"
+)]
+pub async fn upsert_my_subscription(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+    Json(request): Json<SubscriptionRequest>,
+) -> ApiResult<impl IntoResponse> {
+    info!("User {} creating/updating subscription", user_id);
+
+    if request.symbols.is_empty() {
+        return Err(ApiError::BadRequest(
+            "At least one symbol is required".to_string(),
+        ));
+    }
+
+    let subscription = state
+        .user_client
+        .upsert_subscription(user_id, &request)
+        .await?;
+
+    // Send immediate welcome notification with current market data
+    if let Err(e) = send_immediate_subscription_notification(&state, user_id, &request).await {
+        error!("Failed to send immediate subscription notification: {}", e);
+        // Don't fail the request if notification fails, just log it
+    } else {
+        // Update last_sent_at timestamp after successful notification
+        if let Err(e) = state
+            .user_client
+            .update_subscription_last_sent(user_id)
+            .await
+        {
+            error!("Failed to update last_sent_at timestamp: {}", e);
+        }
+    }
+
+    Ok(Json(subscription))
+}
+
+/// Delete user's market data subscription
+///
+/// Unsubscribe from all market data reports.
+#[utoipa::path(
+    delete,
+    path = "/v1/me/subscription",
+    responses(
+        (status = 204, description = "Subscription deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Subscription not found")
+    ),
+    security(
+        ("bearer_auth" = [])
+    ),
+    tag = "user"
+)]
+pub async fn delete_my_subscription(
+    State(state): State<AppState>,
+    AuthenticatedUser(user_id): AuthenticatedUser,
+) -> ApiResult<impl IntoResponse> {
+    info!("User {} deleting subscription", user_id);
+    state.user_client.delete_subscription(user_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Helper function to send immediate market data notification when user subscribes
+async fn send_immediate_subscription_notification(
+    state: &AppState,
+    user_id: Uuid,
+    request: &SubscriptionRequest,
+) -> ApiResult<()> {
+    info!("Fetching market data for immediate subscription notification");
+
+    // Get user information
+    let user = state.user_client.get_user(user_id).await?;
+
+    // Fetch current market data for subscribed symbols
+    let market_data_response = state
+        .market_data_client
+        .get_prices(&request.symbols)
+        .await?;
+
+    // Parse the response - it's a MarketPricesResponse with a "prices" field
+    let market_prices: Vec<MarketPriceResponse> =
+        if let Some(prices_array) = market_data_response.get("prices") {
+            serde_json::from_value(prices_array.clone()).map_err(|e| {
+                ApiError::InternalServerError(format!("Failed to parse market data: {e}"))
+            })?
+        } else {
+            // Fallback: try to parse the whole response as an array
+            serde_json::from_value(market_data_response).map_err(|e| {
+                ApiError::InternalServerError(format!("Failed to parse market data: {e}"))
+            })?
+        };
+
+    // Get user holdings if requested
+    let holdings_with_prices = if request.include_holdings {
+        match state.user_client.get_user(user_id).await {
+            Ok(user_response) => {
+                // Convert HashMap to Vec
+                let holdings_vec: Vec<HoldingResponse> =
+                    user_response.holdings.into_values().collect();
+
+                // Fetch current prices for all holdings
+                let symbols: Vec<String> = holdings_vec.iter().map(|h| h.symbol.clone()).collect();
+
+                if symbols.is_empty() {
+                    None
+                } else {
+                    match state.market_data_client.get_prices(&symbols).await {
+                        Ok(prices_response) => {
+                            // Parse the response - it's a MarketPricesResponse with a "prices" field
+                            let prices: Vec<MarketPriceResponse> =
+                                if let Some(prices_array) = prices_response.get("prices") {
+                                    serde_json::from_value(prices_array.clone()).unwrap_or_default()
+                                } else {
+                                    serde_json::from_value(prices_response).unwrap_or_default()
+                                };
+
+                            // Build a price map
+                            let price_map: std::collections::HashMap<String, f64> = prices
+                                .into_iter()
+                                .map(|p| (p.symbol.clone(), p.price))
+                                .collect();
+
+                            // Pair holdings with current prices
+                            let holdings_with_prices: Vec<(HoldingResponse, f64)> = holdings_vec
+                                .into_iter()
+                                .filter_map(|h| price_map.get(&h.symbol).map(|&price| (h, price)))
+                                .collect();
+
+                            Some(holdings_with_prices)
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch holding prices: {}", e);
+                            None
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to fetch user holdings: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Send notification
+    state
+        .notification_helper
+        .send_market_data_notification(
+            user_id.to_string(),
+            user.email,
+            market_prices,
+            holdings_with_prices,
+            request.frequency.to_string(),
+        )
+        .await?;
+
+    info!("Immediate subscription notification sent successfully");
+    Ok(())
 }

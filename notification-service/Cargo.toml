@@ -1,0 +1,23 @@
+[package]
+name = "notification-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lettre = "0.11"
+rand = "0.8"
+tokio = { version = "1.0", features = ["full"] }
+color-eyre = "0.6.5"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+tracing = "0.1.41"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+brokerx-events = { path = "../brokerx-events" }
+async-trait = "0.1"
+tracing-subscriber = "0.3"
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }

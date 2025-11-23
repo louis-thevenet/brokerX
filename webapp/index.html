@@ -345,6 +345,94 @@
             <div id="orders-message"></div>
         </div>
         
+        <!-- Market Data Subscription Section -->
+        <div id="subscription-section" class="section hidden">
+            <h2>📧 Market Data Subscription</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                Subscribe to receive regular market data reports via email. Get updates on your favorite symbols and portfolio performance.
+            </p>
+            
+            <!-- Current Subscription Display -->
+            <div id="current-subscription" class="hidden">
+                <div style="background: #e3f2fd; border: 1px solid #2196f3; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0; color: #1976d2;">✅ Active Subscription</h3>
+                    <div id="subscription-details"></div>
+                    <button onclick="editSubscription()" class="btn-info" style="margin-top: 10px; margin-right: 10px;">✏️ Edit Subscription</button>
+                    <button onclick="deleteSubscription()" class="btn-secondary" style="margin-top: 10px;">🗑️ Unsubscribe</button>
+                </div>
+            </div>
+            
+            <!-- No Subscription Message -->
+            <div id="no-subscription" class="hidden">
+                <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                    <p style="margin: 0; color: #856404;">📭 You don't have an active subscription. Create one below to start receiving market reports!</p>
+                </div>
+            </div>
+            
+            <!-- Subscription Form -->
+            <div id="subscription-form">
+                <h3 id="subscription-form-title">Create Subscription</h3>
+                <form onsubmit="saveSubscription(event)">
+                    <div style="margin-bottom: 15px;">
+                        <label for="sub-symbols" style="display: block; margin-bottom: 5px; font-weight: bold;">
+                            Symbols to Track:
+                        </label>
+                        <input type="text" 
+                               id="sub-symbols" 
+                               placeholder="e.g., AAPL, GOOGL, MSFT" 
+                               required
+                               style="width: 100%; max-width: 400px;">
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            Enter comma-separated stock symbols
+                        </small>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label for="sub-frequency" style="display: block; margin-bottom: 5px; font-weight: bold;">
+                            Report Frequency:
+                        </label>
+                        <select id="sub-frequency" required style="width: 100%; max-width: 400px;">
+                            <option value="">Select frequency...</option>
+                            <option value="hourly">Hourly</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="sub-include-holdings" checked style="margin-right: 8px;">
+                            <span style="font-weight: bold;">Include my portfolio holdings in reports</span>
+                        </label>
+                        <small style="color: #666; display: block; margin-top: 5px; margin-left: 24px;">
+                            When enabled, reports will include your current positions with profit/loss calculations
+                        </small>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button type="submit" class="btn-primary">💾 Save Subscription</button>
+                        <button type="button" onclick="cancelSubscriptionEdit()" class="btn-secondary hidden" id="cancel-sub-edit">❌ Cancel</button>
+                    </div>
+                </form>
+            </div>
+            
+            <div id="subscription-message"></div>
+            
+            <!-- Information Box -->
+            <div style="background: #f5f5f5; border-left: 4px solid #2196f3; padding: 15px; margin-top: 20px; border-radius: 4px;">
+                <h4 style="margin-top: 0; color: #1976d2;">ℹ️ About Market Data Subscriptions</h4>
+                <ul style="margin: 10px 0; padding-left: 20px; color: #666;">
+                    <li><strong>Hourly:</strong> Receive market updates every hour during trading hours</li>
+                    <li><strong>Daily:</strong> Get a daily summary at market close</li>
+                    <li><strong>Weekly:</strong> Receive a comprehensive weekly report</li>
+                </ul>
+                <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">
+                    Reports include current prices, price changes, and volume data. If you enable holdings, 
+                    you'll also see your portfolio performance with profit/loss calculations.
+                </p>
+            </div>
+        </div>
+        
         <!-- Price History Chart Modal -->
         <div id="chart-modal" class="chart-modal">
             <div class="chart-modal-content">

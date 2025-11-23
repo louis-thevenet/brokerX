@@ -1,3 +1,4 @@
+use crate::event_publisher::PublishEventRequest;
 use crate::models::{Order, OrderError, OrderSide, OrderStatus, OrderType};
 use axum::{
     extract::{Path, Query, State},
@@ -187,12 +188,36 @@ pub async fn create_order(
         filled_price: None,
     };
 
-    match state.order_service.create_order(order).await {
+    match state.order_service.create_order(order.clone()).await {
         Ok((order_id, order)) => {
             info!(
                 "Order {} created successfully for {}",
                 order_id, payload.client_id
             );
+
+            let event = PublishEventRequest {
+                order_id,
+                user_id: payload.client_id,
+                event_type: "ORDER_CREATED".to_string(),
+                symbol: order.symbol.clone(),
+                quantity: order.quantity,
+                order_side: match order.order_side {
+                    OrderSide::Buy => brokerx_events::OrderSide::Buy,
+                    OrderSide::Sell => brokerx_events::OrderSide::Sell,
+                },
+                order_type: match order.order_type {
+                    OrderType::Market => brokerx_events::OrderType::Market,
+                    OrderType::Limit { price } => brokerx_events::OrderType::Limit { price },
+                },
+                filled_quantity: None,
+                average_price: None,
+                occurred_at: chrono::Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) = state.event_publisher.publish_event(event).await {
+                error!("Failed to publish ORDER_CREATED event: {}", e);
+            }
+
             (
                 StatusCode::CREATED,
                 Json(OrderResponse::from((order_id, order))),
@@ -385,7 +410,35 @@ pub async fn cancel_order(
         .cancel_order(&order_id, &order.client_id)
         .await
     {
-        Ok(()) => StatusCode::OK.into_response(),
+        Ok(()) => {
+            // Publish ORDER_CANCELLED event
+            let event = crate::event_publisher::PublishEventRequest {
+                order_id,
+                user_id: order.client_id,
+                event_type: "ORDER_CANCELLED".to_string(),
+                symbol: order.symbol.clone(),
+                quantity: order.quantity,
+                order_side: match order.order_side {
+                    crate::models::OrderSide::Buy => brokerx_events::OrderSide::Buy,
+                    crate::models::OrderSide::Sell => brokerx_events::OrderSide::Sell,
+                },
+                order_type: match order.order_type {
+                    crate::models::OrderType::Market => brokerx_events::OrderType::Market,
+                    crate::models::OrderType::Limit { price } => {
+                        brokerx_events::OrderType::Limit { price }
+                    }
+                },
+                filled_quantity: None,
+                average_price: None,
+                occurred_at: chrono::Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) = state.event_publisher.publish_event(event).await {
+                error!("Failed to publish ORDER_CANCELLED event: {}", e);
+            }
+
+            StatusCode::OK.into_response()
+        }
         Err(OrderError::OrderNotFound) => StatusCode::NOT_FOUND.into_response(),
         Err(OrderError::Unauthorized) => StatusCode::FORBIDDEN.into_response(),
         Err(OrderError::OrderCannotBeCancelled) => {

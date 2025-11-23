@@ -106,6 +106,9 @@ pub struct ExecuteOrderRequest {
     /// Order ID from order service
     #[schema(value_type = String)]
     pub order_id: Uuid,
+    /// User ID who placed the order
+    #[schema(value_type = String)]
+    pub user_id: Uuid,
     /// Asset symbol
     #[schema(example = "AAPL")]
     pub symbol: String,

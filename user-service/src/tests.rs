@@ -8,10 +8,10 @@ use std::sync::Arc;
 use tower::ServiceExt; // for `oneshot`
 use uuid::Uuid;
 
-use crate::models::User;
 use crate::service::UserService;
 use crate::{ApiDoc, AppState};
 use crate::{api::CreateUserRequest, repository::UserRepository};
+use crate::{event_publisher::EventPublisher, models::User};
 use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -33,7 +33,7 @@ async fn create_test_setup() -> (Router, Uuid, String) {
         .unwrap();
     // Create the test table
     sqlx::query(&format!(
-        r#"CREATE TABLE IF NOT EXISTS {test_table_name} (
+        r"CREATE TABLE IF NOT EXISTS {test_table_name} (
             id UUID PRIMARY KEY,
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
@@ -43,7 +43,7 @@ async fn create_test_setup() -> (Router, Uuid, String) {
             is_verified BOOLEAN NOT NULL,
             created_at TIMESTAMPTZ NOT NULL,
             holdings JSONB NOT NULL
-        )"#
+        )"
     ))
     .execute(&pool)
     .await
@@ -68,7 +68,13 @@ async fn create_test_setup() -> (Router, Uuid, String) {
         }
         Err(e) => panic!("Failed to create test user: {e}"),
     };
-    let app_state = AppState { user_service };
+    let event_store_url =
+        std::env::var("EVENT_STORE_URL").unwrap_or_else(|_| "http://localhost:3005".to_string());
+    let event_publisher = Arc::new(EventPublisher::new(event_store_url));
+    let app_state = AppState {
+        user_service,
+        event_publisher,
+    };
     let app = Router::new()
         .route("/v1/health", axum::routing::get(crate::api::health_check))
         .route("/v1/users", axum::routing::post(crate::api::create_user))
