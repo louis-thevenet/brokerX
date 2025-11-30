@@ -1,0 +1,38 @@
+activityDiagram
+title: Expérience Utilisateur Dashboard BrokerX
+start
+
+    :Afficher tableau de bord;
+    note right: Solde, ordres, portfolio, données marché
+
+  switch (choix utilisateur)
+  case (Approvisionnement)
+    :Saisir montant à déposer;
+    :Valider et créditer portefeuille;
+    :Confirmer dépôt;
+    
+  case (Modifier profil)
+    :Modifier informations profil;
+    :Enregistrer modifications;
+    
+  case (Consultation marché)
+    :Afficher cotations temps réel;
+    
+  case (Consultation portfolio)
+    :Afficher actions possédées;
+    
+  case (Passer un ordre)
+    :Remplir formulaire ordre;
+    :Soumettre ordre;
+    :Le système traite l'ordre;
+    if (ordre valide ?) then
+      :Débiter/Créditer utilisateur;
+      :Mettre à jour portfolio;
+      :Passer l'ordre en traité;
+    else
+      :Passer l'ordre en rejeté;
+    endif
+    
+  case (Afficher ordres)
+    :Afficher historique ordres;
+  endswitch

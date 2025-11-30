@@ -32,10 +32,10 @@ L'application « BrokerX » est dotée d'une interface web faisant appel à une 
     columns: 3,
     align: (left, left, left),
     table.header([*Priorité*], [*Objectif qualité*], [*Scénario*]),
-    [1], [*Disponibilité*], [95,5 %],
+    [1], [*Disponibilité*], [$99,9 %$],
     [2],
     [*Performance*],
-    [Latence P95 (ordre → ACK) ≤ 250 ms & Débit ≥ 800 ordres/s],
+    [Latence P95 (ordre → ACK) $<= 100$ ms & Débit $>= 1200$ ordres/s],
 
     [3], [*Observabilité*], [Logs + métriques (4 Golden Signals)],
   ),
@@ -46,8 +46,7 @@ L'application « BrokerX » est dotée d'une interface web faisant appel à une 
 - *Clients* : utilisateurs via interface web.
 - *Opérations Back-Office* : gestion des règlements, supervision.
 - *Risque* : surveillance pré- et post-trade.
-- *Fournisseurs de données de marché* : cotations en temps réel.
-- *Bourses externes* : simulateurs de marché pour routage d'ordres.
+- *Fournisseurs de données de marché* : cotations en temps réel et simulateur d'exécution.
 
 = Contraintes d'architecture
 
@@ -67,12 +66,19 @@ L'application « BrokerX » est dotée d'une interface web faisant appel à une 
 
 == Contexte métier
 
-#figure(image("activity.svg", width: 80%), caption: [Activity])
+#figure(
+  image("activity.svg", width: 80%),
+  caption: [Authentication Activity Diagram],
+)
+#figure(
+  image("activity_dashboard.svg", width: 80%),
+  caption: [Dashboard Activity Diagram],
+)
 
 Le système permet aux utilisateurs de :
 
 - Gérer leur compte utilisateur
-- Approvisionner et retirer des fonds
+- Approvisionner leur compte virtuel
 - Passer des ordres d'achat/vente
 - Consulter l'état des ordres et le portefeuille
 - Consulter les données du marché
@@ -80,16 +86,16 @@ Le système permet aux utilisateurs de :
 === Priorisation MoSCoW
 
 - Must Have
-  - UC-01 — Inscription & Vérification d'identité [FAIT]
-  - UC-03 — Approvisionnement du portefeuille (dépôt virtuel) [FAIT]
-  - UC-05 — Placement d'un ordre (marché/limite) avec contrôles pré-trade [FAIT]
+  - UC-01 — Inscription & Vérification d'identité
+  - UC-03 — Approvisionnement du portefeuille (dépôt virtuel)
+  - UC-05 — Placement d'un ordre (marché/limite) avec contrôles pré-trade
 - Should Have
-  - UC-07 — Appariement interne & Exécution (matching) [NON FAIT]
-  - UC-06 — Modification / Annulation d'un ordre [FAIT]
+  - UC-07 — Appariement interne & Exécution (matching)
+  - UC-06 — Modification / Annulation d'un ordre
 - Could Have
-  - UC-08 — Confirmation d'exécution et Notifications [NON FAIT]
-  - UC-02 — Authentification & MFA [FAIT]
-  - UC-04 — Abonnement aux données de marché [NON FAIT]
+  - UC-08 — Confirmation d'exécution et Notifications
+  - UC-02 — Authentification & MFA
+  - UC-04 — Abonnement aux données de marché
 - Won't Have
 
 === UC-01 — Inscription & Vérification d'identité
@@ -122,7 +128,21 @@ Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de v
 - La demande d'ordre est envoyée
 - Le système effectue des contrôles pré-trade (solvabilité, limites de risque).
 - L'utilisateur peut consulter l'état de son ordre en direct
-- Le système traite l'ordre en arrière-plan et met à jour son état (exécuté, rejeté, annulé).
+- Le système traite l'ordre et met à jour son état (exécuté, rejeté, annulé).
+- Le système notifie l'utilisateur du résultat de l'ordre.
+
+=== UC-07 — Appariement interne & Exécution (matching)
+
+
+// TODO
+
+=== UC-06 — Modification / Annulation d'un ordre
+
+Ce cas d'utilisation permet à un utilisateur de modifier ou d'annuler un ordre en attente. Pour chaque ordre en statut "Pending", l'utilisateur peut l'annuler ou le modifier (quantité, prix limite et type). Le système valide la demande et met à jour l'état de l'ordre en conséquence. (En réalité les ordres sont traités très rapidement donc cette fonctionnalité est difficile à utiliser)
+
+=== UC-08 — Confirmation d'exécution et Notifications
+
+Ce cas d'utilisation permet à un utilisateur de recevoir des confirmations d'exécution pour ses ordres passés. Lorsqu'un ordre est exécuté, le système envoie un email à l'utilisateur avec les détails de l'exécution (quantité, prix, frais, etc).
 
 === UC-02 — Authentification & MFA
 Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécurisée à son compte BrokerX en utilisant l'authentification multi-facteurs (MFA). Le processus comprend les étapes suivantes :
@@ -135,9 +155,7 @@ Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécur
 - Le système valide le code OTP.
 - Le système transmfet un token JWT pour les sessions authentifiées.
 
-=== UC-06 — Modification / Annulation d'un ordre
-
-Ce cas d'utilisation permet à un utilisateur de modifier ou d'annuler un ordre en attente. Pour chaque ordre en statut "Pending", l'utilisateur peut l'annuler ou le modifier (quantité, prix limite et type). Le système valide la demande et met à jour l'état de l'ordre en conséquence. (En réalité les ordres sont traités très rapidement donc cette fonctionnalité est difficile à utiliser en l'état.)
+=== UC-04 — Abonnement aux données de marché
 
 == Contexte technique
 
@@ -159,7 +177,6 @@ Ce cas d'utilisation permet à un utilisateur de modifier ou d'annuler un ordre 
     [Base relationnelle (*PostgreSQL*), cache en mémoire],
 
     [*Observabilité*], [Métriques Promethus et Dashboards Grafana],
-    [*Rapports statistiques*], [],
   ),
   caption: [Stratégie de solution],
 )
