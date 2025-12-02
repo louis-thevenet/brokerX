@@ -20,7 +20,6 @@ classDiagram
     +Request routing
     +CORS handling
     +MFA orchestration
-    +Trade validation
   }
   
   class UserService {
@@ -50,15 +49,23 @@ classDiagram
     +Order execution simulation
   }
   
-  class OrderOrchestrator {
+  class EventStoreService {
     <<microservice>>
-    +Order acceptance queue
-    +Pre-trade validation
-    +Balance checks
-    +Symbol validation
-    +Order execution coordination
-    +Post-trade settlement
-    +Async processing
+    +Event sourcing
+    +Saga choreography
+    +Order lifecycle tracking
+    +Event publishing
+    +Outbox pattern
+    +Transactional events
+  }
+  
+  class NotificationService {
+    <<microservice>>
+    +Email notifications
+    +Event consumption
+    +User notifications
+    +SMTP integration
+    +Async notification processing
   }
   
   class MFAAdapter {
@@ -67,6 +74,14 @@ classDiagram
     +Code verification
     +Challenge storage
     +Email sending
+  }
+  
+  class Redis {
+    <<event_streaming>>
+    +Event pub/sub
+    +Inter-service messaging
+    +Event distribution
+    +Cache layer
   }
   
   class UserDB {
@@ -86,10 +101,35 @@ classDiagram
     +prices table
   }
   
+  class EventStoreDB {
+    <<PostgreSQL>>
+    +order_events table
+    +saga_state table
+    +outbox_messages table
+    +event_checkpoints table
+  }
+  
   class EmailServer {
     <<external>>
     +SMTP relay
     +OTP delivery
+    +Notification delivery
+  }
+  
+  class Prometheus {
+    <<monitoring>>
+    +Metrics collection
+    +Time series storage
+    +Service monitoring
+    +Performance metrics
+  }
+  
+  class Grafana {
+    <<visualization>>
+    +Dashboard visualization
+    +Alerting
+    +Metrics analysis
+    +Business intelligence
   }
   
   %% User flow
@@ -100,30 +140,49 @@ classDiagram
   APIGateway --> UserService: User operations
   APIGateway --> OrderService: Order queries
   APIGateway --> MarketDataService: Market data
-  APIGateway --> OrderOrchestrator: Order creation
+  APIGateway --> EventStoreService: Order creation events
   
-  %% Internal orchestration
-  OrderOrchestrator --> UserService: Validate balance
-  OrderOrchestrator --> MarketDataService: Execute order
-  OrderOrchestrator --> OrderService: Update status
-  OrderOrchestrator --> UserService: Update holdings
+  %% Event-driven coordination via Redis
+  EventStoreService --> Redis: Publish events
+  Redis --> UserService: Subscribe events
+  Redis --> OrderService: Subscribe events
+  Redis --> MarketDataService: Subscribe events
+  Redis --> NotificationService: Subscribe events
+  
+  %% Services publish events back to EventStore
+  UserService --> EventStoreService: Publish events
+  OrderService --> EventStoreService: Publish events  
+  MarketDataService --> EventStoreService: Publish events
   
   %% Database connections
   UserService --> UserDB: SQL queries
   OrderService --> OrderDB: SQL queries
   MarketDataService --> MarketDataDB: SQL queries
+  EventStoreService --> EventStoreDB: Event persistence
   
   %% MFA integration
   APIGateway ..> MFAAdapter: Uses library
   MFAAdapter --> EmailServer: SMTP
+  
+  %% Notification service
+  NotificationService --> EmailServer: Email delivery
+  
+  %% Monitoring infrastructure
+  
+  Grafana --> Prometheus: Query metrics
   
   @note right of WebApp: Port 8000\nStatic HTML/JS
   @note right of APIGateway: Port 8080\nAxum/Rust
   @note right of UserService: Port 3001\nAxum/Rust
   @note right of OrderService: Port 3002\nAxum/Rust
   @note right of MarketDataService: Port 3003\nAxum/Rust
-  @note right of OrderOrchestrator: Port 3004\nAxum/Rust\nAsync queue
+  @note right of EventStoreService: Port 3005\nAxum/Rust\nEvent sourcing
+  @note right of NotificationService: Port 3006\nAxum/Rust\nAsync notifications
   @note right of MFAAdapter: Embedded crate\nNo network port
+  @note right of Redis: Port 6380\nEvent streaming
+  @note right of Prometheus: Port 9090\nGet Metrics from all services
+  @note right of Grafana: Port 3000\nDashboard UI
   @note bottom of UserDB: Port 5432
   @note bottom of OrderDB: Port 5433
   @note bottom of MarketDataDB: Port 5434
+  @note bottom of EventStoreDB: Port 5435

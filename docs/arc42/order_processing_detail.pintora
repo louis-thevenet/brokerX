@@ -1,84 +1,96 @@
 sequenceDiagram
-  title: Order Processing Workflow with Async Orchestrator
+  title: Order Processing - Event-Driven Saga Choreography
 
   participant User as Web Browser
   participant APIGateway as API Gateway
   participant OrderService as Order Service
-  participant Orchestrator as Order Orchestrator
-  participant Queue as Order Queue
-  participant Validator as Trade Validator
-  participant MarketData as Market Data Service
-  participant UserService as User Service
+  participant EventStore as Event Store Service
+  participant Redis as Redis Pub/Sub
+  participant OrderConsumer as Order Consumer
+  participant MarketConsumer as Market Consumer
+  participant UserConsumer as User Consumer
 
-  %% PHASE 1: Order Acceptance via API Gateway
+  %% PHASE 1: Synchronous Order Acceptance
   User->>APIGateway: POST /v1/orders with JWT
-  APIGateway->>APIGateway: Validate JWT authentication
-  APIGateway->>APIGateway: Validate request fields
+  APIGateway->>APIGateway: Validate JWT & request
 
-  APIGateway->>OrderService: create_order with status PENDING
-  OrderService->>OrderService: Persist order in DB
-  OrderService-->>APIGateway: Order with id and PENDING status
+  APIGateway->>OrderService: POST /v1/orders (create order)
+  OrderService->>OrderService: Persist order with status PENDING
+  OrderService-->>APIGateway: Order ID + PENDING status
 
-  APIGateway->>Orchestrator: POST /v1/orders with order_id
-  Orchestrator->>Queue: Enqueue order for async processing
-  Queue-->>Orchestrator: Queued successfully
-  Orchestrator-->>APIGateway: 202 Accepted with order_id
+  APIGateway->>EventStore: POST /v1/events (OrderCreated)
+  EventStore->>EventStore: Save event in order_events table
+  EventStore->>EventStore: Insert into outbox table (transactional)
+  EventStore->>EventStore: Init saga_state (CREATED)
+  EventStore-->>APIGateway: Event published
 
-  APIGateway-->>User: 202 Accepted - Order queued
+  APIGateway-->>User: 202 Accepted with order_id
 
-  note over User,APIGateway: Synchronous phase complete - User can poll order status
+  note over User,APIGateway: Synchronous phase complete - User can poll /v1/orders/:id
 
-  %% PHASE 2: Async Processing in Background
-  note over Queue,UserService: Async processing with concurrency limits
+  %% PHASE 2: Asynchronous Event-Driven Saga
+  note over EventStore,UserConsumer: Event-driven choreography (no central orchestrator)
 
-  Queue->>Orchestrator: Dequeue order
-  Orchestrator->>Orchestrator: Acquire concurrency permit
-
-  %% PRE-TRADE VALIDATION
-  Orchestrator->>Validator: validate_trade
-  Validator->>UserService: get_user for balance and holdings
-  UserService-->>Validator: User data
-  Validator->>MarketData: get_price via API Gateway cache
-  MarketData-->>Validator: Current price
-  Validator->>Validator: Check balance, holdings, limits, price bands
-  Validator-->>Orchestrator: ValidationResult
-
+  EventStore->>Redis: PUBLISH order_events (OrderCreated)
+  
+  %% Step 1: Validation
+  Redis->>OrderConsumer: OrderCreated event
+  OrderConsumer->>OrderConsumer: Check idempotency
+  OrderConsumer->>OrderConsumer: Validate pre-trade
+  
   alt Validation Failed
-    Orchestrator->>OrderService: update_order_execution to REJECTED
-    OrderService-->>Orchestrator: Updated
-    note over Orchestrator: Stop processing - order rejected
+    OrderConsumer->>EventStore: POST /v1/events (OrderRejected)
+    EventStore->>EventStore: Save event + outbox + saga_state (FAILED)
+    EventStore->>Redis: PUBLISH order_events (OrderRejected)
+    EventStore->>OrderService: Update order status to REJECTED
+    note over OrderConsumer: Saga ends - order rejected
   else Validation Passed
-    %% ORDER EXECUTION
-    Orchestrator->>MarketData: execute_order
-    MarketData->>MarketData: Simulate market execution
-    MarketData-->>Orchestrator: ExecutionResult with status and price
-
-    Orchestrator->>OrderService: update_order_execution with results
-    OrderService-->>Orchestrator: Updated order
-
-    alt Order Filled
-      %% POST-TRADE SETTLEMENT
-      Orchestrator->>UserService: withdraw_funds for BUY or deposit_funds for SELL
-      UserService->>UserService: Update balance in DB
-      UserService-->>Orchestrator: Balance updated
-
-      Orchestrator->>UserService: update_holdings with quantity change
-      UserService->>UserService: Update holdings in DB
-      UserService-->>Orchestrator: Holdings updated
-
-      note over Orchestrator: Order completed successfully
-    else Order Rejected
-      note over Orchestrator: No settlement needed
-    end
+    OrderConsumer->>EventStore: POST /v1/events (OrderValidated)
+    EventStore->>EventStore: Save event + outbox + saga_state (VALIDATED)
+    EventStore->>Redis: PUBLISH order_events (OrderValidated)
+    OrderConsumer->>OrderConsumer: Mark event as processed
   end
 
-  Orchestrator->>Orchestrator: Release concurrency permit
-  Orchestrator->>Orchestrator: Record metrics
+  %% Step 2: Market Execution
+  Redis->>MarketConsumer: OrderValidated event
+  MarketConsumer->>MarketConsumer: Simulate market execution
+  
+  MarketConsumer->>EventStore: POST /v1/events (OrderExecuted or OrderPartiallyFilled)
+  EventStore->>EventStore: Save event + outbox + saga_state (EXECUTED)
+  EventStore->>Redis: PUBLISH order_events (OrderExecuted)
 
-  note over Orchestrator: Processing complete - User can fetch updated order
+  %% Step 3: Order Status Update
+  Redis->>OrderConsumer: OrderExecuted event
+  OrderConsumer->>OrderConsumer: Check idempotency
+  OrderConsumer->>OrderService: Update order status to FILLED
+  OrderConsumer->>EventStore: Update saga_state (EXECUTED)
+  OrderConsumer->>OrderConsumer: Mark event as processed
+
+  %% Step 4: Settlement (User Balance & Holdings)
+  Redis->>UserConsumer: OrderExecuted event
+  UserConsumer->>UserConsumer: Calculate settlement
+  UserConsumer->>UserConsumer: Update user balance in DB
+  UserConsumer->>UserConsumer: Update holdings in DB
+  
+  UserConsumer->>EventStore: POST /v1/events (OrderCompleted)
+  EventStore->>EventStore: Save event + outbox + saga_state (COMPLETED)
+  EventStore->>Redis: PUBLISH order_events (OrderCompleted)
+
+  %% Step 5: Final Status Update
+  Redis->>OrderConsumer: OrderCompleted event
+  OrderConsumer->>OrderConsumer: Check idempotency
+  OrderConsumer->>EventStore: Update saga_state (COMPLETED)
+  OrderConsumer->>OrderConsumer: Mark event as processed
+
+  note over EventStore,UserConsumer: Saga completed - all services updated asynchronously
 
   %% USER POLLING
   User->>APIGateway: GET /v1/orders/:id
-  APIGateway->>OrderService: get_order
-  OrderService-->>APIGateway: Order with final status
-  APIGateway-->>User: Order details with FILLED/REJECTED status
+  APIGateway->>OrderService: GET /v1/orders/:id
+  OrderService-->>APIGateway: Order with FILLED status
+  APIGateway-->>User: Order details with execution results
+
+  User->>APIGateway: GET /v1/me
+  APIGateway->>UserConsumer: GET /v1/users/:id
+  UserConsumer-->>APIGateway: User with updated balance & holdings
+  APIGateway-->>User: Updated portfolio

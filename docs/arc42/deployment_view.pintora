@@ -6,51 +6,58 @@ componentDiagram
   }
   
   package "Frontend" {
-    [WebApp] as webapp
+    [WebApp 8000] as webapp
   }
   
   package "API Layer" {
-    [API Gateway] as gateway
+    [API Gateway 8080] as gateway
   }
   
   package "Microservices" {
-    [User Service] as userSvc
-    [Order Service] as orderSvc
-    [Market Data Service] as marketSvc
-    [Order Orchestrator] as orchestrator
+    [User Service 3001] as userSvc
+    [Order Service 3002] as orderSvc
+    [Market Data Service 3003] as marketSvc
+    [Event Store Service 3005] as eventSvc
+    [Notification Service 3006] as notifSvc
+  }
+  
+  package "Event Communication" {
+    [Redis 6380] as redis
   }
   
   package "Databases" {
-    [User DB] as userDB
-    [Order DB] as orderDB
-    [Market Data DB] as marketDB
+    [User DB 5432] as userDB
+    [Order DB 5433] as orderDB
+    [Market Data DB 5434] as marketDB
+    [Event Store DB 5435] as eventDB
   }
   
   package "Monitoring" {
-    [Prometheus] as prometheus
-    [Grafana] as grafana
+    [Prometheus 9090] as prometheus
+    [Grafana 3000] as grafana
   }
   
-  browser --> webapp
-  webapp --> gateway
+  browser --> webapp : HTTP
+  webapp --> gateway : REST API
   
-  gateway --> userSvc
-  gateway --> orderSvc
-  gateway --> marketSvc
-  gateway --> orchestrator
+  gateway --> userSvc : HTTP/REST
+  gateway --> orderSvc : HTTP/REST
+  gateway --> marketSvc : HTTP/REST
+  gateway --> eventSvc : HTTP/REST
+  gateway --> notifSvc : HTTP/REST
   
-  orchestrator --> userSvc
-  orchestrator --> orderSvc
-  orchestrator --> marketSvc
+  eventSvc --> redis : Publish Events
+  redis --> orderSvc : Event Consumption
+  redis --> marketSvc : Event Consumption
+  redis --> userSvc : Event Consumption
+  redis --> notifSvc : Event Consumption
   
-  userSvc --> userDB
-  orderSvc --> orderDB
-  marketSvc --> marketDB
+  userSvc --> userDB : PostgreSQL
+  orderSvc --> orderDB : PostgreSQL
+  marketSvc --> marketDB : PostgreSQL
+  eventSvc --> eventDB : PostgreSQL
   
-  prometheus --> gateway
-  prometheus --> userSvc
-  prometheus --> orderSvc
-  prometheus --> marketSvc
-  prometheus --> orchestrator
+
+  grafana --> prometheus : Queries
   
-  grafana --> prometheus
+  notifSvc --> [SMTP Server] : Email Delivery

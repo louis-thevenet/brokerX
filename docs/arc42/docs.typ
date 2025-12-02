@@ -174,7 +174,7 @@ Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécur
     table.header([*Problème*], [*Approche de solution*]),
     [*Performance*], [Utilisation du langage Rust],
     [*Gestion des données*],
-    [Base relationnelle (*PostgreSQL*), cache en mémoire],
+    [Base relationnelle (*PostgreSQL*), cache en mémoire pour les évènements et les données fréquemment utilisées],
 
     [*Observabilité*], [Métriques Promethus et Dashboards Grafana],
   ),
@@ -205,9 +205,13 @@ Le système BrokerX est divisé en plusieurs contextes délimités (Bounded Cont
     [Données de marché, cotations, exécution simulée],
     [MarketDataService],
 
-    [*Order Processing Context*],
-    [Orchestration, validation pré/post-trade],
-    [OrderOrchestrator],
+    [*Event Store Context*],
+    [Event sourcing, saga chorégraphiée, outbox pattern transactionnel],
+    [EventStoreService],
+
+    [*Notification Context*],
+    [Notifications d'exécution d'ordres, alertes utilisateur],
+    [NotificationService],
   ),
   caption: [Bounded Contexts de BrokerX],
 )
@@ -248,6 +252,16 @@ Les Value Objects sont des objets immuables définis par leurs attributs :
 - `Side` : Énumération `BUY` | `SELL`
 - `Money` : Représentation du montant avec précision (Decimal)
 
+*Event Objects (Value Objects spécialisés)*
+- `OrderEvent` : Événement immutable dans l'event store
+- `OrderEventPayload` : Payload d'événement pour la communication Redis
+- `OrderEventType` : Type d'événement dans la saga (`ORDER_CREATED`, `ORDER_VALIDATED`, etc.)
+
+Les événements sont des Value Objects car ils sont :
+- Immutables une fois créés (pas de modification après insertion)
+- Définis entièrement par leur contenu (event_type, order_id, données métier)
+- Utilisés pour la communication et l'audit, sans identité métier propre
+
 == Aggregates
 
 Les aggregates définissent les frontières transactionnelles et de cohérence :
@@ -284,6 +298,7 @@ trait OrderRepository {
 
 Chaque bounded context possède son propre repository isolé, implémenté avec PostgreSQL.
 
+
 == Domain Services
 
 Les services de domaine encapsulent la logique métier qui ne correspond pas naturellement à une entité :
@@ -293,16 +308,16 @@ Les services de domaine encapsulent la logique métier qui ne correspond pas nat
 - Logique :
   - Vérification de solvabilité (solde suffisant pour achat)
   - Vérification des positions (quantité suffisante pour vente)
-  - Contrôle des bandes de prix ($plus.minus 10%$ du prix de marché pour ordres limites)
+  - Contrôle des bandes de prix
 - Collaboration : Interroge `UserRepository` et `MarketDataRepository`
 
-*OrderExecutor*
+*ExecutionSimulator*
 - Responsabilité : Simulation de l'exécution sur le marché
 - Logique : Interaction avec les autres services pour simuler l'exécution des ordres
 
 == Ubiquitous Language
 
-Le langage omniprésent (Ubiquitous Language) utilisé dans BrokerX reflète le vocabulaire métier de la finance :
+Le *ubiquitous language* utilisé dans BrokerX reflète le vocabulaire métier de la finance :
 
 #figure(
   table(
@@ -311,7 +326,6 @@ Le langage omniprésent (Ubiquitous Language) utilisé dans BrokerX reflète le 
     table.header([*Terme métier*], [*Signification dans le code*]),
     [Ordre], [`Order` entity],
     [Exécution], [Passage d'un ordre de `VALIDATED` à `FILLED`],
-    [Règlement], [Mise à jour du solde et des positions après exécution],
     [Position], [`Holding` entity],
     [Solde], [`User.balance`],
     [Pré/Post-trade], [Validation avant/après exécution (`TradeValidator`)],
@@ -332,7 +346,7 @@ Bien que BrokerX utilise une architecture microservices, chaque service respecte
 
 *Application Layer* : Cas d'usage orchestrant les opérations du domaine
 
-*Infrastructure Layer* : Implémentations concrètes des repositories et clients externes (mail)
+*Infrastructure Layer* : Implémentations concrètes des repositories et clients externes (mail par exemple)
 
 Cette séparation permet de tester la logique métier indépendamment de l'infrastructure.
 
@@ -349,14 +363,15 @@ Le système BrokerX suit une architecture restAPI avec passerelle API et microse
 
 + La passerelle API est le point d'entrée unique pour les clients.
 + La passerelle API orchestre l'authentification via MFA ($->$ token JWT)
-+ Le service de traitement des ordres communique également avec les différents micro-services, il agit comme un orchestrateur pour le flux de traitement des ordres.
-
 + Les différents services sont :
   - Service Utilisateurs : gestion des comptes et portefeuilles utilisateurs
   - Service Ordres : gestion des ordres en mémoire persistente
   - Service Données de Marché : récupération des cotations en temps réel, execution des ordres sur le marché
-  - Service de traitement des ordres: contrôles pre/post-trades, orchestration du traitement des ordres
+  - Service Event Store : event sourcing, outbox pattern transactionnel
+  - Service Notifications : envoi d'emails (Code OTP, confirmation d'exécution)
 
++ Prometheus collecte les métriques de tous les services
++ Grafana visualise les métriques via dashboards
 
 == Architecture du domaine (Niveau 2)
 
@@ -365,69 +380,17 @@ Le système BrokerX suit une architecture restAPI avec passerelle API et microse
   caption: [Architecture du domaine],
 )
 
-Le diagramme détaille l'architecture microservices avec une séparation claire entre les couches métier et infrastructure (pattern Ports & Adapters). L'architecture se compose de :
+Ce diagramme présente les 5 bounded contexts métier et leurs aggregate roots, avec les relations inter-domaines via événements pour maintenir la cohérence distribuée.
 
-=== Composants principaux
 
-- *API Gateway* : Point d'entrée unique assurant le routage, l'authentification JWT/MFA via `MfaService`
 
-- *UserService* : Gestion des comptes utilisateurs, authentification, solde et positions (holdings)
+== Architecture événementielle pour le traitement des ordres
 
-- *OrderService* : Gestion du cycle de vie des ordres (CRUD, exécution, annulation)
+Le système utilise une saga chorégraphiée distribuée pour traiter les ordres de manière asynchrone et résiliente. Le processus se décompose en deux phases :
 
-- *MarketDataService* : Données de marché en temps réel, historique, et simulation d'exécution
+1. **Acceptation synchrone** : L'API Gateway accepte l'ordre et retourne immédiatement un `202 Accepted`
+2. **Traitement asynchrone** : Une saga distribuée coordonne la validation, l'exécution et le règlement via événements Redis
 
-- *OrderOrchestrator* : Traitement asynchrone des ordres via file d'attente (validation pré-trade via `TradeValidator` → exécution → mise à jour post-trade)
-
-=== Architecture des données
-
-Chaque microservice possède son propre repository (pattern Repository) pour l'isolation des domaines :
-- `UserRepository` → entités `User` et `Holding`
-- `OrderRepository` → entité `Order`
-- `MarketDataRepository` → entité `Stock`
-
-== Détail du traitement des ordres
-
-#figure(
-  image("order_processing_detail.svg", width: 80%),
-  caption: [Détail du traitement des ordres],
-)
-
-Le diagramme de séquence illustre le workflow complet de traitement d'un ordre, décomposé en deux phases distinctes :
-
-=== Phase 1 : Acceptation synchrone (API Gateway)
-
-+ L'utilisateur soumet un ordre via `POST /v1/orders` avec authentification JWT
-+ L'API Gateway valide le JWT et les champs de la requête
-+ L'ordre est créé dans `OrderService` avec le statut `PENDING`
-+ L'ordre est transmis à `OrderOrchestrator` qui le place dans une file d'attente
-+ Réponse immédiate `202 Accepted` à l'utilisateur avec l'`order_id`
-
-L'utilisateur peut ensuite consulter l'état de son ordre en temps réel via polling.
-
-=== Phase 2 : Traitement asynchrone (Order Orchestrator)
-
-L'orchestrateur traite les ordres en arrière-plan avec contrôle de concurrence :
-
-==== Validation pré-trade (TradeValidator)
-
-- Récupération des données utilisateur (solde, holdings) via `UserService`
-- Récupération du prix de marché via `MarketDataService`
-- Vérifications : solvabilité, limites, bandes de prix
-- Résultat : ordre accepté ou rejeté
-
-==== Exécution (si validation réussie)
-
-- Simulation de l'exécution sur le marché via `MarketDataService`
-- Mise à jour du statut de l'ordre (`FILLED` ou `REJECTED`)
-
-==== Règlement post-trade (si ordre exécuté)
-
-- Mise à jour du solde : retrait (achat) ou crédit (vente) via `UserService`
-- Mise à jour des positions (holdings) dans `UserService`
-- Enregistrement des métriques
-
-L'utilisateur récupère finalement l'état final de son ordre via `GET /v1/orders/:id`.
 
 == Vue d'exécution
 
@@ -464,39 +427,78 @@ Ce diagramme de séquence illustre l'ensemble des interactions utilisateur dans 
   - Contrôles de risque et de solvabilité
   - Traitement asynchrone par le service d'ordres
 
++ *Modification et annulation d'ordres (UC-06)*
+
+  - Modification des ordres en statut PENDING (quantité, prix limite, type)
+  - Annulation immédiate des ordres non encore exécutés
+  - Validation des autorisations utilisateur
+
++ *Appariement interne et exécution (UC-07)*
+
+  - Simulation de matching sur le marché via MarketDataService
+  - Mise à jour temps réel des statuts d'ordre (PENDING → VALIDATED → FILLED)
+
++ *Confirmation d'exécution et notifications (UC-08)*
+
+  - Envoi automatique d'emails de confirmation post-exécution
+  - Notifications incluant détails complets (quantité, prix, frais, nouveau solde)
+  - Traçabilité des tentatives d'envoi et statuts de livraison
+
++ *Consultation des données de marché (UC-04)*
+
+  - Accès aux cotations en temps réel des instruments financiers
+  - Historique des prix et données de marché
+  - Mise à jour périodique des prix (cycle de 5 secondes)
+
 == Vue de déploiement
 
 #figure(image("deployment_view.svg", width: 80%), caption: [Vue de déploiement])
 
-L'architecture de déploiement utilise *Docker Compose* pour orchestrer l'ensemble des composants en conteneurs. La stack complète comprend :
+L'architecture de déploiement utilise *Docker Compose* pour orchestrer l'ensemble des composants en conteneurs. La stack complète comprend 6 microservices, 4 bases de données PostgreSQL, Redis comme message broker, et une stack de monitoring complète.
+
+Le diagramme met en évidence la communication événementielle via Redis ainsi que les connexions directes API Gateway vers microservices.
+
+Les requêtes Prometheus $->$ `/metrics` (de chaque service) ne sont pas représentées par souci de lisibilité.
 
 === Couche Frontend
-- *WebApp* (port 8000) : Interface web statique servie via serveur HTTP
+- *WebApp 8000* : Interface web statique servie via serveur HTTP, accessible par les navigateurs clients
 
 === Couche API
-- *API Gateway* (port 8080) : Point d'entrée unique pour toutes les requêtes clients
+- *API Gateway * (port 8080) : Point d'entrée unique orchestrant toutes les requêtes clients vers les microservices via HTTP/REST
 
 === Couche Microservices
-- *User Service* (port 3001) : Gestion des utilisateurs et authentification
-- *Order Service* (port 3002) : Gestion des ordres
-- *Market Data Service* (port 3003) : Données de marché et simulation d'exécution
-- *Order Orchestrator* (port 3004) : Traitement asynchrone des ordres
+- *User Service * (port 3001) : Gestion des utilisateurs et authentification, consomme les événements Redis pour mise à jour des soldes
+- *Order Service * (port 3002) : Gestion des ordres avec event consumer Redis pour traitement des validations
+- *Market Data Service* (port 3003) : Données de marché et simulation d'exécution, consomme les événements pour déclencher les exécutions
+- *Event Store Service* (port 3005) : Event sourcing central, publie tous les événements vers Redis via transactional outbox
+- *Notification Service* (port 3006) : Envoi d'alertes et notifications par email, connecté au serveur SMTP externe
 
 === Couche Données
 Chaque service possède sa propre base de données PostgreSQL 15 pour l'isolation :
 - *User DB* (port 5432) : Données utilisateurs et holdings
-- *Order DB* (port 5433) : Ordres avec optimisations pour hautes performances
+- *Order DB* (port 5433) : Ordres avec table `processed_events` pour idempotence
 - *Market Data DB* (port 5434) : Instruments financiers et historique des prix
+- *Event Store DB* (port 5435) : Tables `order_events`, `saga_state`, `outbox` pour event sourcing
+
+=== Communication Événementielle
+- *Redis * (port 6380) : Message broker central recevant les événements de l'EventStoreService et les distribuant aux event consumers de chaque microservice
+- *Event Flow* : EventStoreService → Redis → (OrderService, MarketDataService, UserService, NotificationService)
+- *Transactional Outbox Worker* : Traitement périodique de l'outbox dans EventStoreService (polling 100ms)
+- *Event Consumers* : Abonnements Redis dans chaque service pour saga chorégraphiée distribuée
 
 === Monitoring
-- *Prometheus* (port 9090) : Collecte des métriques via endpoints `/metrics`
-- *Grafana* (port 3000) : Visualisation des métriques et dashboards
-- *K6* : Des scénarios de tests K6 sont disponibles
+- *Prometheus * (port 9090) : Collecte des métriques via endpoints `/metrics` de tous les microservices
+- *Grafana * (port 3000) : Visualisation des métriques via requêtes Prometheus et dashboards pré-configurés
+- *K6* : Des scénarios de tests de charge sont disponibles
+
+=== Services Externes
+- *SMTP Server* : Serveur de messagerie externe pour l'envoi des emails MFA et notifications d'exécution
 
 === Réseau et Communication
-- Tous les services communiquent via un réseau Docker privé `brokerx-network`
-- Communication inter-services en HTTP/REST
-- Healthchecks pour garantir l'ordre de démarrage des dépendances
+- *Réseau Docker* : Tous les services communiquent via un réseau privé `brokerx-network`
+- *Communication synchrone* : Client → WebApp → API Gateway → Microservices (HTTP/REST)
+- *Communication asynchrone* : EventStoreService → Redis → Event Consumers (saga événementielle)
+- *Connexions BDD* : Chaque microservice avec sa base PostgreSQL dédiée
 
 = Concepts transversaux
 
@@ -506,18 +508,19 @@ Les décisions architecturales majeures sont documentées sous forme d'ADR (Arch
 
 === ADR documentées
 
-1. *ADR 001* — Adoption de l'architecture hexagonale (ports et adaptateurs) (obsolète)
-2. *ADR 002* — Choix de la technologie web (Axum)
-3. *ADR 003* — Adoption des UUIDs comme identifiants
-4. *ADR 004* — Choix de la technologie de logs (tracing)
-5. *ADR 005* — Implémentation du traitement des ordres (machine d'états, pipeline asynchrone)
-6. *ADR 006* — Implémentation d'une queue d'ordres à traiter
-7. *ADR 007* — Architecture microservices avec API Gateway (5 services distincts)
-8. *ADR 008* — Authentification JWT avec MFA (multi-factor authentication)
-9. *ADR 009* — Stratégie de caching multi-niveaux (4 caches, batching des écritures)
++ / ADR 001: Choix de l'architecture web et frontend (API Gateway + SPA)
++ / ADR 002: Adoption des UUIDs comme identifiants pour clients et ordres
++ / ADR 003: Choix de la technologie de logs (tracing pour journaux structurés)
++ / ADR 004: Implémentation du traitement des ordres avec saga chorégraphiée
++ / ADR 005: Architecture microservices (5 services distincts + API Gateway)
++ / ADR 006: Authentification JWT avec MFA (multi-factor authentication)
++ / ADR 007: Transactional Outbox Pattern pour publication fiable d'événements
++ / ADR 008: Event Sourcing pour audit immutable et traçabilité complète
 
-Chaque ADR décrit le contexte, les options considérées, la décision retenue et ses conséquences.
+Chaque ADR décrit le contexte, la décision retenue et ses conséquences.
 
+
+// TODO UPDATE THIS SECTION
 
 == Exigences qualité
 
@@ -583,7 +586,7 @@ Le runbook suivant documente les procédures opérationnelles standards (SOP) po
 
 == Vue d'ensemble des services
 
-BrokerX est composé de 5 microservices principaux, 3 bases de données PostgreSQL et une stack de monitoring (Prometheus + Grafana). Par défaut:
+BrokerX est composé de 6 microservices principaux, 4 bases de données PostgreSQL, Redis et une stack de monitoring (Prometheus + Grafana). Par défaut:
 
 #figure(
   table(
@@ -595,7 +598,9 @@ BrokerX est composé de 5 microservices principaux, 3 bases de données PostgreS
     [User Service], [3001], [`http://localhost:3001/v1/health`],
     [Order Service], [3002], [`http://localhost:3002/v1/health`],
     [Market Data Service], [3003], [`http://localhost:3003/v1/health`],
-    [Order Orchestrator], [3004], [`http://localhost:3004/v1/health`],
+    [Event Store Service], [3005], [`http://localhost:3005/v1/health`],
+    [Notification Service], [3006], [`http://localhost:3006/v1/health`],
+    [Redis], [6380], [Connexion TCP],
     [Prometheus], [9090], [`http://localhost:9090`],
     [Grafana], [3000], [`http://localhost:3000`],
   ),
@@ -658,7 +663,7 @@ docker compose up -d user-db order-db market-data-db
 just docker-services
 # ou
 docker compose up -d user-service order-service \
-  market-data-service order-execution-orchestrator-service \
+  market-data-service event-store-service notification-service \
   api-gateway webapp
 ```
 
@@ -741,7 +746,8 @@ docker compose logs -f
 
 # Service spécifique
 docker compose logs -f api-gateway
-docker compose logs -f order-execution-orchestrator-service
+docker compose logs -f event-store-service
+docker compose logs -f notification-service
 
 # Filtrer par niveau
 docker compose logs -f | grep ERROR
@@ -831,7 +837,8 @@ Après avoir passé des ordres:
 / User Service: #link("http://127.0.0.1:3001/swagger-ui/")
 / Order Service: #link("http://127.0.0.1:3002/swagger-ui/")
 / Market Data Service: #link("http://127.0.0.1:3003/swagger-ui/")
-/ Order Orchestrator Service: #link("http://127.0.0.1:3004/swagger-ui/")
+/ Event Store Service: #link("http://127.0.0.1:3005/swagger-ui/")
+/ Notification Service: #link("http://127.0.0.1:3006/swagger-ui/")
 
 === Postman
 Les collections sont également disponibles dans le répertoire `docs/postman/`.
@@ -839,9 +846,8 @@ Les collections sont également disponibles dans le répertoire `docs/postman/`.
 / User Service: #link("http://127.0.0.1:3001/api-docs/openapi.json")
 / Order Service: #link("http://127.0.0.1:3002/api-docs/openapi.json")
 / Market Data Service: #link("http://127.0.0.1:3003/api-docs/openapi.json")
-/ Order Orchestrator Service: #link(
-    "http://127.0.0.1:3004/api-docs/openapi.json",
-  )
+/ Event Store Service: #link("http://127.0.0.1:3005/api-docs/openapi.json")
+/ Notification Service: #link("http://127.0.0.1:3006/api-docs/openapi.json")
 
 
 = Glossaire

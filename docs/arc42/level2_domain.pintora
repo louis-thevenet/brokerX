@@ -1,226 +1,128 @@
 classDiagram
-  title: Level 2 - Microservices Domain Architecture
+  title: Level 2 - Domain Architecture
   
-  class APIGateway {
-    <<gateway>>
-    -config: Config
-    -jwt_service: JwtService
-    -user_client: UserClient
-    -order_client: OrderClient
-    -market_data_client: MarketDataClient
-    -orchestrator_client: OrchestratorClient
-    -mfa_service: MfaService
-    +register()
-    +login()
-    +verifyLoginMfa()
-    +logout()
-    +getMe()
-    +updateMe()
-    +depositFunds()
-    +createOrder()
-    +getMyOrders()
-    +getOrder()
-    +updateOrder()
-    +cancelOrder()
-    +getMarketPrice()
-    +getMarketPrices()
-    +getMarketSymbols()
-    +getMarketHistory()
+  class UserManagement {
+    <<bounded_context>>
+    +User Registration & Authentication
+    +Profile (firstname, surname)
+    +Account Balance Management  
+    +Portfolio Holdings
+    +Email Verification & MFA
+    +Subscription Management
   }
   
-  class MfaService {
-    <<service>>
-    -provider: EmailOtpProvider
-    +initiateChallenge()
-    +verifyChallenge()
+  class OrderManagement {
+    <<bounded_context>>
+    +Order Creation & Lifecycle
+    +Order Status Tracking
+    +Trade Validation
+    +Buy/Sell Operations
+    +Market/Limit Orders
   }
   
-  class TradeValidator {
-    <<service>>
-    -user_client: UserClient
-    -market_data_client: MarketDataClient
-    -config: ValidationConfig
-    +validateTrade()
-    +checkBalance()
-    +validateSymbol()
-    +validatePrice()
+  class MarketData {
+    <<bounded_context>>
+    +Market Price Management
+    +OHLCV Data (Open/High/Low/Close/Volume)
+    +Price Simulation & Updates
+    +Symbol Information
+    +Historical Price Data
   }
   
-  class UserService {
-    <<microservice>>
-    -user_service: UserService
-    +createUser()
-    +getUser()
-    +getUserByEmail()
-    +updateUser()
-    +authenticateUser()
-    +verifyUserEmail()
-    +depositFunds()
-    +getHoldings()
-    +updateHoldings()
-    +validateTrade()
-    +healthCheck()
+  class EventStore {
+    <<bounded_context>>
+    +Order Event Sourcing
+    +Saga State Management
+    +Outbox Pattern
+    +Event Publishing & Streaming
+    +Correlation & Causation Tracking
   }
   
-  class OrderService {
-    <<microservice>>
-    -order_service: OrderService
-    +createOrder()
-    +getOrder()
-    +getOrders()
-    +updateOrder()
-    +updateOrderExecution()
-    +cancelOrder()
-    +healthCheck()
-  }
-  
-  class MarketDataService {
-    <<microservice>>
-    -market_data_service: MarketDataService
-    -execution_simulator: ExecutionSimulator
-    +getCurrentPrice()
-    +getCurrentPrices()
-    +getHistoricalPrices()
-    +getAvailableSymbols()
-    +initializeMarketData()
-    +simulatePriceUpdate()
-    +executeOrder()
-    +healthCheck()
-  }
-  
-  class OrderOrchestrator {
-    <<microservice>>
-    -order_queue: UnboundedSender
-    -user_client: UserClient
-    -order_client: OrderClient
-    -market_data_client: MarketDataClient
-    -api_gateway_client: ApiGatewayClient
-    -trade_validator: TradeValidator
-    -metrics: Metrics
-    -concurrency_limiter: Semaphore
-    +createOrder()
-    +processOrderQueue()
-    +validatePreTrade()
-    +executeOrder()
-    +updatePostTrade()
-  }
-  
-  class UserRepository {
-    <<repository>>
-    -pool: PgPool
-    +create()
-    +get()
-    +update()
-    +findByEmail()
-    +authenticate()
-    +verifyEmail()
-    +deposit()
-    +getHoldings()
-    +updateHoldings()
-  }
-  
-  class OrderRepository {
-    <<repository>>
-    -pool: PgPool
-    +create()
-    +get()
-    +findByUser()
-    +update()
-    +updateExecution()
-    +cancel()
-  }
-  
-  class MarketDataRepository {
-    <<repository>>
-    -pool: PgPool
-    +getCurrentPrice()
-    +getCurrentPrices()
-    +getHistoricalPrices()
-    +getSymbols()
-    +initializeData()
-    +updatePrice()
+  class NotificationSystem {
+    <<bounded_context>>
+    +Order Execution Notifications
+    +MFA/OTP Delivery
+    +Market Data Reports
+    +System Notifications
+    +Multi-channel Delivery
   }
   
   class User {
-    <<entity>>
-    +id: Uuid
-    +email: String
-    +password_hash: String
-    +name: String
-    +balance: Decimal
-    +is_verified: bool
-    +created_at: DateTime
-    +updated_at: DateTime
-  }
-  
-  class Holding {
-    <<entity>>
-    +id: Uuid
-    +user_id: Uuid
-    +symbol: String
-    +quantity: i64
-    +average_price: Decimal
-    +created_at: DateTime
-    +updated_at: DateTime
+    <<aggregate_root>>
+    +UserId (Uuid)
+    +email, firstname, surname
+    +password_hash
+    +balance (f64)
+    +is_verified (bool)
+    +holdings (HashMap<String, Holding>)
+    +created_at
   }
   
   class Order {
-    <<entity>>
-    +id: Uuid
-    +user_id: Uuid
-    +symbol: String
-    +quantity: i64
-    +filled_quantity: i64
-    +order_side: OrderSide
-    +order_type: OrderType
-    +limit_price: Option~Decimal~
-    +status: OrderStatus
-    +average_fill_price: Option~Decimal~
-    +created_at: DateTime
-    +updated_at: DateTime
+    <<aggregate_root>>
+    +OrderId (Uuid)
+    +client_id (UserId)
+    +symbol, quantity
+    +OrderSide (Buy/Sell)
+    +OrderType (Market/Limit)
+    +OrderStatus (Pending/Filled/Rejected/Cancelled)
+    +date
   }
   
-  class Stock {
-    <<entity>>
-    +id: Uuid
-    +symbol: String
-    +name: String
-    +current_price: Decimal
-    +last_updated: DateTime
+  class MarketPrice {
+    <<aggregate_root>>
+    +id (Uuid)
+    +symbol
+    +price, open, high, low
+    +volume (i64)
+    +timestamp
   }
   
-  %% API Gateway composition
-  APIGateway *-- MfaService
+  class OrderEvent {
+    <<aggregate_root>>
+    +event_id (Uuid)
+    +order_id, user_id
+    +OrderEventType (ORDER_CREATED/ORDER_FILLED/etc)
+    +correlation_id, causation_id
+    +occurred_at
+    +metadata (JsonB)
+  }
   
-  %% OrderOrchestrator composition
-  OrderOrchestrator *-- TradeValidator
+  class NotificationType {
+    <<aggregate_root>>
+    +OrderExecution (order details)
+    +Mfa (challenge_id, code)
+    +MarketData (symbols, holdings)
+    +System (title, message, priority)
+  }
   
-  %% API Gateway to services
-  APIGateway ..> UserService: HTTP
-  APIGateway ..> OrderService: HTTP
-  APIGateway ..> MarketDataService: HTTP
-  APIGateway ..> OrderOrchestrator: HTTP
+  %% Domain to Aggregate relationships
+  UserManagement *-- User
+  OrderManagement *-- Order
+  MarketData *-- MarketPrice
+  EventStore *-- OrderEvent
+  NotificationSystem *-- NotificationType
   
-  %% Order Orchestrator coordination
-  OrderOrchestrator ..> UserService: Validate balance
-  OrderOrchestrator ..> MarketDataService: Execute order
-  OrderOrchestrator ..> OrderService: Update status
-  OrderOrchestrator ..> UserService: Update holdings
+  %% Cross-domain dependencies
+  OrderManagement --> UserManagement: Validates balance & holdings
+  OrderManagement --> MarketData: Gets prices & executes trades
+  OrderManagement --> EventStore: Publishes order lifecycle events
   
-  %% Service to repository
-  UserService *-- UserRepository
-  OrderService *-- OrderRepository
-  MarketDataService *-- MarketDataRepository
+  UserManagement --> EventStore: Publishes user events
+  MarketData --> EventStore: Publishes price update events
   
-  %% Repository to entity
-  UserRepository --> User: manages
-  UserRepository --> Holding: manages
-  OrderRepository --> Order: manages
-  MarketDataRepository --> Stock: manages
+  EventStore --> NotificationSystem: Triggers order notifications
+  OrderManagement --> NotificationSystem: Order execution alerts
+  UserManagement --> NotificationSystem: MFA & account notifications
   
-  @note right of APIGateway: Single entry point\nJWT authentication\nMFA orchestration\nRequest routing
-  @note right of OrderOrchestrator: Async order processing\nPre-trade validation\nExecution coordination\nPost-trade settlement
-  @note left of TradeValidator: Pre-trade validation\nBalance checks\nRisk limits\nPrice validation
-  @note top of UserService: User domain\nAuthentication\nBalance management\nHoldings
-  @note top of OrderService: Order domain\nOrder persistence\nStatus tracking
-  @note bottom of MarketDataService: Market domain\nPrice simulation\nOrder execution
+  %% Entity relationships
+  User --> Order: places orders
+  Order --> MarketPrice: references symbol prices
+  OrderEvent --> Order: tracks order lifecycle
+  OrderEvent --> User: belongs to user
+  
+  @note right of UserManagement: User lifecycle & authentication\nBalance & holdings management\nSubscription preferences
+  @note right of OrderManagement: Order creation & status tracking\nBuy/Sell operations\nTrade validation
+  @note right of MarketData: OHLCV price data\nMarket simulation\nSymbol management
+  @note left of EventStore: Event sourcing pattern\nSaga orchestration\nOutbox & correlation
+  @note left of NotificationSystem: Multi-type notifications\nOrder/MFA/Market alerts\nEmail delivery
