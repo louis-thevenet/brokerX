@@ -133,8 +133,15 @@ Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de v
 
 === UC-07 — Appariement interne & Exécution (matching)
 
+Ce cas d'utilisation concerne l'exécution des ordres validés. Dans la version actuelle de BrokerX, il n'y a pas de véritable moteur de matching (appariement d'ordres d'achat et de vente). L'exécution est simulée par le MarketDataService :
 
-// TODO
+- Le système reçoit un ordre validé via événement Redis
+- Le MarketDataService simule l'exécution au prix du marché
+- L'ordre passe de l'état VALIDATED à FILLED
+- Les positions et soldes de l'utilisateur sont mis à jour
+- Une notification d'exécution est envoyée
+
+Note : Un vrai moteur de matching qui apparierait les ordres d'achat et de vente entre utilisateurs pourrait être implémenté dans une version future.
 
 === UC-06 — Modification / Annulation d'un ordre
 
@@ -153,9 +160,17 @@ Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécur
 - Si les informations sont correctes, le système envoie un code OTP par email à l'utilisateur.
 - L'utilisateur saisit le code OTP reçu.
 - Le système valide le code OTP.
-- Le système transmfet un token JWT pour les sessions authentifiées.
+- Le système transmet un token JWT pour les sessions authentifiées.
 
 === UC-04 — Abonnement aux données de marché
+
+Ce cas d'utilisation permet aux utilisateurs de s'abonner à des symboles boursiers pour recevoir des rapports réguliers par email. Le processus comprend les étapes suivantes :
+
+- L'utilisateur se connecte à son compte
+- Il accède à la section "Abonnements"
+- Il sélectionne un ou plusieurs symboles boursiers à suivre
+- Le système enregistre les abonnements
+- Le NotificationService envoie périodiquement des rapports avec les prix actuels et l'historique des symboles suivis
 
 == Contexte technique
 
@@ -176,7 +191,7 @@ Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécur
     [*Gestion des données*],
     [Base relationnelle (*PostgreSQL*), cache en mémoire pour les évènements et les données fréquemment utilisées],
 
-    [*Observabilité*], [Métriques Promethus et Dashboards Grafana],
+    [*Observabilité*], [Métriques Prometheus et Dashboards Grafana],
   ),
   caption: [Stratégie de solution],
 )
@@ -359,14 +374,14 @@ Cette séparation permet de tester la logique métier indépendamment de l'infra
   caption: [Vue d'ensemble du système],
 )
 
-Le système BrokerX suit une architecture restAPI avec passerelle API et microservices :
+Le système BrokerX suit une architecture REST API avec passerelle API et microservices :
 
 + La passerelle API est le point d'entrée unique pour les clients.
 + La passerelle API orchestre l'authentification via MFA ($->$ token JWT)
 + Les différents services sont :
   - Service Utilisateurs : gestion des comptes et portefeuilles utilisateurs
   - Service Ordres : gestion des ordres en mémoire persistente
-  - Service Données de Marché : récupération des cotations en temps réel, execution des ordres sur le marché
+  - Service Données de Marché : récupération des cotations en temps réel, exécution des ordres sur le marché
   - Service Event Store : event sourcing, outbox pattern transactionnel
   - Service Notifications : envoi d'emails (Code OTP, confirmation d'exécution)
 
@@ -388,8 +403,8 @@ Ce diagramme présente les 5 bounded contexts métier et leurs aggregate roots, 
 
 Le système utilise une saga chorégraphiée distribuée pour traiter les ordres de manière asynchrone et résiliente. Le processus se décompose en deux phases :
 
-1. **Acceptation synchrone** : L'API Gateway accepte l'ordre et retourne immédiatement un `202 Accepted`
-2. **Traitement asynchrone** : Une saga distribuée coordonne la validation, l'exécution et le règlement via événements Redis
+1. *Acceptation synchrone* : L'API Gateway accepte l'ordre et retourne immédiatement un `202 Accepted`
+2. *Traitement asynchrone* : Une saga distribuée coordonne la validation, l'exécution et le règlement via événements Redis
 
 
 == Vue d'exécution
@@ -435,7 +450,7 @@ Ce diagramme de séquence illustre l'ensemble des interactions utilisateur dans 
 
 + *Appariement interne et exécution (UC-07)*
 
-  - Simulation de matching sur le marché via MarketDataService
+  - Simulation de l'exécution sur le marché via MarketDataService
   - Mise à jour temps réel des statuts d'ordre (PENDING → VALIDATED → FILLED)
 
 + *Confirmation d'exécution et notifications (UC-08)*
@@ -520,25 +535,22 @@ Les décisions architecturales majeures sont documentées sous forme d'ADR (Arch
 Chaque ADR décrit le contexte, la décision retenue et ses conséquences.
 
 
-// TODO UPDATE THIS SECTION
 
 == Exigences qualité
 
-BrokerX est capable de gérer $>=$ 1800 ordres/s en pic. La latence P95 sur l'endpoint `/v1/orders` est garantie grâce à la queue asynchrone dans l'orchestrateur d'ordres. Même lors de pics de charge et de perte de disponibilité sur certains services, les utilisateurs peuvent toujours passer des ordres qui seront traités en différé.
-#figure(caption: "Ordres traités par seconde et taille de la queue", image(
-  "./order_per_s.png",
+BrokerX est capable de gérer $>=$ 1200 ordres/s en charge continue en maintenant une latence P95 <= 100 ms sur l'endpoint `POST /v1/orders` de l'API Gateway.
+Voir ci-dessous une capture d'écran du tableau de bord Grafana pendant un test de charge.
+
+#figure(caption: "Vue Grafana", image("./p95_orders.png"))
+
+
+Les tests de charges extrêmes montrent que le système est capable de maintenir 5000 orders/s sur une courte période sans que la latence P95 de l'endpoint `POST /v1/orders` ne dépasse 100 ms.
+
+#figure(caption: "Vue Grafana 5000 ordres/s", image(
+  "extreme_5000_order_per_seconds.png",
 ))
 
-On voit que la queue d'ordres monte en pic lors des charges élevées, mais les ordres sont toujours acceptés rapidement par l'API Gateway.
-#figure(caption: "Latence P95 sur l'endpoint /v1/orders", image(
-  "./p95_orders.png",
-))
 
-Le premier service à tomber est celui chargé de mettre à jour les soldes et portefeuilles des utilisateurs. Mais le passage d'ordre est maintenu.
-
-#figure(caption: "Latence sur tous les endpoints", image("./latency.png"))
-
-// == Risques et dettes techniques
 
 == CI/CD (Intégration et Déploiement Continus)
 
@@ -556,51 +568,30 @@ BrokerX utilise *GitHub Actions* pour l'automatisation CI/CD avec trois pipeline
   caption: [Pipelines CI/CD],
 )
 
-=== Pipeline CI
 
-Le workflow CI déploie 3 bases PostgreSQL en parallèle (user-db:5432, order-db:5433, market-data-db:5434), initialise les schémas SQL et exécute `cargo test --all-features --workspace`. Le formatage est vérifié via `cargo fmt --all --check`.
-
-*Optimisations* : Cache Rust (`Swatinem/rust-cache@v2`), healthchecks PostgreSQL, temps d'exécution ~5-8 minutes.
-
-=== Pipeline Release
-
-Déclenché par tags Git, `cargo-dist` génère automatiquement les binaires multi-plateformes, archives (`.tar.gz`, `.zip`), checksums SHA256 et notes de release. Publication sur GitHub Releases.
-
-=== Outils de développement
-
-Le `Justfile` fournit des raccourcis pour Docker Compose :
-```bash
-just docker-up           # Démarre toute la stack
-just docker-services     # Microservices uniquement
-just docker-monitoring   # Prometheus + Grafana
-```
-
-=== Stratégie Git
-
-Workflow simplifié : branche `main` protégée par CI, feature branches, validation par PR avant merge, releases via tags
 
 
 = Runbook
 
-Le runbook suivant documente les procédures opérationnelles standards (SOP) pour le déploiement, la surveillance et le dépannage du système BrokerX.
+Le runbook suivant documente les procédures opérationnelles pour le déploiement de BrokerX.
 
 == Vue d'ensemble des services
 
-BrokerX est composé de 6 microservices principaux, 4 bases de données PostgreSQL, Redis et une stack de monitoring (Prometheus + Grafana). Par défaut:
+BrokerX est composé de 6 microservices, 4 bases de données PostgreSQL, Redis et une stack de monitoring (Prometheus + Grafana).
 
 #figure(
   table(
     columns: 3,
     align: (left, left, left),
-    table.header([*Service*], [*Port*], [*Endpoint santé*]),
+    table.header([*Service*], [*Port*], [*URL*]),
     [Web App], [8000], [`http://localhost:8000`],
-    [API Gateway], [8080], [`http://localhost:8080/v1/health`],
-    [User Service], [3001], [`http://localhost:3001/v1/health`],
-    [Order Service], [3002], [`http://localhost:3002/v1/health`],
-    [Market Data Service], [3003], [`http://localhost:3003/v1/health`],
-    [Event Store Service], [3005], [`http://localhost:3005/v1/health`],
-    [Notification Service], [3006], [`http://localhost:3006/v1/health`],
-    [Redis], [6380], [Connexion TCP],
+    [API Gateway], [8080], [`http://localhost:8080`],
+    [User Service], [3001], [`http://localhost:3001`],
+    [Order Service], [3002], [`http://localhost:3002`],
+    [Market Data Service], [3003], [`http://localhost:3003`],
+    [Event Store Service], [3005], [`http://localhost:3005`],
+    [Notification Service], [3006], [`http://localhost:3006`],
+    [Redis], [6380], [Port 6379 interne],
     [Prometheus], [9090], [`http://localhost:9090`],
     [Grafana], [3000], [`http://localhost:3000`],
   ),
@@ -613,132 +604,70 @@ BrokerX est composé de 6 microservices principaux, 4 bases de données PostgreS
 
 - Docker Engine 20.10+
 - Docker Compose 2.0+
-- Just (gestionnaire de commandes) — optionnel mais recommandé
+- Just (optionnel, recommandé)
 
-=== Configuration initiale
-+ Fichier de configuration
-  - Un fichier `.env` devrait êter fourni avec l'archive
-  - Sinon créer le fichier de configuration `.env`:
-    ```bash
-    cp .env.example .env
-    ```
-+ Choisir un mode MFA :
-  - La passerelle API peut être configurée pour ne pas envoyer de mails et accepter tous les codes OTP avec: `- MFA_BYPASS=false` dans la section api-gateway du fichier `docker-compose.yml`.
-  - Modifier `.env` avec les variables d'environnement appropriées (entre autres)
-    - `SMTP_HOST` : serveur SMTP pour l'envoi d'emails MFA
-    - `SMTP_PORT` : port SMTP (587 par défaut)
-    - `SMTP_USERNAME` : identifiant SMTP
-    - `SMTP_PASSWORD` : mot de passe SMTP
-    - `SMTP_FROM` : adresse email d'envoi
+=== Démarrage rapide
 
-=== Démarrage complet de la stack
-
-*Méthode 1 : Avec Just (recommandé)*
+*Avec Just :*
 
 ```bash
-just docker-up
+just up
 ```
 
-Cette commande démarre tous les services et affiche les URLs d'accès.
-
-*Méthode 2 : Avec Docker Compose*
+*Avec Docker Compose :*
 
 ```bash
 docker compose up -d
 ```
 
-=== Démarrage sélectif des composants
+Les services seront accessibles sur :
+- Web App : `http://localhost:8000`
+- API Gateway : `http://localhost:8080`
+- Swagger UI : `http://localhost:8080/swagger-ui/`
+- Grafana : `http://localhost:3000` (admin/admin123)
+- Prometheus : `http://localhost:9090`
 
-*Démarrer uniquement les bases de données :*
-
-```bash
-just docker-db
-# ou
-docker compose up -d user-db order-db market-data-db
-```
-
-*Démarrer uniquement les microservices :*
+=== Commandes utiles
 
 ```bash
-just docker-services
+# Arrêter tous les services
+just down
 # ou
-docker compose up -d user-service order-service \
-  market-data-service event-store-service notification-service \
-  api-gateway webapp
-```
+docker compose down
 
-*Démarrer uniquement le monitoring :*
-
-```bash
-just docker-monitoring
+# Voir les logs
+just logs
 # ou
-docker compose up -d prometheus grafana
+docker compose logs -f
+
+# Reconstruire les services
+just rebuild
+# ou
+docker compose up -d --build
+
+# Nettoyer complètement (supprime les volumes)
+just clean
+# ou
+docker compose down -v
 ```
-
-=== Vérification du déploiement
-
-+ *Vérifier l'état des conteneurs :*
-  ```bash
-  docker compose ps
-  ```
-  Tous les services doivent être en état `Up (healthy)`.
-
-+ *Vérifier les logs :*
-  ```bash
-  just docker-logs
-  # ou
-  docker compose logs -f
-  ```
-
-+ *Tester les endpoints de santé :*
-  ```bash
-  curl http://localhost:8080/v1/health
-  curl http://localhost:3001/v1/health
-  curl http://localhost:3002/v1/health
-  curl http://localhost:3003/v1/health
-  curl http://localhost:3004/v1/health
-  ```
-
-  Chaque endpoint doit retourner `{"status": "ok"}`.
-
-+ *Accéder à l'interface web :*
-  - Web App : `http://localhost:8000`
 
 == Surveillance et monitoring
-
-=== Prometheus
-
-*URL :* `http://localhost:9090`
-
-
 
 === Grafana
 
 *URL :* `http://localhost:3000`
 
-*Identifiants par défaut :*
-- Username : `admin`
-- Password : `admin123`
+*Identifiants :* admin / admin123
 
-*Configuration initiale :*
+*Dashboard :* Importer `./grafana_dashboard.json` via Dashboards → Import
 
-+ Se connecter à Grafana
-+ Importer le dashboard pré-configuré :
-  - Aller dans Dashboards → Import
-  - Télécharger `./grafana_dashboard.json`
-  - Sélectionner la source Prometheus
-  - Cliquer sur Import
+=== Prometheus
 
-*Dashboards disponibles :*
-- Performance globale (latence, débit)
-- Statut de la queue d'ordres
-- Métriques par service
-- Erreur 4xx et 5xx
-- 4 Golden Signals
+*URL :* `http://localhost:9090`
+
+Métriques exposées par chaque service sur `/metrics`.
 
 === Logs
-
-*Consulter les logs en temps réel :*
 
 ```bash
 # Tous les services
@@ -746,66 +675,40 @@ docker compose logs -f
 
 # Service spécifique
 docker compose logs -f api-gateway
-docker compose logs -f event-store-service
-docker compose logs -f notification-service
+docker compose logs -f order-service
 
 # Filtrer par niveau
 docker compose logs -f | grep ERROR
-docker compose logs -f | grep WARN
 ```
 
-*Structure des logs :*
-
-Les logs utilisent le format structuré `tracing` de Rust avec les niveaux suivants :
-- `ERROR` : Erreurs critiques nécessitant une action immédiate
-- `WARN` : Situations anormales mais gérées
-- `INFO` : Événements importants du système
-- `DEBUG` : Informations de débogage détaillées (désactivé en production)
-- `TRACE` : Traçage très détaillé (désactivé en production)
+Niveaux de logs : ERROR, WARN, INFO, DEBUG, TRACE
 
 == Tests de charge
 
-=== Préparation
+Les tests K6 permettent de valider les performances du système.
 
-+ *Activer le bypass MFA :*
+=== Configuration
 
-  Éditer `docker-compose.yml` et définir `MFA_BYPASS=true` dans la section API Gateway :
-
-  ```yaml
-  api-gateway:
-    environment:
-      - MFA_BYPASS=true
-  ```
-
-+ *Redémarrer les services :*
-  ```bash
-  docker compose up -d api-gateway
-  ```
-
-=== Exécution des tests K6
-
-*Configuration :*
-
-```bash
-just load-test-setup
+*Activer le bypass MFA :* Éditer `docker-compose.yml`, section `api-gateway` et `notification-service` :
+```yaml
+environment:
+  - MFA_BYPASS=true
 ```
 
-*Lancer les tests :*
+Redémarrer : `docker compose up -d api-gateway`
+
+=== Exécution
 
 ```bash
+# Lancer les tests
 just load-test
 # ou
 cd load-tests && k6 run scenarios/quality-validation.js
 ```
 
 *Scénarios disponibles :*
-- `quality-validation.js` : Test de charge complet (800+ ordres/s)
+- `quality-validation.js` : Test de charge complet (≥1200 ordres/s)
 - `market-data-consultation.js` : Test de consultation des données de marché
-
-*Métriques attendues :*
-- Débit : ≥ 800 ordres/s
-- Latence P95 : ≤ 250 ms
-- Taux d'erreur : < 1%
 
 = Guide d’utilisation
 == Frontend Web
@@ -831,6 +734,9 @@ Après avoir passé des ordres:
 #image("./orders.png")
 #image("./holdings.png")
 
+On peut également s'abonner à des symboles et recevoir des rapports réguliers:
+#image("./subscriptions.png")
+
 == API
 === Swagger UI
 / API Gateway: #link("http://127.0.0.1:8080/swagger-ui/")
@@ -847,7 +753,6 @@ Les collections sont également disponibles dans le répertoire `docs/postman/`.
 / Order Service: #link("http://127.0.0.1:3002/api-docs/openapi.json")
 / Market Data Service: #link("http://127.0.0.1:3003/api-docs/openapi.json")
 / Event Store Service: #link("http://127.0.0.1:3005/api-docs/openapi.json")
-/ Notification Service: #link("http://127.0.0.1:3006/api-docs/openapi.json")
 
 
 = Glossaire
