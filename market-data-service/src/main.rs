@@ -132,9 +132,9 @@ async fn main() -> color_eyre::Result<()> {
     // Initialize database connection using sqlx
     info!("Connecting to database...");
     let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(300) // Increased from 150 to handle higher load
-        .min_connections(30) // Increased from 15
-        .acquire_timeout(std::time::Duration::from_secs(2)) // Reduced from 5s
+        .max_connections(500)
+        .min_connections(50)
+        .acquire_timeout(std::time::Duration::from_secs(2))
         .idle_timeout(std::time::Duration::from_secs(300))
         .max_lifetime(std::time::Duration::from_secs(1800))
         .connect(&market_data_db_url)

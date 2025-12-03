@@ -309,6 +309,7 @@ impl TradeValidator {
         let url = format!("{}/v1/users/{}", self.user_service_url, user_id);
         self.http_client
             .get(&url)
+            .timeout(std::time::Duration::from_millis(200))
             .send()
             .await
             .map_err(|e| format!("Failed to get user: {e}"))?
@@ -323,6 +324,7 @@ impl TradeValidator {
         let price_data = self
             .http_client
             .get(&url)
+            .timeout(std::time::Duration::from_millis(200))
             .send()
             .await
             .map_err(|e| format!("Failed to fetch price: {e}"))?

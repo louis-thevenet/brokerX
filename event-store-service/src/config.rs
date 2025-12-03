@@ -46,9 +46,9 @@ impl DatabaseConfig {
                         .to_string()
                 }),
             max_connections: env::var("EVENT_STORE_DB_MAX_CONNECTIONS")
-                .unwrap_or_else(|_| "10".to_string())
+                .unwrap_or_else(|_| "600".to_string())
                 .parse()
-                .unwrap_or(10),
+                .unwrap_or(600),
             redis_url: env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6380".to_string()),
         }
