@@ -385,7 +385,8 @@ pub async fn deposit_funds(
 }
 
 /// Create a new order
-/// Submits order to the order execution orchestrator service for async processing.
+/// Submits order for async processing via choreographed saga pattern.
+/// Returns immediately after persisting the order and publishing ORDER_CREATED event.
 #[utoipa::path(
     post,
     path = "/v1/orders",
@@ -428,38 +429,15 @@ pub async fn create_order(
         ));
     }
 
-    // Step 1: Create order in order-service (persists as Pending)
     let order = state
         .order_client
         .create_order(user_id, &order_request)
         .await?;
 
     info!(
-        "Order {} created in order-service for user {}",
+        "Order {} created and ORDER_CREATED event published for user {}",
         order.id, user_id
     );
-
-    // Step 2: Submit to orchestrator for async processing (best effort)
-    // If orchestrator is down, order remains Pending and will be recovered on startup
-    match state
-        .orchestrator_client
-        .submit_order(user_id, &order_request, Some(order.id))
-        .await
-    {
-        Ok(()) => {
-            info!(
-                "Order {} submitted to orchestrator for user {}",
-                order.id, user_id
-            );
-        }
-        Err(e) => {
-            // Log the error but don't fail the request - order is already persisted
-            error!(
-                "Failed to submit order {} to orchestrator: {}. Order will be processed on orchestrator recovery.",
-                order.id, e
-            );
-        }
-    }
 
     Ok((
         StatusCode::ACCEPTED,
