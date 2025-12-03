@@ -177,20 +177,3 @@ impl OutboxWorker {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::{OrderSide, OrderType, PublishEventRequest};
-    use crate::repository::EventStoreRepository;
-    use sqlx::PgPool;
-    use uuid::Uuid;
-
-    async fn create_test_pool() -> PgPool {
-        let database_url = std::env::var("EVENT_STORE_DATABASE_URL").unwrap_or_else(|_| {
-            "postgres://brokerx_user:password123@localhost:5435/brokerx_event_store".to_string()
-        });
-
-        PgPool::connect(&database_url).await.unwrap()
-    }
-}

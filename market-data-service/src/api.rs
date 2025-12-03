@@ -25,9 +25,7 @@ pub struct AppState {
     pub event_publisher: Arc<EventPublisher>,
 }
 
-// ============================================================================
 // Response Models
-// ============================================================================
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
@@ -55,9 +53,7 @@ pub struct InitializeResponse {
     pub symbols_created: usize,
 }
 
-// ============================================================================
 // Error Handling
-// ============================================================================
 
 pub enum ApiError {
     NotFound(String),
@@ -88,9 +84,7 @@ impl From<crate::service::ServiceError> for ApiError {
     }
 }
 
-// ============================================================================
 // API Handlers
-// ============================================================================
 
 /// Health check endpoint
 /// Returns the service status and version information

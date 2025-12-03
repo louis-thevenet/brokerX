@@ -12,6 +12,7 @@ pub struct NotificationService {
 }
 
 impl NotificationService {
+    #[must_use]
     pub fn new() -> Self {
         let mut providers: HashMap<DeliveryChannel, Arc<dyn NotificationProvider>> = HashMap::new();
 
@@ -26,6 +27,7 @@ impl NotificationService {
     }
 
     /// Create with custom providers
+    #[must_use]
     pub fn with_providers(
         providers: HashMap<DeliveryChannel, Arc<dyn NotificationProvider>>,
     ) -> Self {

@@ -24,6 +24,7 @@ pub struct EventPublisher {
 }
 
 impl EventPublisher {
+    #[must_use]
     pub fn new(event_store_url: String) -> Self {
         Self {
             client: Client::new(),

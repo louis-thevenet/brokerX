@@ -117,7 +117,6 @@ async fn main() -> color_eyre::Result<()> {
 
     let config = config::Config::from_env();
 
-    // Use MARKET_DATA_DATABASE_URL or fall back to DATABASE_URL for market data service
     let market_data_db_url = std::env::var("MARKET_DATA_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("Either MARKET_DATA_DATABASE_URL or DATABASE_URL must be set");
@@ -145,7 +144,7 @@ async fn main() -> color_eyre::Result<()> {
     info!("Checking for database migrations...");
     let migration_result = sqlx::migrate!("./migrations").run(&pool).await;
     match migration_result {
-        Ok(_) => info!("Migrations completed successfully"),
+        Ok(()) => info!("Migrations completed successfully"),
         Err(sqlx::migrate::MigrateError::VersionMissing(_)) => {
             info!("No migrations found or migrations already applied");
         }

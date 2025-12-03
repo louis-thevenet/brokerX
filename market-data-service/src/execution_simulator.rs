@@ -221,7 +221,7 @@ impl ExecutionSimulator {
         let roll = rng.gen_range(0.0..1.0);
 
         if roll > execution_probability {
-            // Rejected (5% chance due to extreme conditions)
+            // Rejected (5% chance )
             debug!(
                 "Order {} market order rejected due to insufficient liquidity",
                 request.order_id
@@ -364,7 +364,7 @@ impl ExecutionSimulator {
             let fill_ratio = rng.gen_range(0.4..0.9);
             let qty = ((request.quantity as f64 * fill_ratio) as u64).max(1);
             debug!(
-                "⚠️  [PARTIAL] Order {} | Partial fill: {} of {} shares ({:.0}%)",
+                "[PARTIAL] Order {} | Partial fill: {} of {} shares ({:.0}%)",
                 request.order_id,
                 qty,
                 request.quantity,
@@ -386,7 +386,7 @@ impl ExecutionSimulator {
         };
 
         info!(
-            "💰 [LIMIT EXEC] Order {} | {:?} | Filled {} shares @ ${:.2}",
+            "[LIMIT EXEC] Order {} | {:?} | Filled {} shares @ ${:.2}",
             request.order_id, status, filled_quantity, limit_price
         );
 
