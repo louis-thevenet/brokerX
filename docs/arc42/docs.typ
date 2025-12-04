@@ -57,6 +57,10 @@ L'application « BrokerX » est dotée d'une interface web faisant appel à une 
     table.header([*Contrainte*], [*Description*]),
     [*Technologie*],
     [Les plateformes/langages serveur privilégiées : Java, C\#, Go, Rust ou C++],
+
+    [*Architecture*], [Architecture microservices avec API Gateway],
+    [*Traitement des ordres*],
+    [Saga chorégraphiée distribuée via message broker (Redis)],
   ),
   caption: [Contraintes d'architecture],
 )
@@ -86,19 +90,19 @@ Le système permet aux utilisateurs de :
 === Priorisation MoSCoW
 
 - Must Have
-  - UC-01 — Inscription & Vérification d'identité
-  - UC-03 — Approvisionnement du portefeuille (dépôt virtuel)
-  - UC-05 — Placement d'un ordre (marché/limite) avec contrôles pré-trade
+  - UC-01 - Inscription & Vérification d'identité
+  - UC-03 - Approvisionnement du portefeuille (dépôt virtuel)
+  - UC-05 - Placement d'un ordre (marché/limite) avec contrôles pré-trade
 - Should Have
-  - UC-07 — Appariement interne & Exécution (matching)
-  - UC-06 — Modification / Annulation d'un ordre
+  - UC-07 - Appariement interne & Exécution (matching)
+  - UC-06 - Modification / Annulation d'un ordre
 - Could Have
-  - UC-08 — Confirmation d'exécution et Notifications
-  - UC-02 — Authentification & MFA
-  - UC-04 — Abonnement aux données de marché
+  - UC-08 - Confirmation d'exécution et Notifications
+  - UC-02 - Authentification & MFA
+  - UC-04 - Abonnement aux données de marché
 - Won't Have
 
-=== UC-01 — Inscription & Vérification d'identité
+=== UC-01 - Inscription & Vérification d'identité
 
 Ce cas d'utilisation est le point d'entrée d'un nouvel utilisateur sur la plateforme BrokerX. L'inscription comprend les étapes suivantes :
 
@@ -106,7 +110,7 @@ Ce cas d'utilisation est le point d'entrée d'un nouvel utilisateur sur la plate
 - Le système crée son compte utilisateur avec le statut "Non vérifié"
 - Il sera vérifié à la première connexion, et en attendant il ne pourra pas effectuer d'actions.
 
-=== UC-03 — Approvisionnement du portefeuille (dépôt virtuel)
+=== UC-03 - Approvisionnement du portefeuille (dépôt virtuel)
 
 Ce cas d'utilisation permet à un utilisateur de déposer des fonds sur son compte BrokerX. Le processus comprend les étapes suivantes :
 
@@ -117,7 +121,7 @@ Ce cas d'utilisation permet à un utilisateur de déposer des fonds sur son comp
 - Le système crédite le portefeuille de l'utilisateur avec le montant déposé. (dépôt virtuel)
 - Le système affiche confirmation
 
-=== UC-05 — Placement d'un ordre (marché/limite) avec contrôles pré-trade
+=== UC-05 - Placement d'un ordre (marché/limite) avec contrôles pré-trade
 
 Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de vente d'instruments financiers. Le processus comprend les étapes suivantes :
 
@@ -131,7 +135,7 @@ Ce cas d'utilisation permet à un utilisateur de passer un ordre d'achat ou de v
 - Le système traite l'ordre et met à jour son état (exécuté, rejeté, annulé).
 - Le système notifie l'utilisateur du résultat de l'ordre.
 
-=== UC-07 — Appariement interne & Exécution (matching)
+=== UC-07 - Appariement interne & Exécution (matching)
 
 Ce cas d'utilisation concerne l'exécution des ordres validés. Dans la version actuelle de BrokerX, il n'y a pas de véritable moteur de matching (appariement d'ordres d'achat et de vente). L'exécution est simulée par le MarketDataService :
 
@@ -143,15 +147,15 @@ Ce cas d'utilisation concerne l'exécution des ordres validés. Dans la version 
 
 Note : Un vrai moteur de matching qui apparierait les ordres d'achat et de vente entre utilisateurs pourrait être implémenté dans une version future.
 
-=== UC-06 — Modification / Annulation d'un ordre
+=== UC-06 - Modification / Annulation d'un ordre
 
 Ce cas d'utilisation permet à un utilisateur de modifier ou d'annuler un ordre en attente. Pour chaque ordre en statut "Pending", l'utilisateur peut l'annuler ou le modifier (quantité, prix limite et type). Le système valide la demande et met à jour l'état de l'ordre en conséquence. (En réalité les ordres sont traités très rapidement donc cette fonctionnalité est difficile à utiliser)
 
-=== UC-08 — Confirmation d'exécution et Notifications
+=== UC-08 - Confirmation d'exécution et Notifications
 
 Ce cas d'utilisation permet à un utilisateur de recevoir des confirmations d'exécution pour ses ordres passés. Lorsqu'un ordre est exécuté, le système envoie un email à l'utilisateur avec les détails de l'exécution (quantité, prix, frais, etc).
 
-=== UC-02 — Authentification & MFA
+=== UC-02 - Authentification & MFA
 Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécurisée à son compte BrokerX en utilisant l'authentification multi-facteurs (MFA). Le processus comprend les étapes suivantes :
 
 - L'utilisateur accède à la page de connexion.
@@ -162,7 +166,7 @@ Ce cas d'utilisation permet à un utilisateur de se connecter de manière sécur
 - Le système valide le code OTP.
 - Le système transmet un token JWT pour les sessions authentifiées.
 
-=== UC-04 — Abonnement aux données de marché
+=== UC-04 - Abonnement aux données de marché
 
 Ce cas d'utilisation permet aux utilisateurs de s'abonner à des symboles boursiers pour recevoir des rapports réguliers par email. Le processus comprend les étapes suivantes :
 
@@ -178,7 +182,7 @@ Ce cas d'utilisation permet aux utilisateurs de s'abonner à des symboles boursi
 - *Couche API*: Axum (Rust) pour les endpoints RESTful
 - *Couche base de données* : PostgreSQL
 - *API Gateway* : Axum (Rust)
-- *Communication* : Requêtes HTTP/HTTPS entre clients, gateway et microservices
+- *Communication* : Requêtes HTTP/HTTPS entre clients, gateway et microservices, Redis pour la communication événementielle
 
 = Stratégie de solution
 
@@ -403,7 +407,7 @@ Ce diagramme présente les 5 bounded contexts métier et leurs aggregate roots, 
 
 Le système utilise une saga chorégraphiée distribuée pour traiter les ordres de manière asynchrone et résiliente. Le processus se décompose en deux phases :
 
-1. *Acceptation synchrone* : L'API Gateway accepte l'ordre et retourne immédiatement un `202 Accepted`
+1. *Acceptation synchrone* : L'API Gateway accepte l'ordre et retourne un `202 Accepted` dès que l'évènement `ORDER_CREATED` est publié dans l'Event Store
 2. *Traitement asynchrone* : Une saga distribuée coordonne la validation, l'exécution et le règlement via événements Redis
 
 
@@ -416,7 +420,11 @@ Le système utilise une saga chorégraphiée distribuée pour traiter les ordres
   caption: [Parcours utilisateur complet],
 )
 
-Ce diagramme de séquence illustre l'ensemble des interactions utilisateur dans le système BrokerX, de l'inscription initiale jusqu'à la gestion complète du portefeuille. Il couvre tous les cas d'usage implémentés :
+_Note : Ce diagramme utilise la notation de classe pour représenter les cas d'usage (Pintora ne supportant pas nativement les diagrammes de cas d'usage)._
+
+_Légende : `<<actor>>` = Acteur, `<<usecase>>` = Cas d'usage, les flèches représentent les associations._
+
+Ce diagramme illustre l'ensemble des interactions utilisateur dans le système BrokerX, de l'inscription initiale jusqu'à la gestion complète du portefeuille. Il couvre tous les cas d'usage implémentés :
 
 === Flux principaux documentés
 
@@ -517,24 +525,9 @@ Chaque service possède sa propre base de données PostgreSQL 15 pour l'isolatio
 
 = Concepts transversaux
 
-== Décisions d'architecture
+== Décisions d'Architecture
 
-Les décisions architecturales majeures sont documentées sous forme d'ADR (Architecture Decision Records) dans le répertoire `docs/adr/`.
-
-=== ADR documentées
-
-+ / ADR 001: Choix de l'architecture web et frontend (API Gateway + SPA)
-+ / ADR 002: Adoption des UUIDs comme identifiants pour clients et ordres
-+ / ADR 003: Choix de la technologie de logs (tracing pour journaux structurés)
-+ / ADR 004: Implémentation du traitement des ordres avec saga chorégraphiée
-+ / ADR 005: Architecture microservices (5 services distincts + API Gateway)
-+ / ADR 006: Authentification JWT avec MFA (multi-factor authentication)
-+ / ADR 007: Transactional Outbox Pattern pour publication fiable d'événements
-+ / ADR 008: Event Sourcing pour audit immutable et traçabilité complète
-
-Chaque ADR décrit le contexte, la décision retenue et ses conséquences.
-
-
+Voir @annexe
 
 == Exigences qualité
 
@@ -552,7 +545,7 @@ Les tests de charges extrêmes montrent que le système est capable de maintenir
 
 
 
-== CI/CD (Intégration et Déploiement Continus)
+== CI/CD (Intégration et Déploiement Continu)
 
 BrokerX utilise *GitHub Actions* pour l'automatisation CI/CD avec trois pipelines principaux :
 
@@ -701,7 +694,7 @@ Redémarrer : `docker compose up -d api-gateway`
 
 ```bash
 # Lancer les tests
-just load-test
+just load-test quality-validation
 # ou
 cd load-tests && k6 run scenarios/quality-validation.js
 ```
@@ -739,15 +732,24 @@ On peut également s'abonner à des symboles et recevoir des rapports réguliers
 
 == API
 === Swagger UI
+La documentation est générée automatiquement via OpenAPI/Swagger et disponible aux endpoints suivant :
+
 / API Gateway: #link("http://127.0.0.1:8080/swagger-ui/")
 / User Service: #link("http://127.0.0.1:3001/swagger-ui/")
 / Order Service: #link("http://127.0.0.1:3002/swagger-ui/")
 / Market Data Service: #link("http://127.0.0.1:3003/swagger-ui/")
 / Event Store Service: #link("http://127.0.0.1:3005/swagger-ui/")
-/ Notification Service: #link("http://127.0.0.1:3006/swagger-ui/")
+
+
+#figure(caption: "Swagger UI pour la paserelle API", image(
+  "./api_gateway_swagger.png",
+))
+#figure(caption: "Détail sur l'endpoint `/v1/auth/login`", image(
+  "./login_endpoint_swagger.png",
+))
 
 === Postman
-Les collections sont également disponibles dans le répertoire `docs/postman/`.
+Les collections sont également disponibles dans le répertoire `docs/postman/` ou aux endpoints suivant:
 / API Gateway: #link("http://127.0.0.1:8080/api-docs/openapi.json")
 / User Service: #link("http://127.0.0.1:3001/api-docs/openapi.json")
 / Order Service: #link("http://127.0.0.1:3002/api-docs/openapi.json")
@@ -766,3 +768,524 @@ Les collections sont également disponibles dans le répertoire `docs/postman/`.
   [OTP], [One-Time Password, mot de passe à usage unique],
   [JWT], [JSON Web Token, format de token sécurisé pour l'authentification],
 ))
+= Annexe <annexe>
+== Décisions d'architecture
+
+
+
+=== Choix de l'architecture web et frontend (API Gateway + SPA)
+
+/ Statut: Acceptée
+
+
+/ Contexte:
+
+  Pour l'implémentation de l'interface web client de BrokerX, nous devions choisir une architecture appropriée. L'application doit fournir :
+
+  - Une interface d'authentification (login/registration) sécurisée avec MFA
+  - Un tableau de bord client avec informations de compte en temps réel
+  - Un système de placement d'ordres interactif
+  - Une consultation des données de marché en temps réel
+  - Une architecture extensible pour futures fonctionnalités
+  - Des performances élevées pour traiter les ordres en temps réel
+
+/ Décision:
+
+
+  Nous avons choisi une *architecture avec API Gateway** et **frontend SPA (Single Page Application)*
+
+
+/ Architecture implémentée:
+
+  / Frontend:
+
+    - *Single Page Application* (SPA) en HTML/CSS/JavaScript vanilla
+    - Interface avec navigation côté client
+    - Communication via API REST uniquement
+
+  / Backend:
+
+    / API Gateway: (Axum) comme point d'entrée unique
+    / Authentification JWT + MFA: obligatoire (codes OTP par email)
+    / Microservices: : User Service, Order Service, Market Data Service
+
+/ Conséquences:
+
+  / Positives:
+
+    / Séparation des responsabilités: Frontend découplé du backend
+    / Sécurité: JWT + MFA obligatoire pour tous les utilisateurs
+    / Performance: SPA avec cache client et requêtes asynchrones
+    / Extensibilité: API REST documentée avec OpenAPI/Swagger
+
+  / Négatives:
+
+    / Latence réseau: Dépendance aux appels API pour toutes les interactions
+    / Sécurité client: Token JWT stocké dans localStorage (vulnérable au XSS)
+
+=== Adoption des UUIDs comme identifiants pour clients et ordres
+
+/ Statut: Acceptée
+
+/ Contexte: Dans le cadre du développement de BrokerX, nous devons choisir un format d'identifiants pour les entités principales : clients et ordres. Ces identifiants doivent être uniques, non prévisibles, et facilement générables.
+
+/ Décision:
+
+  Nous utiliserons des UUIDs (Universally Unique Identifiers) pour identifier les clients et les ordres dans le système. Les UUIDs ne garantissent pas strictement la propriété d'unicité, il est cependant très peu probable d'avoir des collisions, ils sont largement utilisés dans l'industrie pour des cas similaires.
+
+/ Conséquences:
+
+  Nous remplacerons les types ID par un type UUID dans les structures de données concernées.
+
+=== Choix de la technologie de logs (tracing pour journaux structurés)
+
+
+/ Statut: Acceptée
+
+/ Contexte:
+
+Le domaine métier de BrokerX nécessite un système de journalisation immuable pour garantir la traçabilité des opérations critiques.
+
+/ Options considérées:
+
+  + `log` : La crate `log` standard de Rust, simple et largement adoptée.
+
+  + `slog` : Crate de logging structuré avec une approche hiérarchique et performante.
+
+  + `tracing` : Crate moderne offrant un logging structuré avec support pour le tracing distribué et les spans.
+
+  + `env_logger` : Logger simple basé sur les variables d'environnement, souvent utilisé avec la crate `log`.
+
+/ Décision:
+
+  Nous avons choisi la crate `tracing` de Rust pour la gestion des journaux de logs. Celle-ci se marie bien avec nos dépendances actuelles (axum) et nous permettra d'implémenter une solution robuste et performante.
+
+/ Conséquences:
+
+  Les journaux de logs seront centralisés et accessibles en temps réel. Nous devrons choisir où et quand inscrire de nouvelles entrées et quel niveau de log utiliser (info, debug, error, etc.).
+=== Implémentation du traitement des ordres avec saga chorégraphiée
+
+/ Statut: Acceptée
+
+/ Contexte:
+
+  Nous devons traiter les ordres de trading de manière asynchrone et fiable dans un environnement distribué. Les exigences sont :
+
+  / Traitement asynchrone: Accepter immédiatement les ordres, traiter en arrière-plan
+  / Cohérence distribuée: Coordonner validation, exécution et settlement entre services
+  / Résilience: Gérer les pannes et permettre la compensation en cas d'échec
+  / Observabilité: Tracer l'état de chaque ordre dans le pipeline
+
+/ Décision:
+
+  Nous avons implémenté une *saga chorégraphiée* basée sur des événements avec Event Store.
+
+/ Architecture de la saga:
+
+  *Processus en 2 phases* :
+
+  + *Acceptation synchrone* : L'API Gateway persiste l'ordre dans Order Service et répond `202 Accepted`
+  + *Traitement asynchrone* : Les services réagissent aux événements Redis de manière autonome
+
+/ Étapes de la saga:
+
+  #figure(
+    image("./order_processing_detail.svg"),
+    caption: [Détail du traitement des ordres avec saga chorégraphiée],
+  )
+
+/ Chorégraphie (chaque service réagit aux événements):
+
++ / API Gateway: -> publie `OrderCreated` dans Event Store
++ / Order Service (consommateur):
+  - Écoute `OrderCreated` -> valide pré-trade -> publie `OrderValidated` ou `OrderRejected`
+  - Écoute `OrderExecuted` -> met à jour statut ordre -> `Filled` / `PartiallyFilled`
++ / Market Data Service (consommateur):
+  - Écoute `OrderValidated` -> simule exécution -> publie `OrderExecuted` / `OrderPartiallyFilled`
++ / User Service (consommateur):
+  - Écoute `OrderExecuted` -> met à jour balance et holdings -> publie `OrderCompleted`
++ / Event Store Service:
+  - Persiste tous les événements
+  - Traque l'état de la saga (`saga_state`)
+  - Outbox pattern pour publication fiable
+
+**Pas d'orchestrateur central** : Chaque service décide de ses actions basé sur les événements qu'il consomme.
+
+/ Mécanismes clés:
+
+  / Idempotence: Chaque événement est marqué comme traité (table `processed_events`) pour éviter le double-traitement
+
+  / Outbox Pattern: Les événements sont persistés transactionnellement avec leurs effets, puis publiés de manière asynchrone
+
+  / État de saga: Table `saga_state` dans Event Store pour tracking et debugging (`CREATED` -> `VALIDATED` -> `EXECUTED` -> `COMPLETED`)
+
+/ Conséquences:
+
+  / Avantages:
+
+    / Découplage total: Aucune dépendance directe entre services (seulement événements)
+    / Résilience: Chaque service peut redémarrer indépendamment et reprendre la consommation
+    / Traçabilité: Event Store avec historique complet et rejouable de chaque ordre
+    / Idempotence: Protection contre événements dupliqués via `processed_events`
+    / Scalabilité horizontale: Chaque consommateur peut être répliqué
+
+  / Inconvénients:
+
+    / Complexité: Le flux est distribué sur plusieurs services, plus difficile à déboguer
+    / Cohérence éventuelle: L'état final est cohérent mais pas instantané
+    / Dépendance Redis: Point de défaillance unique pour la communication
+
+/ Implémentation technique:
+
+  / Event Store: PostgreSQL avec `order_events`, `saga_state`, `outbox`, `processed_events`
+  / Communication: Redis pub/sub via `brokerx-events` crate
+  / Consommateurs: `EventSubscriber` dans chaque service écoute le channel `order_events`
+  / Pattern Outbox: Publication fiable des événements depuis Event Store vers Redis
+
+=== Architecture microservices (5 services distincts + API Gateway)
+
+/ Statut: Acceptée
+
+/ Contexte:
+
+  Le système BrokerX doit gérer des volumes élevés d'ordres avec des responsabilités distinctes : gestion des utilisateurs, persistance des ordres, simulation de marché, et orchestration. Une architecture monolithique rendrait difficile le scaling indépendant et l'évolution de chaque composant.
+
+/ Décision:
+
+Architecture microservices avec *5 services distincts* communiquant via HTTP/REST et événements Redis pour la coordination asynchrone de certaines tâches.
+
+/ Les services:
+
+  + API Gateway (`:8080`)
+
+    Point d'entrée unique pour les clients.
+
+    - Authentification JWT et MFA
+    - Routage vers les services appropriés
+    - Pas de base de données (stateless)
+
+  + User Service (`:3001`)
+
+    Gestion des utilisateurs et de leurs comptes.
+
+    - Création d'utilisateurs et authentification
+    - Gestion des balances et holdings (positions)
+    - Base de données : PostgreSQL `brokerx_users` (port 5432)
+
+  + Order Service (`:3002`)
+
+    Persistance et historique des ordres.
+
+    - CRUD des ordres
+    - Stockage des états (Pending, Filled, Rejected, Cancelled)
+    - Base de données : PostgreSQL `brokerx_orders` (port 5433)
+
+  + Market Data Service (`:3003`)
+
+    Simulation du marché financier.
+
+    - Génération et mise à jour des prix (toutes les 5s)
+    - Exécution simulée des ordres via event consumer
+    - Base de données : PostgreSQL `brokerx_market_data` (port 5434)
+
+  + Event Store Service (`:3005`)
+
+    Event sourcing et coordination de la saga.
+
+    - Persistance de tous les événements d'ordres
+    - État de la saga (saga_state)
+    - Outbox pattern pour publication fiable vers Redis
+    - Base de données : PostgreSQL `brokerx_event_store` (port 5435)
+
+/ Infrastructure:
+
+  / Redis (`:6380`): Pub/Sub pour la communication événementielle entre services
+  / Notification Service: Envoi d'emails (MFA, notifications d'ordres)
+
+/ Coordination des services:
+
+  / Communication synchrone:
+
+    - API Gateway → Services métier (User, Order, Market Data, Event Store)
+    - Requêtes HTTP/REST avec clients optimisés
+
+  / Communication asynchrone (Saga chorégraphiée):
+
+    - Event Store publie les événements dans Redis (channel `order_events`)
+    - Chaque service écoute les événements via `EventSubscriber`
+    - Pattern Outbox pour publication fiable
+
+/ Conséquences:
+
+  / Avantages:
+
+    / Scalabilité indépendante: Chaque service peut être scalé selon ses besoins
+    / Isolation des pannes: Un service en panne n'affecte pas les autres
+    / Déploiements indépendants: Mise à jour sans tout redémarrer
+    / Séparation claire: Chaque service a une responsabilité unique
+    / Découplage événementiel: Les services ne se connaissent que via événements ou API
+    / Traçabilité: Event Store avec audit complet de tous les ordres
+
+  / Inconvénients:
+
+    / Complexité opérationnelle: 5 services + Redis + 5 bases PostgreSQL
+    / Latence réseau: Appels HTTP et latence événementielle
+    / Cohérence éventuelle: Les états sont cohérents mais pas instantanément
+
+  / Architecture technique:
+
+    / Event-driven: Redis pub/sub avec `brokerx-events` crate
+    / Event sourcing: Tous les événements d'ordres persistés
+    / Idempotence: Table `processed_events` dans Order Service
+    / Observabilité: Prometheus + Grafana pour métriques distribuées
+
+=== Authentification JWT avec MFA (multi-factor authentication)
+
+
+/ Statut: Acceptée
+
+/ Contexte:
+
+  Le système BrokerX gère des transactions financières sensibles nécessitant une authentification robuste. Nous devons identifier les utilisateurs de manière sécurisée tout en maintenant de bonnes performances sous forte charge.
+
+/ Décision:
+
+  Authentification via JSON Web Tokens (JWT) obtenu après une vérification en deux étapes (MFA) utilisant le mot de passe et un code à usage unique (OTP) envoyé par email.
+
+/ Processus d'authentification:
+
++ Login initial
+
+  ```
+  Client → API Gateway : POST /v1/auth/login (email, password)
+           API Gateway → User Service : Vérification credentials
+           API Gateway → MFA Adapter : Génération code OTP (6 chiffres)
+           MFA Adapter → Email SMTP : Envoi code
+           API Gateway → Client : challenge_id
+  ```
+
++ Vérification MFA
+
+  ```
+  Client → API Gateway : POST /v1/auth/verify-mfa (challenge_id, code)
+           API Gateway → MFA Adapter : Validation code
+           API Gateway → Client : JWT token
+  ```
+
++ Requêtes authentifiées
+
+  ```
+  Client → API Gateway : Header "Authorization: Bearer <JWT>"
+           Middleware : Validation JWT + extraction user_id
+           Handler : Accès aux ressources de l'utilisateur
+  ```
+
+/ Composants:
+
+  / JWT Service (`api_gateway/src/auth.rs`):
+
+    - Génération de tokens signés avec secret partagé
+    - Validation et décodage des tokens
+    - Expiration configurable (24h par défaut)
+    - Claims : `sub` (email), `exp` (expiration), `iat` (issued at)
+
+  / Email Adapter (`notification_service/`):
+
+    - Génération de codes OTP à 6 chiffres
+    - Stockage temporaire en mémoire (HashMap)
+    - Expiration des challenges (5 minutes)
+    - Envoi via SMTP (Gmail par défaut)
+
+  / Middleware d'authentification (`api_gateway/src/middleware.rs`):
+
+    - Extraction du token depuis header `Authorization`
+    - Validation du token
+    - Injection du `user_id` dans les extensions de la requête
+    - Retour 401 Unauthorized si invalide
+
+  / Configuration:
+
+    / Variables d'environnement:
+
+      / `JWT_SECRET`: Clé secrète pour signer les tokens
+      / `JWT_EXPIRY_HOURS`: Durée de validité (défaut: 24)
+      / `MFA_BYPASS`: Mode test sans vérification MFA (défaut: false)
+      / `SMTP_*`: Configuration email (serveur, credentials)
+
+    / Mode MFA Bypass:
+
+      Pour les tests de charge, le mode `MFA_BYPASS=true` permet :
+
+      - Acceptation de n'importe quel code (ex: "000000")
+      - Pas d'envoi d'email réel
+      - Retour immédiat du JWT
+
+/ Conséquences:
+
+  / Avantages:
+
+    / Sécurité renforcée: Double facteur d'authentification
+    / Stateless: JWT ne nécessite pas de stockage serveur
+    / Performance: Validation locale du JWT (pas d'appel DB)
+    / Testabilité: Mode bypass pour load testing
+
+  / Inconvénients:
+
+    / Latence MFA: Délai d'envoi email (1-3 secondes)
+    / Stockage temporaire: Challenges MFA en mémoire (perdus au redémarrage)
+    / Révocation complexe: Impossible d'invalider un JWT avant expiration en l'état
+
+=== Transactional Outbox Pattern pour publication fiable d'événements
+
+
+/ Statut: Acceptée
+
+/ Contexte:
+
+Dans une architecture événementielle, garantir que les événements sont publiés de manière fiable est critique. Le problème classique :
+
++ Service met à jour sa base de données
++ Service publie un événement vers Redis
++ *CRASH* entre les deux étapes
+
+/ Conséquence: La base de données est mise à jour mais l'événement n'est jamais publié, créant une incohérence permanente.
+
+/ Décision:
+
+Implémentation du *Transactional Outbox Pattern* dans Event Store Service pour garantir l'atomicité entre mise à jour locale et publication d'événements.
+
+/ Implémentation:
+
+/ Principe:
+
++ Transaction unique : L'événement est sauvegardé dans `order_events` ET `outbox` dans la même transaction PostgreSQL
++ Worker asynchrone : Un worker poll la table `outbox` toutes les 100ms et publie vers Redis
++ Idempotence : Chaque événement a un `event_id` unique pour éviter les duplications
+
+/ Schema de la table Outbox:
+
+```sql
+CREATE TABLE outbox (
+    id BIGSERIAL PRIMARY KEY,
+    order_id UUID NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    processing_attempts INTEGER DEFAULT 0,
+    last_error TEXT
+);
+```
+
+/ Flux de traitement:
+
+API Gateway -> Event Store Service -> Transaction BEGIN -> INSERT INTO order_events -> INSERT INTO outbox -> Transaction COMMIT -> [Outbox Worker] -> PUBLISH to Redis -> Mark processed
+
+/ Conséquences:
+
+  / Avantages:
+
+    / Fiabilité: Publication garantie même en cas de crash
+    / Cohérence: Événements et base de données toujours synchronisés
+    / Résilience: Retry automatique en cas d'erreur réseau
+    / Observabilité: Monitoring des événements en attente
+
+    / Inconvénients:
+
+    + Latence : Délai de polling (100ms)
+    + Complexité : Worker supplémentaire à maintenir
+    + Stockage : Événements dupliqués dans `order_events` et `outbox`
+
+/ Implémentation dans BrokerX:
+
+  / Localisation: Event Store Service
+  / Worker: Tâche Tokio polling toutes les 100ms
+  / Métriques: Prometheus pour surveillance du backlog
+  / Cleanup: Événements publiés supprimés après 7 jours
+
+=== Event Sourcing pour audit immutable et traçabilité complète
+
+
+/ Statut: Acceptée
+
+/ Contexte:
+
+  Dans un système de trading, la traçabilité complète des ordres est essentielle pour :
+
+  + Audit réglementaire : Historique immutable de toutes les transactions
+  + Debugging : Comprendre exactement ce qui s'est passé
+  + Reconstitution d'état : Capacité à recalculer l'état à tout moment
+
+Le modèle CRUD traditionnel ne convient pas car les mises à jour écrasent les valeurs précédentes.
+
+/ Décision:
+
+Implémentation d'**Event Sourcing** : stocker la séquence d'événements au lieu de l'état actuel.
+
+
+/ Architecture:
+
+  / Table d'événements:
+
+    ```sql
+    CREATE TABLE order_events (
+        sequence_number BIGSERIAL PRIMARY KEY,
+        event_id UUID NOT NULL UNIQUE,
+        order_id UUID NOT NULL,
+        user_id UUID NOT NULL,
+        event_type VARCHAR(50) NOT NULL,
+        symbol VARCHAR(10) NOT NULL,
+        quantity BIGINT NOT NULL,
+        order_side VARCHAR(10) NOT NULL,
+        order_type JSONB NOT NULL,
+        filled_quantity BIGINT,
+        average_price DECIMAL(15, 2),
+        occurred_at TIMESTAMPTZ NOT NULL,
+        correlation_id UUID NOT NULL,
+        causation_id UUID,
+        metadata JSONB
+    );
+
+    -- Immutabilité garantie
+    CREATE RULE no_updates AS ON UPDATE TO order_events DO INSTEAD NOTHING;
+    CREATE RULE no_deletes AS ON DELETE TO order_events DO INSTEAD NOTHING;
+    ```
+
+/ Types d'événements:
+
+  Les événements métier capturent ce qui s'est passé :
+
+  / `OrderCreated`: Nouvel ordre créé
+  / `OrderValidated`: Validation pré-trade réussie
+  / `OrderRejected`: Validation échouée
+  / `OrderExecuted`: Ordre exécuté au marché
+  / `OrderPartiallyFilled`: Exécution partielle
+  / `OrderCompleted`: Saga terminée
+  / `OrderCancelled`: Ordre annulé
+
+/ Implémentation dans BrokerX:
+
+Le système stocke tous les événements dans PostgreSQL avec garantie d'immutabilité (règles SQL bloquant UPDATE/DELETE).
+
+/ Requêtes d'audit:
+
+  - Historique complet d'un ordre via `correlation_id`
+  - Reconstitution d'état à une date donnée (time travel)
+  - Traçabilité complète des sagas
+
+/ Conséquences:
+
+  / Avantages:
+
+    / Audit immutable: Historique complet impossible à modifier
+    / Time travel: Reconstitution de l'état à n'importe quel moment
+    / Debugging: Traçabilité complète des bugs
+    / Compliance: Satisfaction des exigences réglementaires
+
+  / Inconvénients:
+
+    / Stockage: Volume de données plus important
+
+
+
+
