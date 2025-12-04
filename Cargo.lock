@@ -1998,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "notification-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "brokerx-events",

@@ -1,4 +1,9 @@
 {
-
-    ".": "0.0.1"
+    ".": "0.0.1",
+    "api_gateway": "0.1.0",
+    "notification-service": "0.1.1",
+    "brokerx-events": "0.1.0",
+    "market-data-service": "0.1.0",
+    "order-service": "0.1.0",
+    "user-service": "0.1.0"
 }
